@@ -1,0 +1,9 @@
+# Fa in modo che aprendo direttamente iattualita.it/articolo/123/slug
+# Netlify serva l'app (index.html) invece di un errore 404.
+# Le edge function (og-meta, sitemap) vengono registrate automaticamente
+# dai file in netlify/edge-functions/.
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
