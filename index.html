@@ -231,7 +231,7 @@ function App(){
       {showLogin&&!admin&&<LoginModal onClose={()=>setShowLogin(false)} onLogin={doLogin}/>}
 
       {toast&&<div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",background:C.navy,color:"#fff",padding:"11px 18px",borderRadius:10,fontSize:14,fontWeight:600,zIndex:80,maxWidth:"90vw",textAlign:"center"}}>{toast}</div>}
-      <style>{`*{box-sizing:border-box}*::-webkit-scrollbar{height:6px;width:6px}*::-webkit-scrollbar-thumb{background:${C.line};border-radius:3px}html{scroll-behavior:smooth}html,body{margin:0;padding:0;width:100%;max-width:100%;overflow-x:hidden}img,iframe,video{max-width:100%}@media(max-width:560px){.tagline{display:none}.btn-label{display:none}}.article-body h2{font-family:Anton;font-weight:400;font-size:24px;color:${C.navy};margin:22px 0 8px;line-height:1.15}.article-body h3{font-family:Anton;font-weight:400;font-size:19px;color:${C.navy};margin:18px 0 6px;line-height:1.2}.article-body p{margin:0 0 14px}.article-body ul,.article-body ol{margin:0 0 14px;padding-left:22px}.article-body li{margin:4px 0}.article-body a{color:${C.blueDeep};font-weight:600}.article-body blockquote{border-left:4px solid ${C.amber};margin:16px 0;padding:8px 16px;color:${C.navy};font-style:italic;background:${C.cream};border-radius:0 8px 8px 0}.article-body hr{border:none;border-top:1px solid ${C.line};margin:22px 0}.article-body img{border-radius:12px;margin:8px 0}.article-body b,.article-body strong{color:${C.navy}}.rich-input:empty:before{content:"Scrivi qui l'articolo…";color:${C.gray}}.rich-input h2{font-family:Anton;font-weight:400;font-size:22px;color:${C.navy};margin:14px 0 6px}.rich-input h3{font-family:Anton;font-weight:400;font-size:18px;color:${C.navy};margin:12px 0 6px}.rich-input ul,.rich-input ol{padding-left:22px}.rich-input a{color:${C.blueDeep}}.rich-input blockquote{border-left:4px solid ${C.amber};margin:12px 0;padding:6px 14px;font-style:italic;background:#fff;border-radius:0 8px 8px 0}.rich-input hr{border:none;border-top:1px solid ${C.line};margin:16px 0}`}</style>
+      <style>{`*{box-sizing:border-box}*::-webkit-scrollbar{height:6px;width:6px}*::-webkit-scrollbar-thumb{background:${C.line};border-radius:3px}html{scroll-behavior:smooth}html,body{margin:0;padding:0;width:100%;max-width:100%;overflow-x:hidden}img,iframe,video{max-width:100%}@media(max-width:560px){.tagline{display:none}.btn-label{display:none}}.article-body h2{font-family:Anton;font-weight:400;font-size:24px;color:${C.navy};margin:22px 0 8px;line-height:1.15}.article-body h3{font-family:Anton;font-weight:400;font-size:19px;color:${C.navy};margin:18px 0 6px;line-height:1.2}.article-body p{margin:0 0 14px}.article-body ul,.article-body ol{margin:0 0 14px;padding-left:22px}.article-body li{margin:4px 0}.article-body a{color:${C.blueDeep};font-weight:600}.article-body blockquote{border-left:4px solid ${C.amber};margin:16px 0;padding:8px 16px;color:${C.navy};font-style:italic;background:${C.cream};border-radius:0 8px 8px 0}.article-body hr{border:none;border-top:1px solid ${C.line};margin:22px 0}.article-body img{border-radius:12px;margin:8px 0}.article-body b,.article-body strong{color:${C.navy}}.rich-input:empty:before{content:"Scrivi qui l'articolo…";color:${C.gray}}.rich-input p{margin:0 0 12px}.rich-input h2{font-family:Anton;font-weight:400;font-size:22px;color:${C.navy};margin:14px 0 6px}.rich-input h3{font-family:Anton;font-weight:400;font-size:18px;color:${C.navy};margin:12px 0 6px}.rich-input ul,.rich-input ol{padding-left:22px}.rich-input a{color:${C.blueDeep}}.rich-input blockquote{border-left:4px solid ${C.amber};margin:12px 0;padding:6px 14px;font-style:italic;background:#fff;border-radius:0 8px 8px 0}.rich-input hr{border:none;border-top:1px solid ${C.line};margin:16px 0}`}</style>
     </div>
   );
 }
@@ -355,19 +355,61 @@ function TbBtn({onClick,title,children,wide}){ return <button type="button" onMo
 
 function RichEditor({value,onChange}){
   const ref=React.useRef(null);
-  useEffect(()=>{ if(ref.current) ref.current.innerHTML=value||""; },[]);
-  const emit=()=>{ if(ref.current) onChange(ref.current.innerHTML); };
-  const run=(command,val)=>{ if(ref.current)ref.current.focus(); try{ document.execCommand("styleWithCSS",false,true); }catch(e){} try{ document.execCommand(command,false,val); }catch(e){} emit(); };
-  const size=(s)=>{ if(s)run("fontSize",s); };
-  const font=(fam)=>{ if(fam)run("fontName",fam); };
-  const link=()=>{ const u=window.prompt("Indirizzo del link (https://…)"); if(u)run("createLink",u); };
-  const image=()=>{ const u=window.prompt("Indirizzo dell'immagine (https://…)"); if(u)run("insertImage",u); };
+  const saved=React.useRef(null);
+  const SIZE_PX={"1":"13px","2":"15px","3":"17px","4":"20px","5":"25px","6":"31px","7":"40px"};
+
+  const inEd=(n)=>{ const el=ref.current; return !!(el&&n&&(el===n||el.contains(n))); };
+
+  // Assicura che il contenuto stia dentro un blocco: senza questo formatBlock (Titolo) non funziona.
+  const ensureBlock=()=>{ const el=ref.current; if(!el) return; const t=el.innerHTML.replace(/<br\s*\/?>/gi,"").replace(/&nbsp;/gi,"").trim(); if(!t) el.innerHTML="<p><br></p>"; };
+
+  useEffect(()=>{ if(ref.current) ref.current.innerHTML=value||""; try{ document.execCommand("defaultParagraphSeparator",false,"p"); }catch(e){} },[]);
+
+  const emit=()=>{ if(!ref.current) return; let h=ref.current.innerHTML; if(!h.replace(/<\/?p>|<br\s*\/?>|&nbsp;|\s/gi,"")) h=""; onChange(h); };
+
+  // Memorizza la selezione: serve perche' i menu a tendina e i selettori colore rubano il fuoco.
+  const saveSel=()=>{ const s=window.getSelection(); if(s&&s.rangeCount>0&&inEd(s.getRangeAt(0).commonAncestorContainer)) saved.current=s.getRangeAt(0).cloneRange(); };
+
+  const focusEd=()=>{
+    const el=ref.current; if(!el) return null;
+    el.focus();
+    const s=window.getSelection(); if(!s) return null;
+    const r=saved.current;
+    if(r&&inEd(r.commonAncestorContainer)){ s.removeAllRanges(); s.addRange(r); }
+    else if(!s.rangeCount||!inEd(s.anchorNode)){ const nr=document.createRange(); nr.selectNodeContents(el); nr.collapse(false); s.removeAllRanges(); s.addRange(nr); }
+    return s;
+  };
+
+  const exec=(cmd,val,css)=>{ ensureBlock(); focusEd(); try{ document.execCommand("styleWithCSS",false,!!css); }catch(e){} try{ document.execCommand(cmd,false,val); }catch(e){} saveSel(); emit(); };
+  const run=(c,v)=>exec(c,v,true);    // inline: grassetto, colori, carattere
+  const runB=(c,v)=>exec(c,v,false);  // blocchi: elenchi, allineamento, rientri
+
+  const block=(tag)=>{ ensureBlock(); focusEd(); try{ document.execCommand("styleWithCSS",false,false); }catch(e){} try{ document.execCommand("formatBlock",false,"<"+tag+">"); }catch(e){} saveSel(); emit(); };
+
+  // Dimensione reale in px: execCommand usa taglie 1-7, le convertiamo in <span style="font-size:…">
+  const size=(key)=>{
+    if(!key||!ref.current) return;
+    ensureBlock();
+    const s=focusEd(); if(!s||s.isCollapsed) return;
+    try{ document.execCommand("styleWithCSS",false,false); }catch(e){}
+    try{ document.execCommand("fontSize",false,"7"); }catch(e){}
+    const marks=Array.prototype.slice.call(ref.current.querySelectorAll('font[size="7"]'));
+    const spans=[];
+    marks.forEach(f=>{ const sp=document.createElement("span"); sp.style.fontSize=SIZE_PX[key]||"17px"; while(f.firstChild) sp.appendChild(f.firstChild); f.parentNode.replaceChild(sp,f); spans.push(sp); });
+    if(spans.length){ try{ const r=document.createRange(); r.setStartBefore(spans[0]); r.setEndAfter(spans[spans.length-1]); const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(r); }catch(e){} }
+    saveSel(); emit();
+  };
+
+  const font=(fam)=>{ if(fam) run("fontName",fam); };
+  const link=()=>{ saveSel(); const u=window.prompt("Indirizzo del link (https://…)"); if(u) run("createLink",u); };
+  const image=()=>{ saveSel(); const u=window.prompt("Indirizzo dell'immagine (https://…)"); if(u) run("insertImage",u); };
+
   const selStyle={height:32,border:"1px solid "+C.line,borderRadius:8,background:C.card,color:C.navy,fontFamily:"Barlow",fontSize:13,fontWeight:600,padding:"0 6px",cursor:"pointer"};
   const swatch={width:32,height:32,border:"1px solid "+C.line,borderRadius:8,background:C.card,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",position:"relative"};
   const Sep=()=> <span style={{width:1,height:24,background:C.line,margin:"0 3px",alignSelf:"center"}}/>;
   return (
     <div style={{border:"1px solid "+C.line,borderRadius:10,overflow:"hidden",background:C.cream}}>
-      <div onMouseDown={e=>e.preventDefault()} style={{display:"flex",flexWrap:"wrap",gap:4,alignItems:"center",padding:8,borderBottom:"1px solid "+C.line,background:"#F7F5EF"}}>
+      <div style={{display:"flex",flexWrap:"wrap",gap:4,alignItems:"center",padding:8,borderBottom:"1px solid "+C.line,background:"#F7F5EF"}}>
         <TbBtn onClick={()=>run("undo")} title="Annulla"><Ic n="undo" s={16} c={C.navy}/></TbBtn>
         <TbBtn onClick={()=>run("redo")} title="Ripeti"><Ic n="redo" s={16} c={C.navy}/></TbBtn>
         <Sep/>
@@ -375,35 +417,40 @@ function RichEditor({value,onChange}){
         <TbBtn onClick={()=>run("italic")} title="Corsivo"><i>I</i></TbBtn>
         <TbBtn onClick={()=>run("underline")} title="Sottolineato"><span style={{textDecoration:"underline"}}>U</span></TbBtn>
         <TbBtn onClick={()=>run("strikeThrough")} title="Barrato"><s>S</s></TbBtn>
-        <label title="Colore testo" style={swatch}><span style={{fontWeight:800,fontSize:13,color:C.red}}>A</span><input type="color" defaultValue="#E2231A" onChange={e=>run("foreColor",e.target.value)} style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}/></label>
-        <label title="Evidenziatore" style={{...swatch,background:"#FFF3B0"}}><span style={{fontWeight:800,fontSize:13,color:C.navy}}>A</span><input type="color" defaultValue="#FFE55C" onChange={e=>run("hiliteColor",e.target.value)} style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}/></label>
+        <label title="Colore testo" style={swatch} onMouseDown={saveSel}><span style={{fontWeight:800,fontSize:13,color:C.red}}>A</span><input type="color" defaultValue="#E2231A" onChange={e=>run("foreColor",e.target.value)} style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}/></label>
+        <label title="Evidenziatore" style={{...swatch,background:"#FFF3B0"}} onMouseDown={saveSel}><span style={{fontWeight:800,fontSize:13,color:C.navy}}>A</span><input type="color" defaultValue="#FFE55C" onChange={e=>run("hiliteColor",e.target.value)} style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}/></label>
         <Sep/>
-        <select onChange={e=>{size(e.target.value); e.target.selectedIndex=0;}} title="Dimensione testo" style={selStyle}><option value="">Dimensione</option><option value="1">Molto piccolo</option><option value="2">Piccolo</option><option value="3">Normale</option><option value="4">Medio</option><option value="5">Grande</option><option value="6">Molto grande</option><option value="7">Enorme</option></select>
-        <select onChange={e=>{font(e.target.value); e.target.selectedIndex=0;}} title="Carattere" style={selStyle}><option value="">Carattere</option><option value="Barlow">Barlow</option><option value="Georgia, serif">Georgia</option><option value="Times New Roman, serif">Times</option><option value="Arial, sans-serif">Arial</option><option value="Courier New, monospace">Monospazio</option></select>
+        <select onMouseDown={saveSel} onChange={e=>{size(e.target.value); e.target.selectedIndex=0;}} title="Dimensione testo (seleziona prima il testo)" style={selStyle}><option value="">Dimensione</option><option value="1">Molto piccolo</option><option value="2">Piccolo</option><option value="3">Normale</option><option value="4">Medio</option><option value="5">Grande</option><option value="6">Molto grande</option><option value="7">Enorme</option></select>
+        <select onMouseDown={saveSel} onChange={e=>{font(e.target.value); e.target.selectedIndex=0;}} title="Carattere (seleziona prima il testo)" style={selStyle}><option value="">Carattere</option><option value="Barlow">Barlow</option><option value="Georgia, serif">Georgia</option><option value="Times New Roman, serif">Times</option><option value="Arial, sans-serif">Arial</option><option value="Courier New, monospace">Monospazio</option></select>
         <Sep/>
-        <TbBtn onClick={()=>run("formatBlock","H2")} title="Titolo di sezione" wide>Titolo</TbBtn>
-        <TbBtn onClick={()=>run("formatBlock","H3")} title="Sottotitolo di sezione" wide>Sottot.</TbBtn>
-        <TbBtn onClick={()=>run("formatBlock","P")} title="Testo normale" wide>Normale</TbBtn>
-        <TbBtn onClick={()=>run("formatBlock","BLOCKQUOTE")} title="Citazione" wide>Citazione</TbBtn>
+        <TbBtn onClick={()=>block("h2")} title="Titolo di sezione" wide>Titolo</TbBtn>
+        <TbBtn onClick={()=>block("h3")} title="Sottotitolo di sezione" wide>Sottot.</TbBtn>
+        <TbBtn onClick={()=>block("p")} title="Testo normale" wide>Normale</TbBtn>
+        <TbBtn onClick={()=>block("blockquote")} title="Citazione" wide>Citazione</TbBtn>
         <Sep/>
-        <TbBtn onClick={()=>run("insertUnorderedList")} title="Elenco puntato">•</TbBtn>
-        <TbBtn onClick={()=>run("insertOrderedList")} title="Elenco numerato">1.</TbBtn>
-        <TbBtn onClick={()=>run("outdent")} title="Riduci rientro">⇤</TbBtn>
-        <TbBtn onClick={()=>run("indent")} title="Aumenta rientro">⇥</TbBtn>
+        <TbBtn onClick={()=>runB("insertUnorderedList")} title="Elenco puntato">•</TbBtn>
+        <TbBtn onClick={()=>runB("insertOrderedList")} title="Elenco numerato">1.</TbBtn>
+        <TbBtn onClick={()=>runB("outdent")} title="Riduci rientro">⇤</TbBtn>
+        <TbBtn onClick={()=>runB("indent")} title="Aumenta rientro">⇥</TbBtn>
         <Sep/>
-        <TbBtn onClick={()=>run("justifyLeft")} title="Allinea a sinistra"><Ic n="alignLeft" s={16} c={C.navy}/></TbBtn>
-        <TbBtn onClick={()=>run("justifyCenter")} title="Centra"><Ic n="alignCenter" s={16} c={C.navy}/></TbBtn>
-        <TbBtn onClick={()=>run("justifyRight")} title="Allinea a destra"><Ic n="alignRight" s={16} c={C.navy}/></TbBtn>
-        <TbBtn onClick={()=>run("justifyFull")} title="Giustifica"><Ic n="alignJustify" s={16} c={C.navy}/></TbBtn>
+        <TbBtn onClick={()=>runB("justifyLeft")} title="Allinea a sinistra"><Ic n="alignLeft" s={16} c={C.navy}/></TbBtn>
+        <TbBtn onClick={()=>runB("justifyCenter")} title="Centra"><Ic n="alignCenter" s={16} c={C.navy}/></TbBtn>
+        <TbBtn onClick={()=>runB("justifyRight")} title="Allinea a destra"><Ic n="alignRight" s={16} c={C.navy}/></TbBtn>
+        <TbBtn onClick={()=>runB("justifyFull")} title="Giustifica"><Ic n="alignJustify" s={16} c={C.navy}/></TbBtn>
         <Sep/>
         <TbBtn onClick={link} title="Inserisci link"><Ic n="link" s={15} c={C.navy}/></TbBtn>
         <TbBtn onClick={()=>run("unlink")} title="Rimuovi link" wide>Togli link</TbBtn>
         <TbBtn onClick={image} title="Inserisci immagine (URL)"><Ic n="image" s={15} c={C.navy}/></TbBtn>
-        <TbBtn onClick={()=>run("insertHorizontalRule")} title="Linea divisoria">―</TbBtn>
+        <TbBtn onClick={()=>runB("insertHorizontalRule")} title="Linea divisoria">―</TbBtn>
         <Sep/>
         <TbBtn onClick={()=>run("removeFormat")} title="Rimuovi formattazione">⌫</TbBtn>
       </div>
-      <div ref={ref} contentEditable suppressContentEditableWarning onInput={emit} onBlur={emit} className="rich-input" style={{minHeight:220,maxHeight:420,overflowY:"auto",padding:"12px 14px",fontSize:15,lineHeight:1.6,color:C.navy,outline:"none",fontFamily:"Barlow",background:C.cream}}/>
+      <div ref={ref} contentEditable suppressContentEditableWarning
+        onInput={()=>{saveSel();emit();}}
+        onKeyUp={saveSel} onMouseUp={saveSel}
+        onFocus={()=>{ensureBlock();saveSel();}}
+        onBlur={()=>{saveSel();emit();}}
+        className="rich-input" style={{minHeight:220,maxHeight:420,overflowY:"auto",padding:"12px 14px",fontSize:15,lineHeight:1.6,color:C.navy,outline:"none",fontFamily:"Barlow",background:C.cream}}/>
     </div>
   );
 }
