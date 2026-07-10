@@ -100,8 +100,22 @@ async function sb(path) {
 function ogBlock(a) {
   const url = SITE + "/articolo/" + a.id + "/" + slugify(a.title);
   const desc = clip(a.subtitle || a.summary || a.body);
-  const img = a.image || OG_DEFAULT;
+  // og_image (orizzontale 1200×630) ha la precedenza sulla cover verticale
+  const hasOg = !!a.og_image;
+  const img = a.og_image || a.image || OG_DEFAULT;
   const published = isoDate(a.date, a.created_at);
+  const modified = isoDate(a.updated_at) || published;
+
+  // Dimensioni dichiarate solo quando le conosciamo davvero: og_image esce
+  // sempre da make_og.py (1200×630), e og-default.jpg e' anch'essa 1200×630.
+  // Sulla cover caricata a mano non sappiamo la misura: meglio tacere che
+  // mentire, altrimenti lo scraper costruisce un'anteprima sbagliata.
+  const knownSize = hasOg || img === OG_DEFAULT;
+  const imgMeta = knownSize
+    ? `<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:type" content="image/jpeg">`
+    : "";
 
   return `<title>${esc(a.title)} · Iattualità</title>
 <meta name="description" content="${esc(desc)}">
@@ -113,16 +127,46 @@ function ogBlock(a) {
 <meta property="og:description" content="${esc(desc)}">
 <meta property="og:url" content="${esc(url)}">
 <meta property="og:image" content="${esc(img)}">
+<meta property="og:image:secure_url" content="${esc(img)}">
+<meta property="og:image:alt" content="${esc(a.title)}">
+${imgMeta}
 ${published ? `<meta property="article:published_time" content="${esc(published)}">` : ""}
+${modified ? `<meta property="article:modified_time" content="${esc(modified)}">` : ""}
+${a.author_name ? `<meta property="article:author" content="${esc(a.author_name)}">` : ""}
 ${a.category ? `<meta property="article:section" content="${esc(a.category)}">` : ""}
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${esc(a.title)}">
 <meta name="twitter:description" content="${esc(desc)}">
 <meta name="twitter:image" content="${esc(img)}">
-<script type="application/ld+json">${JSON.stringify(newsArticleLd(a, url, img, published, desc)).replace(/</g, "\\u003c")}</script>`;
+<script type="application/ld+json">${ld(newsArticleLd(a, url, img, published, modified, desc))}</script>
+<script type="application/ld+json">${ld(breadcrumbLd(a, url))}</script>`;
 }
 
-function newsArticleLd(a, url, img, published, desc) {
+// JSON-LD serializzato in modo che un "<" nel testo non chiuda lo <script>
+const ld = (obj) => JSON.stringify(obj).replace(/</g, "\\u003c");
+
+function breadcrumbLd(a, url) {
+  const items = [{ "@type": "ListItem", position: 1, name: "Home", item: SITE }];
+  if (a.category)
+    items.push({
+      "@type": "ListItem",
+      position: 2,
+      name: a.category,
+      item: SITE + "/argomento/" + encodeURIComponent(a.category),
+    });
+  items.push({
+    "@type": "ListItem",
+    position: items.length + 1,
+    name: a.title,
+  });
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: items,
+  };
+}
+
+function newsArticleLd(a, url, img, published, modified, desc) {
   return {
     "@context": "https://schema.org",
     "@type": "NewsArticle",
@@ -131,11 +175,13 @@ function newsArticleLd(a, url, img, published, desc) {
     description: desc,
     image: [img],
     datePublished: published || undefined,
-    dateModified: published || undefined,
+    dateModified: modified || published || undefined,
     articleSection: a.category || undefined,
     inLanguage: "it-IT",
     isAccessibleForFree: true,
-    author: { "@type": "Organization", name: "Iattualità", url: SITE },
+    author: a.author_name
+      ? { "@type": "Person", name: a.author_name }
+      : { "@type": "Organization", name: "Iattualità", url: SITE },
     publisher: {
       "@type": "NewsMediaOrganization",
       name: "Iattualità",
@@ -164,6 +210,7 @@ function articleHtml(a) {
 <p style="font-size:12px;color:#7A8499;margin:0 0 10px">
 <a href="/" style="color:#2C5AA0">Iattualità</a>
 ${a.category ? ` · <a href="/argomento/${encodeURIComponent(a.category)}" style="color:#2C5AA0">${esc(a.category)}</a>` : ""}
+${a.author_name ? ` · di <span rel="author">${esc(a.author_name)}</span>` : ""}
 ${a.date ? ` · <time datetime="${esc(String(a.date).slice(0, 10))}">${esc(fmtDateIt(a.date))}</time>` : ""}
 </p>
 <h1 style="font-family:Anton,sans-serif;font-weight:400;font-size:34px;line-height:1.08;color:#16243F;margin:0 0 12px">${esc(a.title)}</h1>
