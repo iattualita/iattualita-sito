@@ -210,8 +210,11 @@ export default async function handler(request, context) {
   const path = decodeURIComponent(url.pathname);
   let html = await res.text();
 
+  // NB: la replace con stringa interpreta $&, $', $` e $1 come pattern.
+  // Il corpo di un articolo puo' contenerli ("costa 5$" seguito da un
+  // apostrofo). Si usa sempre una funzione come sostituto.
   const inject = (markup) =>
-    html.replace('<div id="root"></div>', '<div id="root">' + markup + "</div>");
+    html.replace('<div id="root"></div>', () => '<div id="root">' + markup + "</div>");
 
   // ---- HOME ----
   if (path === "/") {
@@ -248,22 +251,20 @@ export default async function handler(request, context) {
 
   // Articolo inesistente: 404 vero, non un 200 con "Articolo non trovato"
   if (!a) {
+    const nf =
+      "<!--OG_START-->\n<title>Articolo non trovato · Iattualità</title>\n" +
+      '<meta name="robots" content="noindex">\n<!--OG_END-->';
     html = html
-      .replace(
-        /<!--OG_START-->[\s\S]*?<!--OG_END-->/,
-        "<!--OG_START-->\n<title>Articolo non trovato · Iattualità</title>\n<meta name=\"robots\" content=\"noindex\">\n<!--OG_END-->"
-      )
-      .replace(/<meta name="robots" content="index, follow[^"]*">/, "");
+      .replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => nf)
+      .replace(/<meta name="robots" content="index, follow[^"]*">/, () => "");
     return new Response(html, {
       status: 404,
       headers: { "content-type": "text/html; charset=utf-8" },
     });
   }
 
-  html = html.replace(
-    /<!--OG_START-->[\s\S]*?<!--OG_END-->/,
-    "<!--OG_START-->\n" + ogBlock(a) + "\n<!--OG_END-->"
-  );
+  const block = "<!--OG_START-->\n" + ogBlock(a) + "\n<!--OG_END-->";
+  html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => block);
   html = inject(articleHtml(a));
 
   return new Response(html, {
