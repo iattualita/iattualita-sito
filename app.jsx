@@ -55,6 +55,11 @@ function Ic({n,s=18,c="currentColor",fill="none"}){
 function ytId(u){ if(!u)return null; const m=u.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/); return m?m[1]:null; }
 function platform(u){ if(!u)return null; if(/tiktok\.com/.test(u))return"TikTok"; if(/instagram\.com/.test(u))return"Instagram"; if(/facebook\.com|fb\.watch/.test(u))return"Facebook"; if(/youtu/.test(u))return"YouTube"; if(/threads/.test(u))return"Threads"; return"Link"; }
 function fmtDate(d){ if(!d)return""; try{return new Date(d).toLocaleDateString("it-IT",{day:"2-digit",month:"short",year:"numeric"});}catch(e){return d;} }
+// Netlify Image CDN: ridimensiona e converte in WebP al volo. Richiede l'allowlist
+// del dominio Supabase in netlify.toml (blocco [images]). In caso di errore, onImgErr
+// riporta all'URL originale, cosi' il sito non si rompe mai.
+function imgCDN(url,w){ if(!url||!/^https?:\/\//.test(url))return url||""; return "/.netlify/images?url="+encodeURIComponent(url)+"&w="+w+"&q=72&fm=webp"; }
+function onImgErr(e,orig){ const t=e.target; if(t&&!t.dataset.fb){ t.dataset.fb="1"; t.src=orig; } }
 const DEFAULT_INFO = { about:"",email:"",phone:"",tiktok:"",instagram:"",facebook:"",youtube:"",threads:"",logo_url:"",logo_cfg:{scale:1,x:50,y:50} };
 const SOCIALS=[{k:"tiktok",n:"TikTok",col:"#000000",ic:"tk"},{k:"instagram",n:"Instagram",col:"#C13584",ic:"ig"},{k:"facebook",n:"Facebook",col:"#1877F2",ic:"fb"},{k:"youtube",n:"YouTube",col:"#FF0000",ic:"yt"},{k:"threads",n:"Threads",col:"#000000",ic:"th"}];
 const inStyle={width:"100%",boxSizing:"border-box",padding:"10px 12px",border:"1px solid "+C.line,borderRadius:10,fontSize:14.5,fontFamily:"Barlow",color:C.navy,outline:"none",background:C.cream};
@@ -217,7 +222,7 @@ function Card({item,big,admin,onOpen,onPlay,onEdit,onDelete,onCopy}){
   // alt = titolo (ricerca immagini e accessibilita'); la card in evidenza carica
   // subito perche' e' l'LCP, le altre solo quando entrano nello schermo.
   const imgStyle={width:"100%",height:"100%",objectFit:"cover"};
-  const cover=item.image? <img src={item.image} alt={item.title} loading={big?"eager":"lazy"} decoding="async" style={imgStyle}/> : yt? <img src={"https://img.youtube.com/vi/"+yt+"/hqdefault.jpg"} alt={item.title} loading={big?"eager":"lazy"} decoding="async" style={imgStyle}/> : <div style={{width:"100%",height:"100%",background:"linear-gradient(135deg,"+C.navy+","+C.blueDeep+")"}}/>;
+  const cover=item.image? <img src={imgCDN(item.image,big?900:600)} onError={e=>onImgErr(e,item.image)} alt={item.title} loading={big?"eager":"lazy"} fetchpriority={big?"high":"auto"} decoding="async" style={imgStyle}/> : yt? <img src={"https://img.youtube.com/vi/"+yt+"/hqdefault.jpg"} alt={item.title} loading={big?"eager":"lazy"} decoding="async" style={imgStyle}/> : <div style={{width:"100%",height:"100%",background:"linear-gradient(135deg,"+C.navy+","+C.blueDeep+")"}}/>;
   const open=()=>onOpen&&onOpen(item);
   // Google segue solo <a href>. Il titolo diventa un link vero, ma il click
   // resta gestito dal router: preventDefault salvo cmd/ctrl/tasto centrale,
@@ -292,7 +297,7 @@ function ArticlePage({item,news,onOpen,loading,onBack,onCopy,note,onTopic}){
       </div>
       <h1 style={{fontFamily:"Anton",fontSize:"clamp(26px,6vw,40px)",color:C.navy,margin:"0 0 12px",fontWeight:400,lineHeight:1.08,letterSpacing:.2}}>{item.title}</h1>
       {item.subtitle&&<p style={{fontSize:19,color:C.navy,lineHeight:1.4,margin:"0 0 16px",fontWeight:700}}>{item.subtitle}</p>}
-      {(item.image||yt)&&<div style={{borderRadius:16,overflow:"hidden",marginBottom:18,background:C.navy}}>{item.image? <img src={item.image} alt={item.title} decoding="async" style={{width:"100%",display:"block"}}/> : <img src={"https://img.youtube.com/vi/"+yt+"/hqdefault.jpg"} alt={item.title} decoding="async" style={{width:"100%",display:"block"}}/>}</div>}
+      {(item.image||yt)&&<div style={{borderRadius:16,overflow:"hidden",marginBottom:18,background:C.navy}}>{item.image? <img src={imgCDN(item.image,900)} onError={e=>onImgErr(e,item.image)} alt={item.title} fetchpriority="high" decoding="async" style={{width:"100%",display:"block"}}/> : <img src={"https://img.youtube.com/vi/"+yt+"/hqdefault.jpg"} alt={item.title} decoding="async" style={{width:"100%",display:"block"}}/>}</div>}
       {(item.body&&item.body.trim())? <div className="article-body" style={{fontSize:17,color:C.navySoft,lineHeight:1.7}} dangerouslySetInnerHTML={{__html:sanitizeHtml(item.body)}}/> : item.summary? <div style={{fontSize:17,color:C.navySoft,lineHeight:1.7,whiteSpace:"pre-line"}}>{item.summary}</div> : null}
       {item.video&&yt&&<div style={{marginTop:20,aspectRatio:"16/9",background:"#000",borderRadius:14,overflow:"hidden"}}><iframe src={"https://www.youtube.com/embed/"+yt} style={{width:"100%",height:"100%",border:"none"}} allowFullScreen/></div>}
       {item.video&&!yt&&<div style={{marginTop:20}}><a href={item.video} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:8,background:C.blue,color:"#fff",padding:"11px 20px",borderRadius:10,textDecoration:"none",fontWeight:700}}>Guarda il video su {platform(item.video)} <Ic n="ext" s={16} c="#fff"/></a></div>}
@@ -311,7 +316,7 @@ function ArticlePage({item,news,onOpen,loading,onBack,onCopy,note,onTopic}){
           <div style={{display:"grid",gap:12}}>
             {rel.map(n=>(
               <a key={n.id} href={articlePath(n)} onClick={e=>{e.preventDefault(); onOpen&&onOpen(n);}} style={{display:"flex",gap:12,textDecoration:"none",alignItems:"center"}}>
-                {n.image&&<img src={n.image} alt={n.title} loading="lazy" decoding="async" style={{width:92,height:69,objectFit:"cover",borderRadius:10,flexShrink:0,background:C.line}}/>}
+                {n.image&&<img src={imgCDN(n.image,200)} onError={e=>onImgErr(e,n.image)} alt={n.title} loading="lazy" decoding="async" style={{width:92,height:69,objectFit:"cover",borderRadius:10,flexShrink:0,background:C.line}}/>}
                 <div>
                   <div style={{fontSize:11.5,fontWeight:700,color:catColor(n.category),marginBottom:3,letterSpacing:.3}}>{(n.category||"").toUpperCase()}</div>
                   <div style={{fontSize:15.5,fontWeight:700,color:C.navy,lineHeight:1.25}}>{n.title}</div>
