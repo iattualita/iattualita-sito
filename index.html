@@ -199,7 +199,7 @@ function App(){
         </div>
       </header>
 
-      {view==="article" ? <ArticlePage item={article} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : (
+      {view==="article" ? <ArticlePage item={article} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : (
       <main id="top" style={{maxWidth:980,margin:"0 auto",padding:"16px"}}>
         <div style={{display:"flex",alignItems:"center",gap:8,background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"10px 14px",marginBottom:14}}>
           <Ic n="search" s={18} c={C.gray}/>
@@ -207,7 +207,7 @@ function App(){
           {query&&<span onClick={()=>setQuery("")} style={{cursor:"pointer",display:"flex"}}><Ic n="x" s={17} c={C.gray}/></span>}
         </div>
         <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:6,marginBottom:16}}>
-          {["Tutte",...CATEGORIES].map(c=>{ const on=activeCat===c; return <button key={c} onClick={()=>openTopic(c)} style={{whiteSpace:"nowrap",border:"1px solid "+(on?C.navy:C.line),background:on?C.navy:C.card,color:on?"#fff":C.navySoft,borderRadius:999,padding:"7px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>{c}</button>; })}
+          {["Tutte",...CATEGORIES].map(c=>{ const on=activeCat===c; const href=c==="Tutte"?"/":topicPath(c); return <a key={c} href={href} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0) return; e.preventDefault(); openTopic(c); }} style={{whiteSpace:"nowrap",border:"1px solid "+(on?C.navy:C.line),background:on?C.navy:C.card,color:on?"#fff":C.navySoft,borderRadius:999,padding:"7px 14px",fontSize:13,fontWeight:600,cursor:"pointer",textDecoration:"none",fontFamily:"Barlow"}}>{c}</a>; })}
         </div>
         {activeCat!=="Tutte"&&!query&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"10px 14px",marginBottom:16}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}><Pill c={activeCat}/><span style={{fontFamily:"Anton",fontSize:18,color:C.navy}}>{activeCat}</span><span style={{fontSize:13,color:C.gray}}>{filtered.length} {filtered.length===1?"articolo":"articoli"}</span></div>
@@ -266,11 +266,20 @@ function Logo({info,admin,token,onSaveLogo,onHome}){
 }
 
 function Pill({c}){ return <span style={{background:catColor(c),color:"#fff",fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:6,textTransform:"uppercase",letterSpacing:.5}}>{c}</span>; }
+function PillLink({c,onTopic}){ if(!c)return null; return <a href={topicPath(c)} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0) return; e.preventDefault(); onTopic&&onTopic(c); }} style={{textDecoration:"none",display:"inline-flex"}}><Pill c={c}/></a>; }
 
 function Card({item,big,admin,onOpen,onPlay,onEdit,onDelete,onCopy}){
   const yt=ytId(item.video);
-  const cover=item.image? <img src={item.image} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : yt? <img src={"https://img.youtube.com/vi/"+yt+"/hqdefault.jpg"} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <div style={{width:"100%",height:"100%",background:"linear-gradient(135deg,"+C.navy+","+C.blueDeep+")"}}/>;
+  // alt = titolo (ricerca immagini e accessibilita'); la card in evidenza carica
+  // subito perche' e' l'LCP, le altre solo quando entrano nello schermo.
+  const imgStyle={width:"100%",height:"100%",objectFit:"cover"};
+  const cover=item.image? <img src={item.image} alt={item.title} loading={big?"eager":"lazy"} decoding="async" style={imgStyle}/> : yt? <img src={"https://img.youtube.com/vi/"+yt+"/hqdefault.jpg"} alt={item.title} loading={big?"eager":"lazy"} decoding="async" style={imgStyle}/> : <div style={{width:"100%",height:"100%",background:"linear-gradient(135deg,"+C.navy+","+C.blueDeep+")"}}/>;
   const open=()=>onOpen&&onOpen(item);
+  // Google segue solo <a href>. Il titolo diventa un link vero, ma il click
+  // resta gestito dal router: preventDefault salvo cmd/ctrl/tasto centrale,
+  // cosi' "apri in nuova scheda" continua a funzionare.
+  const nav=(e)=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0) return; e.preventDefault(); e.stopPropagation(); open(); };
+  const titleLink=(txt,style)=><a href={articlePath(item)} onClick={nav} style={{...style,textDecoration:"none"}}>{txt}</a>;
   const actions=admin&&(<div style={{display:"flex",gap:6}}>
     <button onClick={e=>{e.stopPropagation();onCopy&&onCopy(item);}} title="Copia link articolo" style={{background:"rgba(255,255,255,.92)",border:"1px solid "+C.line,borderRadius:8,padding:6,cursor:"pointer",display:"flex"}}><Ic n="link" s={14} c={C.navySoft}/></button>
     <button onClick={e=>{e.stopPropagation();onEdit(item);}} style={{background:"rgba(255,255,255,.92)",border:"1px solid "+C.line,borderRadius:8,padding:6,cursor:"pointer",display:"flex"}}><Ic n="edit" s={14} c={C.navySoft}/></button>
@@ -290,7 +299,7 @@ function Card({item,big,admin,onOpen,onPlay,onEdit,onDelete,onCopy}){
         <div style={{position:"absolute",top:12,left:12,display:"flex",gap:8,alignItems:"center"}}><Pill c={item.category}/><span style={{background:C.amber,color:C.navy,fontSize:10.5,fontWeight:800,padding:"3px 8px",borderRadius:6}}>IN EVIDENZA</span></div>
         {admin&&<div style={{position:"absolute",top:12,right:12}}>{actions}</div>}
         {playBtn}
-        <div style={{position:"absolute",bottom:14,left:16,right:16}}><h2 style={{fontFamily:"Anton",color:"#F5F5F5",fontSize:"clamp(20px,5vw,30px)",margin:0,lineHeight:1.05}}>{item.title}</h2></div>
+        <div style={{position:"absolute",bottom:14,left:16,right:16}}><h2 style={{fontFamily:"Anton",fontSize:"clamp(20px,5vw,30px)",margin:0,lineHeight:1.05}}>{titleLink(item.title,{color:"#F5F5F5"})}</h2></div>
       </div>
       <div style={{padding:"14px 16px"}}>{item.subtitle? <p style={{margin:"0 0 10px",fontSize:15,color:C.navySoft,lineHeight:1.45,fontWeight:600}}>{item.subtitle}</p> : item.summary? <p style={{margin:"0 0 10px",fontSize:15,color:C.navySoft,lineHeight:1.45,...clampStyle(2)}}>{item.summary}</p> : null}{meta}</div>
     </div>
@@ -303,7 +312,7 @@ function Card({item,big,admin,onOpen,onPlay,onEdit,onDelete,onCopy}){
         {playBtn}
       </div>
       <div style={{padding:"12px 14px",flex:1,display:"flex",flexDirection:"column"}}>
-        <h3 style={{fontFamily:"Anton",color:C.navy,fontSize:18,margin:"0 0 6px",lineHeight:1.1}}>{item.title}</h3>
+        <h3 style={{fontFamily:"Anton",fontSize:18,margin:"0 0 6px",lineHeight:1.1}}>{titleLink(item.title,{color:C.navy})}</h3>
         {item.subtitle? <p style={{margin:"0 0 10px",fontSize:13.5,color:C.navySoft,lineHeight:1.4,fontWeight:600}}>{item.subtitle}</p> : item.summary? <p style={{margin:"0 0 10px",fontSize:13.5,color:C.navySoft,lineHeight:1.4,...clampStyle(3)}}>{item.summary}</p> : null}
         {meta}
       </div>
@@ -311,7 +320,7 @@ function Card({item,big,admin,onOpen,onPlay,onEdit,onDelete,onCopy}){
   );
 }
 
-function ArticlePage({item,loading,onBack,onCopy,note}){
+function ArticlePage({item,loading,onBack,onCopy,note,onTopic}){
   useEffect(()=>{ if(item){ document.title=item.title+" · IAttualità"; const set=(p,v)=>{ let m=document.querySelector('meta[property="'+p+'"]'); if(!m){ m=document.createElement("meta"); m.setAttribute("property",p); document.head.appendChild(m);} m.setAttribute("content",v||""); }; set("og:title",item.title); set("og:description",item.subtitle||item.summary||""); set("og:type","article"); set("og:url",articleFullUrl(item)); if(item.image)set("og:image",item.image); } return ()=>{ document.title="IAttualità · L'informazione intelligente e in tempo reale"; }; },[item]);
   const backBtn=(<button onClick={onBack} style={{display:"inline-flex",alignItems:"center",gap:6,background:"none",border:"none",color:C.blueDeep,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",marginBottom:12}}>‹ Torna alle news</button>);
   if(!item) return (<main style={{maxWidth:760,margin:"0 auto",padding:"40px 16px",textAlign:"center"}}>{loading? <div style={{color:C.gray}}>Caricamento…</div> : <React.Fragment><div style={{fontFamily:"Anton",fontSize:22,color:C.navy,marginBottom:8}}>Articolo non trovato</div><p style={{color:C.gray,marginBottom:16,fontSize:14.5}}>Il link potrebbe non essere più valido.</p>{backBtn}</React.Fragment>}</main>);
@@ -320,10 +329,15 @@ function ArticlePage({item,loading,onBack,onCopy,note}){
   return (
     <main style={{maxWidth:760,margin:"0 auto",padding:"18px 16px 8px"}}>
       {backBtn}
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10,flexWrap:"wrap"}}><Pill c={item.category}/><span style={{display:"flex",alignItems:"center",gap:5,fontSize:12.5,color:C.gray}}><Ic n="cal" s={13} c={C.gray}/> {fmtDate(item.date)}</span></div>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10,flexWrap:"wrap"}}>
+        <PillLink c={item.category} onTopic={onTopic}/>
+        {item.author_name&&<span style={{fontSize:12.5,color:C.navySoft,fontWeight:600}}>di <span rel="author">{item.author_name}</span></span>}
+        <span style={{display:"flex",alignItems:"center",gap:5,fontSize:12.5,color:C.gray}}><Ic n="cal" s={13} c={C.gray}/> {fmtDate(item.date)}</span>
+        {item.updated_at&&fmtDate(item.updated_at)!==fmtDate(item.date)&&<span style={{fontSize:12,color:C.gray}}>· aggiornato il {fmtDate(item.updated_at)}</span>}
+      </div>
       <h1 style={{fontFamily:"Anton",fontSize:"clamp(26px,6vw,40px)",color:C.navy,margin:"0 0 12px",fontWeight:400,lineHeight:1.08,letterSpacing:.2}}>{item.title}</h1>
       {item.subtitle&&<p style={{fontSize:19,color:C.navy,lineHeight:1.4,margin:"0 0 16px",fontWeight:700}}>{item.subtitle}</p>}
-      {(item.image||yt)&&<div style={{borderRadius:16,overflow:"hidden",marginBottom:18,background:C.navy}}>{item.image? <img src={item.image} style={{width:"100%",display:"block"}}/> : <img src={"https://img.youtube.com/vi/"+yt+"/hqdefault.jpg"} style={{width:"100%",display:"block"}}/>}</div>}
+      {(item.image||yt)&&<div style={{borderRadius:16,overflow:"hidden",marginBottom:18,background:C.navy}}>{item.image? <img src={item.image} alt={item.title} decoding="async" style={{width:"100%",display:"block"}}/> : <img src={"https://img.youtube.com/vi/"+yt+"/hqdefault.jpg"} alt={item.title} decoding="async" style={{width:"100%",display:"block"}}/>}</div>}
       {(item.body&&item.body.trim())? <div className="article-body" style={{fontSize:17,color:C.navySoft,lineHeight:1.7}} dangerouslySetInnerHTML={{__html:sanitizeHtml(item.body)}}/> : item.summary? <div style={{fontSize:17,color:C.navySoft,lineHeight:1.7,whiteSpace:"pre-line"}}>{item.summary}</div> : null}
       {item.video&&yt&&<div style={{marginTop:20,aspectRatio:"16/9",background:"#000",borderRadius:14,overflow:"hidden"}}><iframe src={"https://www.youtube.com/embed/"+yt} style={{width:"100%",height:"100%",border:"none"}} allowFullScreen/></div>}
       {item.video&&!yt&&<div style={{marginTop:20}}><a href={item.video} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:8,background:C.blue,color:"#fff",padding:"11px 20px",borderRadius:10,textDecoration:"none",fontWeight:700}}>Guarda il video su {platform(item.video)} <Ic n="ext" s={16} c="#fff"/></a></div>}
@@ -457,11 +471,21 @@ function RichEditor({value,onChange}){
 }
 
 function NewsForm({initial,token,onClose,onSave}){
-  const [f,setF]=useState(()=> initial ? {...initial, body: initial.body || plainToHtml(initial.summary||"")} : {title:"",subtitle:"",category:"Attualità",summary:"",body:"",date:new Date().toISOString().slice(0,10),link:"",video:"",image:"",featured:false});
+  const [f,setF]=useState(()=> initial ? {...initial, body: initial.body || plainToHtml(initial.summary||"")} : {title:"",subtitle:"",category:"Attualità",author_name:"Lorenzo",summary:"",body:"",date:new Date().toISOString().slice(0,10),link:"",video:"",image:"",og_image:"",featured:false});
   const [busy,setBusy]=useState(false);
+  const [busyOg,setBusyOg]=useState(false);
   const set=(k,v)=>setF(s=>({...s,[k]:v}));
   const valid=(f.title||"").trim().length>0;
-  const upImg=async(e)=>{ const file=e.target.files&&e.target.files[0]; if(!file)return; setBusy(true); try{ const url=await apiUpload(token,file,"covers"); set("image",url); }catch(err){ alert("Upload non riuscito:\n\n"+(err.message||err)); } setBusy(false); };
+  const upImg=async(e)=>{ const file=e.target.files&&e.target.files[0]; if(!file)return; if(!checkImg(file))return; setBusy(true); try{ const url=await apiUpload(token,file,"covers"); set("image",url); }catch(err){ alert("Upload non riuscito:\n\n"+(err.message||err)); } setBusy(false); };
+  const upOg=async(e)=>{ const file=e.target.files&&e.target.files[0]; if(!file)return; if(!checkImg(file))return; setBusyOg(true); try{ const url=await apiUpload(token,file,"covers"); set("og_image",url); }catch(err){ alert("Upload non riuscito:\n\n"+(err.message||err)); } setBusyOg(false); };
+  // Facebook rifiuta og:image sopra gli 8 MB, e una cover pesante affossa
+  // anche il caricamento della home. Meglio fermarsi qui che scoprirlo dopo.
+  const checkImg=(file)=>{
+    const mb=file.size/1048576;
+    if(mb>7){ alert("Immagine troppo pesante: "+mb.toFixed(1)+" MB.\n\nFacebook rifiuta le anteprime sopra gli 8 MB e la home diventa lentissima.\nEsportala in JPEG (non PNG): dovrebbe scendere sotto 1 MB."); return false; }
+    if(mb>2 && !confirm("L'immagine pesa "+mb.toFixed(1)+" MB. Caricarla comunque?\n\nSotto 1 MB il sito va molto piu' veloce.")) return false;
+    return true;
+  };
   return (<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(14,17,23,.55)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
     <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:560,background:C.card,borderRadius:"18px 18px 0 0",maxHeight:"92vh",overflowY:"auto"}}>
       <div style={{position:"sticky",top:0,background:C.card,padding:"16px 18px",borderBottom:"1px solid "+C.line,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>{initial?"Modifica news":"Nuova news"}</strong><button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
@@ -471,6 +495,9 @@ function NewsForm({initial,token,onClose,onSave}){
         <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
           <div style={{flex:"1 1 140px"}}><label style={labStyle}>Categoria</label><select style={inStyle} value={f.category} onChange={e=>set("category",e.target.value)}>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
           <div style={{flex:"1 1 140px"}}><label style={labStyle}>Data</label><input type="date" style={inStyle} value={f.date||""} onChange={e=>set("date",e.target.value)}/></div>
+        </div>
+        <div><label style={labStyle}>Firma</label><input style={inStyle} value={f.author_name||""} onChange={e=>set("author_name",e.target.value)} placeholder="Lorenzo"/>
+          <div style={{fontSize:12,color:C.gray,marginTop:5}}>Compare sotto il titolo e nei dati strutturati. Una firma visibile è uno dei segnali di affidabilità più forti per Google.</div>
         </div>
         <div><label style={labStyle}>Testo dell'articolo</label>
           <RichEditor value={f.body||""} onChange={html=>{ set("body",html); set("summary",htmlToText(html)); }}/>
@@ -483,7 +510,16 @@ function NewsForm({initial,token,onClose,onSave}){
             <input style={{...inStyle,flex:1}} value={f.image||""} onChange={e=>set("image",e.target.value)} placeholder="URL immagine, oppure carica →"/>
             <label style={{display:"flex",alignItems:"center",gap:6,background:C.navy,color:"#fff",borderRadius:10,padding:"0 14px",fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>{busy?"…":"Carica"}<input type="file" accept="image/*" onChange={upImg} style={{display:"none"}}/></label>
           </div>
-          {f.image&&<img src={f.image} style={{marginTop:8,width:"100%",maxHeight:150,objectFit:"cover",borderRadius:10}}/>}
+          {f.image&&<img src={f.image} alt="Anteprima della copertina" style={{marginTop:8,width:"100%",maxHeight:150,objectFit:"cover",borderRadius:10}}/>}
+          <div style={{fontSize:12,color:C.gray,marginTop:5}}>JPEG orizzontale, sotto 1 MB. I PNG di CapCut pesano troppo: convertili prima.</div>
+        </div>
+        <div><label style={labStyle}>Copertina social (opzionale)</label>
+          <div style={{display:"flex",gap:8}}>
+            <input style={{...inStyle,flex:1}} value={f.og_image||""} onChange={e=>set("og_image",e.target.value)} placeholder="Lascia vuoto per usare la copertina qui sopra"/>
+            <label style={{display:"flex",alignItems:"center",gap:6,background:C.navySoft,color:"#fff",borderRadius:10,padding:"0 14px",fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>{busyOg?"…":"Carica"}<input type="file" accept="image/*" onChange={upOg} style={{display:"none"}}/></label>
+          </div>
+          {f.og_image&&<img src={f.og_image} alt="Anteprima della copertina social" style={{marginTop:8,width:"100%",maxHeight:150,objectFit:"cover",borderRadius:10}}/>}
+          <div style={{fontSize:12,color:C.gray,marginTop:5}}>Solo se vuoi un'immagine diversa per WhatsApp, Facebook e X. Formato 1200×630.</div>
         </div>
         <label style={{display:"flex",alignItems:"center",gap:9,cursor:"pointer",padding:"4px 0"}}><input type="checkbox" checked={!!f.featured} onChange={e=>set("featured",e.target.checked)} style={{width:18,height:18,accentColor:C.blue}}/><span style={{fontSize:14,color:C.navy,fontWeight:600}}>Metti in evidenza in home</span></label>
         <button disabled={!valid} onClick={()=>onSave(f)} style={{background:valid?C.blue:C.line,color:"#fff",border:"none",borderRadius:12,padding:13,fontWeight:700,fontSize:16,cursor:valid?"pointer":"not-allowed",marginTop:4}}>{initial?"Salva modifiche":"Pubblica"}</button>
@@ -573,7 +609,7 @@ function SiteFooter({info,admin,onEdit}){
           </div> : <p style={{color:"rgba(255,255,255,.6)",fontSize:14,margin:0}}>{admin?"Aggiungi email e telefono dal pulsante qui sopra.":"Scrivici per segnalazioni e collaborazioni."}</p>}
         </div>
       </div>
-      <div style={{borderTop:"1px solid rgba(255,255,255,.12)",marginTop:26,paddingTop:16,textAlign:"center",color:"rgba(255,255,255,.55)",fontSize:12.5}}>IAttualità · L'informazione intelligente e in tempo reale · versione 8</div>
+      <div style={{borderTop:"1px solid rgba(255,255,255,.12)",marginTop:26,paddingTop:16,textAlign:"center",color:"rgba(255,255,255,.55)",fontSize:12.5}}>IAttualità · L'informazione intelligente e in tempo reale · versione 9</div>
     </div>
   </footer>);
 }
