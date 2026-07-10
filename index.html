@@ -29,13 +29,14 @@
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="alternate" type="application/rss+xml" title="Iattualità" href="/rss.xml">
 
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"NewsMediaOrganization","name":"Iattualità","url":"https://iattualita.it","logo":"https://iattualita.it/favicon-192.png","slogan":"L'informazione intelligente e in tempo reale"}
 </script>
 
 <!-- ANALYTICS COOKIELESS: crea il sito su cloud.umami.is e incolla il tuo website-id qui sotto -->
-<script defer src="https://cloud.umami.is/script.js" data-website-id="INSERISCI-QUI-WEBSITE-ID"></script>
+<script defer src="https://cloud.umami.is/script.js" data-website-id="317c8da7-06c1-403c-a366-80d157518bee"></script>
 </head>
 <body>
 
@@ -199,7 +200,7 @@ function App(){
         </div>
       </header>
 
-      {view==="article" ? <ArticlePage item={article} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : (
+      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : (
       <main id="top" style={{maxWidth:980,margin:"0 auto",padding:"16px"}}>
         <div style={{display:"flex",alignItems:"center",gap:8,background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"10px 14px",marginBottom:14}}>
           <Ic n="search" s={18} c={C.gray}/>
@@ -320,8 +321,19 @@ function Card({item,big,admin,onOpen,onPlay,onEdit,onDelete,onCopy}){
   );
 }
 
-function ArticlePage({item,loading,onBack,onCopy,note,onTopic}){
-  useEffect(()=>{ if(item){ document.title=item.title+" · IAttualità"; const set=(p,v)=>{ let m=document.querySelector('meta[property="'+p+'"]'); if(!m){ m=document.createElement("meta"); m.setAttribute("property",p); document.head.appendChild(m);} m.setAttribute("content",v||""); }; set("og:title",item.title); set("og:description",item.subtitle||item.summary||""); set("og:type","article"); set("og:url",articleFullUrl(item)); if(item.image)set("og:image",item.image); } return ()=>{ document.title="IAttualità · L'informazione intelligente e in tempo reale"; }; },[item]);
+function ArticlePage({item,news,onOpen,loading,onBack,onCopy,note,onTopic}){
+  useEffect(()=>{ if(item){
+    document.title=item.title+" · Iattualità";
+    const setP=(p,v)=>{ let m=document.querySelector('meta[property="'+p+'"]'); if(!m){ m=document.createElement("meta"); m.setAttribute("property",p); document.head.appendChild(m);} m.setAttribute("content",v||""); };
+    const setN=(n,v)=>{ let m=document.querySelector('meta[name="'+n+'"]'); if(!m){ m=document.createElement("meta"); m.setAttribute("name",n); document.head.appendChild(m);} m.setAttribute("content",v||""); };
+    const desc=(item.subtitle||item.summary||"").toString().slice(0,300);
+    setP("og:title",item.title); setP("og:description",desc); setP("og:type","article"); setP("og:url",articleFullUrl(item)); if(item.image)setP("og:image",item.image);
+    setN("description",desc);
+    const iso=(d)=>{ try{ return d?new Date(d).toISOString():undefined; }catch(e){ return undefined; } };
+    const ld={ "@context":"https://schema.org","@type":"NewsArticle","headline":(item.title||"").slice(0,110),"description":desc,"datePublished":iso(item.date||item.created_at),"dateModified":iso(item.updated_at||item.date||item.created_at),"author":item.author_name?{"@type":"Person","name":item.author_name}:{"@type":"Organization","name":"Iattualità"},"publisher":{"@type":"Organization","name":"Iattualità","logo":{"@type":"ImageObject","url":"https://iattualita.it/favicon-192.png"}},"mainEntityOfPage":{"@type":"WebPage","@id":articleFullUrl(item)},"articleSection":item.category };
+    if(item.image)ld.image=[item.image];
+    let s=document.getElementById("ld-article"); if(!s){ s=document.createElement("script"); s.type="application/ld+json"; s.id="ld-article"; document.head.appendChild(s); } s.textContent=JSON.stringify(ld);
+  } return ()=>{ document.title="Iattualità · L'informazione intelligente e in tempo reale"; const s=document.getElementById("ld-article"); if(s)s.remove(); }; },[item]);
   const backBtn=(<button onClick={onBack} style={{display:"inline-flex",alignItems:"center",gap:6,background:"none",border:"none",color:C.blueDeep,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",marginBottom:12}}>‹ Torna alle news</button>);
   if(!item) return (<main style={{maxWidth:760,margin:"0 auto",padding:"40px 16px",textAlign:"center"}}>{loading? <div style={{color:C.gray}}>Caricamento…</div> : <React.Fragment><div style={{fontFamily:"Anton",fontSize:22,color:C.navy,marginBottom:8}}>Articolo non trovato</div><p style={{color:C.gray,marginBottom:16,fontSize:14.5}}>Il link potrebbe non essere più valido.</p>{backBtn}</React.Fragment>}</main>);
   const yt=ytId(item.video);
@@ -350,6 +362,22 @@ function ArticlePage({item,loading,onBack,onCopy,note,onTopic}){
           <button onClick={share} style={{background:C.card,color:C.navy,border:"1px solid "+C.line,borderRadius:10,padding:"10px 14px",fontWeight:700,fontSize:13.5,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6,fontFamily:"Barlow"}}><Ic n="link" s={15} c={C.navy}/> Condividi</button>
         </div>
       </div>
+      {Array.isArray(news)&&(()=>{ const rel=news.filter(n=>n.category===item.category&&String(n.id)!==String(item.id)).slice(0,4); if(!rel.length)return null; return (
+        <div style={{marginTop:30,paddingTop:20,borderTop:"1px solid "+C.line}}>
+          <div style={{fontFamily:"Anton",fontSize:21,color:C.navy,marginBottom:14,fontWeight:400,letterSpacing:.2}}>Continua a leggere</div>
+          <div style={{display:"grid",gap:12}}>
+            {rel.map(n=>(
+              <a key={n.id} href={articlePath(n)} onClick={e=>{e.preventDefault(); onOpen&&onOpen(n);}} style={{display:"flex",gap:12,textDecoration:"none",alignItems:"center"}}>
+                {n.image&&<img src={n.image} alt={n.title} loading="lazy" decoding="async" style={{width:92,height:69,objectFit:"cover",borderRadius:10,flexShrink:0,background:C.line}}/>}
+                <div>
+                  <div style={{fontSize:11.5,fontWeight:700,color:catColor(n.category),marginBottom:3,letterSpacing:.3}}>{(n.category||"").toUpperCase()}</div>
+                  <div style={{fontSize:15.5,fontWeight:700,color:C.navy,lineHeight:1.25}}>{n.title}</div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      );})()}
       <div style={{marginTop:24}}><button onClick={onBack} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.cream,border:"1px solid "+C.line,color:C.navy,fontSize:14,fontWeight:700,cursor:"pointer",padding:"10px 16px",borderRadius:10}}>‹ Torna alle news</button></div>
     </main>
   );
