@@ -102,7 +102,6 @@ function App(){
   const admin=!!token;
   const note=(m)=>{ setToast(m); setTimeout(()=>setToast(""),3000); };
 
-  useEffect(()=>{ const l=document.createElement("link"); l.rel="stylesheet"; l.href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:wght@400;500;600;700&display=swap"; document.head.appendChild(l); },[]);
   useEffect(()=>{ (async()=>{ const [n,i]=await Promise.all([apiGetNews(),apiGetInfo()]); setNews(n); if(i)setInfo({...DEFAULT_INFO,...i,logo_cfg:i.logo_cfg||DEFAULT_INFO.logo_cfg}); setLoading(false); })(); },[]);
 
   const reloadNews=async()=>setNews(await apiGetNews());
