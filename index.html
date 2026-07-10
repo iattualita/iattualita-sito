@@ -61,9 +61,9 @@ const SUPABASE_URL = "https://wzkshpgakvasqwrrgkgd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_I3s4phA5Be9qnV4pLbWQMQ_8-IGUE-b";
 const API = SUPABASE_URL + "/rest/v1";
 
-const C = { cream:"#F4F2EC", card:"#FFFFFF", navy:"#16243F", navySoft:"#2A3A57", blue:"#1B9CD9", blueDeep:"#2C5AA0", amber:"#E8A33D", red:"#E2231A", line:"#E3DFD6", gray:"#7A8499" };
-const CATEGORIES = ["Economia","Cronaca","Geopolitica","Attualità","Salute","Ambiente","Tecnologia"];
-const catColor = (c)=>({Economia:C.blueDeep,Cronaca:C.red,Geopolitica:C.navy,Salute:"#159A8C",Ambiente:"#2E8B57",Tecnologia:C.blue})[c]||C.amber;
+const C = { cream:"#F4F2EC", card:"#FFFFFF", navy:"#16243F", navySoft:"#2A3A57", blue:"#1B9CD9", blueDeep:"#2C5AA0", amber:"#E8A33D", red:"#E2231A", line:"#E3DFD6", gray:"#7A8499", sport:"#D2691E" };
+const CATEGORIES = ["Economia","Cronaca","Geopolitica","Attualità","Salute","Ambiente","Tecnologia","Sport"];
+const catColor = (c)=>({Economia:C.blueDeep,Cronaca:C.red,Geopolitica:C.navy,Salute:"#159A8C",Ambiente:"#2E8B57",Tecnologia:C.blue,Sport:C.sport})[c]||C.amber;
 
 function hdr(token,json){ const h={apikey:SUPABASE_KEY}; if(token)h.Authorization="Bearer "+token; if(json)h["Content-Type"]="application/json"; return h; }
 async function apiGetNews(){ try{ const r=await fetch(API+"/news?select=*&order=date.desc.nullslast,created_at.desc",{headers:hdr()}); return r.ok?await r.json():[]; }catch(e){ return []; } }
@@ -191,6 +191,7 @@ function App(){
           <button onClick={()=>setMenuOpen(o=>!o)} title="Menu" style={{display:"flex",alignItems:"center",justifyContent:"center",background:C.cream,color:C.navy,border:"1px solid "+C.line,borderRadius:10,width:40,height:40,cursor:"pointer",flexShrink:0}}><Ic n={menuOpen?"x":"menu"} s={19} c={C.navy}/></button>
           {menuOpen&&<nav style={{flexBasis:"100%",display:"flex",flexDirection:"column",gap:2,paddingTop:6,marginTop:6,borderTop:"1px solid "+C.line}}>
             <button onClick={()=>go("home","top")} style={menuItem}>News</button>
+            <button onClick={()=>openTopic("Sport")} style={menuItem}>Sport</button>
             <button onClick={()=>go("home","chisiamo")} style={menuItem}>Chi siamo</button>
             <button onClick={()=>go("social")} style={menuItem}>Social</button>
             <button onClick={()=>go("contatti")} style={menuItem}>Contatti</button>
@@ -572,7 +573,7 @@ function SiteFooter({info,admin,onEdit}){
           </div> : <p style={{color:"rgba(255,255,255,.6)",fontSize:14,margin:0}}>{admin?"Aggiungi email e telefono dal pulsante qui sopra.":"Scrivici per segnalazioni e collaborazioni."}</p>}
         </div>
       </div>
-      <div style={{borderTop:"1px solid rgba(255,255,255,.12)",marginTop:26,paddingTop:16,textAlign:"center",color:"rgba(255,255,255,.55)",fontSize:12.5}}>IAttualità · L'informazione intelligente e in tempo reale · versione 7</div>
+      <div style={{borderTop:"1px solid rgba(255,255,255,.12)",marginTop:26,paddingTop:16,textAlign:"center",color:"rgba(255,255,255,.55)",fontSize:12.5}}>IAttualità · L'informazione intelligente e in tempo reale · versione 8</div>
     </div>
   </footer>);
 }
