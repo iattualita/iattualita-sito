@@ -71,7 +71,7 @@ function articlePath(item){ return "/articolo/"+item.id+"/"+slugify(item.title);
 function articleFullUrl(item){ return window.location.origin+articlePath(item); }
 function topicPath(cat){ return "/argomento/"+encodeURIComponent(cat); }
 function topicFullUrl(cat){ return window.location.origin+topicPath(cat); }
-function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } return {name:"home"}; }
+function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } const seg=p.replace(/^\/+|\/+$/g,""); if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
 function copyToClipboard(url,onOk,onFail){ (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(onOk).catch(()=>{ try{ window.prompt("Copia il link:",url); }catch(e){} if(onFail)onFail(); }); }
 
 // ====== TESTO FORMATTATO (rich text) ======
@@ -114,10 +114,11 @@ function App(){
 
   const go=(v,anchor)=>{ setMenuOpen(false); if(window.location.pathname!=="/"){ history.pushState(null,"","/"+(window.location.search||"")); } setArticleId(null); if(v==="home")setActiveCat("Tutte"); setView(v); if(v==="home"&&anchor){ setTimeout(()=>{const el=document.getElementById(anchor); if(el)el.scrollIntoView({behavior:"smooth"});},40);} else { window.scrollTo(0,0);} };
   const openArticle=(item)=>{ history.pushState(null,"",articlePath(item)); setArticleId(item.id); setView("article"); window.scrollTo(0,0); };
+  const openPage=(slug)=>{ setMenuOpen(false); history.pushState(null,"","/"+slug); setArticleId(null); setView(slug); window.scrollTo(0,0); };
   const openTopic=(cat)=>{ setMenuOpen(false); if(cat==="Tutte"){ if(window.location.pathname!=="/"){ history.pushState(null,"","/"+(window.location.search||"")); } setActiveCat("Tutte"); } else { history.pushState(null,"",topicPath(cat)); setActiveCat(cat); } setArticleId(null); setView("home"); window.scrollTo(0,0); };
   const copyArticleLink=(item)=>copyToClipboard(articleFullUrl(item),()=>note("Link articolo copiato negli appunti."));
   const copyTopicLink=(cat)=>copyToClipboard(topicFullUrl(cat),()=>note("Link argomento copiato negli appunti."));
-  useEffect(()=>{ if(window.location.hash && /^#\/(articolo|argomento)\//.test(window.location.hash)){ try{ history.replaceState(null,"",window.location.hash.slice(1)); }catch(e){} } const apply=()=>{ const r=parsePath(); if(r.name==="article"){ setArticleId(r.id); setView("article"); } else if(r.name==="topic"){ setArticleId(null); setActiveCat(r.cat); setView(v=>(v==="article")?"home":v); } else { setArticleId(null); setActiveCat("Tutte"); setView(v=>(v==="article")?"home":v); } }; apply(); window.addEventListener("popstate",apply); return ()=>window.removeEventListener("popstate",apply); },[]);
+  useEffect(()=>{ if(window.location.hash && /^#\/(articolo|argomento)\//.test(window.location.hash)){ try{ history.replaceState(null,"",window.location.hash.slice(1)); }catch(e){} } const apply=()=>{ const r=parsePath(); if(r.name==="article"){ setArticleId(r.id); setView("article"); } else if(r.name==="topic"){ setArticleId(null); setActiveCat(r.cat); setView(v=>(v==="article")?"home":v); } else if(r.name==="page"){ setArticleId(null); setView(r.page); } else { setArticleId(null); setActiveCat("Tutte"); setView(v=>(v==="article")?"home":v); } }; apply(); window.addEventListener("popstate",apply); return ()=>window.removeEventListener("popstate",apply); },[]);
 
   const filtered=news
     .filter(n=>activeCat==="Tutte"||n.category===activeCat)
@@ -140,14 +141,14 @@ function App(){
           {menuOpen&&<nav style={{flexBasis:"100%",display:"flex",flexDirection:"column",gap:2,paddingTop:6,marginTop:6,borderTop:"1px solid "+C.line}}>
             <button onClick={()=>go("home","top")} style={menuItem}>News</button>
             <button onClick={()=>openTopic("Sport")} style={menuItem}>Sport</button>
-            <button onClick={()=>go("home","chisiamo")} style={menuItem}>Chi siamo</button>
+            <button onClick={()=>openPage("chi-siamo")} style={menuItem}>Chi siamo</button>
             <button onClick={()=>go("social")} style={menuItem}>Social</button>
             <button onClick={()=>go("contatti")} style={menuItem}>Contatti</button>
           </nav>}
         </div>
       </header>
 
-      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : (
+      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
       <main id="top" style={{maxWidth:980,margin:"0 auto",padding:"16px"}}>
         <div style={{display:"flex",alignItems:"center",gap:8,background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"10px 14px",marginBottom:14}}>
           <Ic n="search" s={18} c={C.gray}/>
@@ -172,7 +173,7 @@ function App(){
       </main>
       )}
 
-      <SiteFooter info={info} admin={admin} onEdit={()=>setShowInfo(true)}/>
+      <SiteFooter info={info} admin={admin} onEdit={()=>setShowInfo(true)} onPage={openPage}/>
 
       {showForm&&admin&&<NewsForm initial={editing} token={token} onClose={()=>{setShowForm(false);setEditing(null);}} onSave={saveItem}/>}
       {showInfo&&admin&&<InfoModal initial={info} onClose={()=>setShowInfo(false)} onSave={saveInfo}/>}
@@ -560,7 +561,76 @@ function ContactPage({info}){
   );
 }
 
-function SiteFooter({info,admin,onEdit}){
+const STATIC_PAGES={
+  "chi-siamo":{ title:"Chi siamo · Iattualità", desc:"Iattualità è un progetto di informazione indipendente: attualità, geopolitica, inchieste ed economia verificate con i dati, senza appartenenze politiche.", h1:"Chi siamo",
+    intro:"Iattualità è un progetto di informazione indipendente. Raccontiamo attualità, geopolitica, inchieste ed economia con un metodo semplice: verificare con i dati e lasciare il giudizio a chi legge.",
+    blocks:[
+      {h:"La nostra missione",p:["Viviamo in un'epoca di informazione veloce e spesso urlata. Noi proviamo a fare il contrario: controllare prima di pubblicare, distinguere i fatti dalle opinioni e restare fuori dagli schieramenti. Mostriamo ciò che è documentato; le conclusioni le trai tu."]},
+      {h:"Chi c'è dietro",p:["La direzione e la responsabilità editoriale di Iattualità sono di Lorenzo, che coordina le scelte editoriali, la verifica delle fonti e la produzione dei contenuti. Dietro ogni pubblicazione c'è una persona reale che se ne assume la responsabilità."]},
+      {h:"Come lavoriamo",p:["Seguiamo regole precise su verifica, imparzialità e rispetto delle persone: le trovi nella pagina Standard editoriali. Quando commettiamo un errore lo correggiamo in modo trasparente, come spiegato nella pagina Rettifiche."]},
+      {h:"Il presentatore in IA",p:["Il volto e la voce dei nostri video sono generati con strumenti di intelligenza artificiale, ma le decisioni editoriali restano umane. Lo raccontiamo per intero nella pagina Trasparenza sull'IA: l'IA è il volto, non il cervello."]}
+    ]
+  },
+  "standard-editoriali":{ title:"Standard editoriali · Iattualità", desc:"Le regole che Iattualità segue prima di pubblicare: verifica con i dati, separazione tra fatti e opinioni, presunzione di innocenza, imparzialità.", h1:"Standard editoriali",
+    intro:"Le regole che seguiamo prima di pubblicare qualsiasi cosa. Sono ciò che rende l'informazione di Iattualità verificata e senza appartenenze.",
+    blocks:[
+      {h:"Verifica con i dati",p:["Nessun contenuto esce senza un controllo delle fonti. Diamo la precedenza a fonti primarie e ufficiali e, quando possibile, incrociamo più fonti indipendenti."]},
+      {h:"Fatti e opinioni separati",p:["Distinguiamo ciò che è documentato da ciò che è interpretazione. Sulle notizie non ancora confermate usiamo il condizionale — secondo, avrebbe, si ipotizza — e lo segnaliamo chiaramente."]},
+      {h:"Presunzione di innocenza",p:["Sulle vicende giudiziarie vale la presunzione di innocenza: indagato non significa colpevole. Non presentiamo come responsabili persone che sono soltanto indagate o imputate, e non le indichiamo come colpevoli nelle immagini di copertina."]},
+      {h:"Indipendenza e imparzialità",p:["Non abbiamo appartenenze politiche. Sui temi divisivi presentiamo le posizioni in campo senza sposarne nessuna: il nostro compito è dare gli elementi, non dire da che parte stare."]},
+      {h:"Rispetto delle persone",p:["Massima cautela quando ci sono vittime, minori o situazioni personali delicate. In questi casi rinunciamo a toni sensazionalistici e a qualsiasi dettaglio non necessario."]},
+      {h:"Fonti e citazioni",p:["Attribuiamo le informazioni alle loro fonti e riportiamo solo dichiarazioni verificate quando citiamo persone pubbliche."]}
+    ]
+  },
+  "rettifiche":{ title:"Rettifiche e correzioni · Iattualità", desc:"Come Iattualità corregge gli errori in modo trasparente e come segnalarne uno.", h1:"Rettifiche e correzioni",
+    intro:"Sbagliare è possibile; lasciare un errore online, no. Quando un contenuto contiene un'imprecisione, la correggiamo in modo trasparente.",
+    blocks:[
+      {h:"Come segnalare un errore",p:["Se noti un dato sbagliato o impreciso, scrivici indicando il contenuto e, se possibile, la fonte corretta. Valutiamo ogni segnalazione con attenzione."]},
+      {h:"Come correggiamo",p:["Se la segnalazione è fondata aggiorniamo il contenuto e, quando l'errore è sostanziale, lo indichiamo apertamente invece di modificare in silenzio. Se un video già pubblicato contiene un'imprecisione, aggiungiamo una nota di rettifica nei commenti o nella descrizione."]},
+      {h:"Tempi",p:["Interveniamo il prima possibile dopo aver verificato la segnalazione."]}
+    ]
+  },
+  "trasparenza-ia":{ title:"Trasparenza sull'IA · Iattualità", desc:"Iattualità usa un avatar e una voce generati con l'intelligenza artificiale, ma le decisioni editoriali restano umane. L'IA è il volto, non il cervello.", h1:"Trasparenza sull'intelligenza artificiale",
+    intro:"Usiamo l'intelligenza artificiale come strumento di produzione. Le decisioni, però, restano umane. Come diciamo noi: l'IA è il volto, non il cervello.",
+    blocks:[
+      {h:"Cosa fa l'IA",p:["Il presentatore che vedi nei nostri video è un avatar generato con strumenti di IA, con voce sintetizzata. Serve a dare un volto e una voce riconoscibili ai contenuti."]},
+      {h:"Cosa resta umano",p:["La scelta delle notizie, la verifica dei fatti, la scrittura dei testi e la responsabilità editoriale sono di Lorenzo, direttore di Iattualità. Nessun contenuto viene pubblicato senza un controllo umano."]},
+      {h:"Perché lo diciamo",p:["Crediamo che chi ci segue abbia diritto di sapere come è fatto ciò che guarda. La tecnologia cambia la forma, non il patto con il pubblico: informazione verificata con i dati e senza appartenenze."]}
+    ]
+  }
+};
+
+function StaticPage({page,info,onPage}){
+  const d=STATIC_PAGES[page];
+  useEffect(()=>{ if(!d)return;
+    document.title=d.title;
+    const setN=(n,v)=>{ let m=document.querySelector('meta[name="'+n+'"]'); if(!m){ m=document.createElement("meta"); m.setAttribute("name",n); document.head.appendChild(m);} m.setAttribute("content",v||""); };
+    setN("description",d.desc);
+    const c=document.querySelector('link[rel="canonical"]'); if(c)c.setAttribute("href","https://iattualita.it/"+page);
+    return ()=>{ document.title="Iattualità · L'informazione intelligente e in tempo reale"; const cc=document.querySelector('link[rel="canonical"]'); if(cc)cc.setAttribute("href","https://iattualita.it/"); };
+  },[page]);
+  if(!d)return null;
+  return (
+    <main style={{maxWidth:760,margin:"0 auto",padding:"24px 16px 8px"}}>
+      <h1 style={{fontFamily:"Anton",fontSize:"clamp(26px,6vw,38px)",color:C.navy,margin:"0 0 8px",fontWeight:400,letterSpacing:.3}}>{d.h1}</h1>
+      <p style={{color:C.navySoft,fontSize:15.5,lineHeight:1.55,marginTop:0}}>{d.intro}</p>
+      {d.blocks.map((b,i)=>(
+        <section key={i} style={{marginTop:22}}>
+          {b.h&&<h2 style={{fontFamily:"Anton",fontSize:20,color:C.navy,fontWeight:400,letterSpacing:.2,margin:"0 0 8px"}}>{b.h}</h2>}
+          {b.p.map((t,j)=><p key={j} style={{color:C.navySoft,fontSize:15.5,lineHeight:1.65,margin:"0 0 10px"}}>{t}</p>)}
+        </section>
+      ))}
+      {info&&info.email&&<p style={{marginTop:24,fontSize:15,color:C.navy}}>Contattaci: <a href={"mailto:"+info.email} style={{color:C.blueDeep,fontWeight:600,textDecoration:"none"}}>{info.email}</a></p>}
+      <div style={{marginTop:26,paddingTop:18,borderTop:"1px solid "+C.line,display:"flex",flexWrap:"wrap",gap:10}}>
+        {Object.keys(STATIC_PAGES).filter(k=>k!==page).map(k=>(
+          <a key={k} href={"/"+k} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage(k); }} style={{fontSize:13.5,fontWeight:600,color:C.navy,textDecoration:"none",background:C.card,border:"1px solid "+C.line,borderRadius:999,padding:"7px 14px"}}>{STATIC_PAGES[k].h1}</a>
+        ))}
+      </div>
+    </main>
+  );
+}
+
+function SiteFooter({info,admin,onEdit,onPage}){
   const hasSocial=SOCIALS.some(s=>info[s.k]);
   const hasContact=info.email||info.phone;
   return (<footer style={{background:C.navy,color:"#fff",marginTop:28}}>
@@ -584,7 +654,12 @@ function SiteFooter({info,admin,onEdit}){
           </div> : <p style={{color:"rgba(255,255,255,.6)",fontSize:14,margin:0}}>{admin?"Aggiungi email e telefono dal pulsante qui sopra.":"Scrivici per segnalazioni e collaborazioni."}</p>}
         </div>
       </div>
-      <div style={{borderTop:"1px solid rgba(255,255,255,.12)",marginTop:26,paddingTop:16,textAlign:"center",color:"rgba(255,255,255,.55)",fontSize:12.5}}>IAttualità · L'informazione intelligente e in tempo reale · versione 9</div>
+      <div style={{borderTop:"1px solid rgba(255,255,255,.12)",marginTop:26,paddingTop:18,display:"flex",flexWrap:"wrap",gap:"6px 18px",justifyContent:"center"}}>
+        {Object.keys(STATIC_PAGES).map(k=>(
+          <a key={k} href={"/"+k} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage(k); }} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>{STATIC_PAGES[k].h1}</a>
+        ))}
+      </div>
+      <div style={{marginTop:14,textAlign:"center",color:"rgba(255,255,255,.55)",fontSize:12.5}}>Iattualità · L'informazione intelligente e in tempo reale · versione 9</div>
     </div>
   </footer>);
 }
