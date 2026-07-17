@@ -10,14 +10,52 @@ const CATEGORIES = ["Economia","Cronaca","Geopolitica","Attualità","Salute","Am
 const catColor = (c)=>({Economia:C.blueDeep,Cronaca:C.red,Geopolitica:C.navy,Salute:"#159A8C",Ambiente:"#2E8B57",Tecnologia:C.blue,Sport:C.sport})[c]||C.amber;
 
 function hdr(token,json){ const h={apikey:SUPABASE_KEY}; if(token)h.Authorization="Bearer "+token; if(json)h["Content-Type"]="application/json"; return h; }
+
+// --- Sessione redazione: rinnovo automatico del token --------------------
+// I token Supabase scadono dopo un'ora. Prima il refresh_token veniva scartato
+// al login: passati 60 minuti ogni salvataggio moriva con PGRST303 "JWT expired"
+// e l'unico modo per rientrare era ricaricare la pagina, perdendo l'articolo.
+// La sessione vive solo in memoria: chiudendo la scheda si esce, come prima.
+let SESSION=null; // {access_token, refresh_token, expires_at}
+const SESSION_DEAD="Sessione scaduta. Rifai l'accesso qui sotto, poi premi Salva: il testo resta dov'e'.";
+function setSession(d){
+  if(!d||!d.access_token){ SESSION=null; return null; }
+  SESSION={access_token:d.access_token,
+           refresh_token:d.refresh_token||(SESSION&&SESSION.refresh_token)||null,
+           expires_at:Date.now()+(Number(d.expires_in||3600)*1000)};
+  return SESSION.access_token;
+}
+async function refreshSession(){
+  if(!SESSION||!SESSION.refresh_token){ SESSION=null; throw new Error(SESSION_DEAD); }
+  let d=null;
+  try{
+    const r=await fetch(SUPABASE_URL+"/auth/v1/token?grant_type=refresh_token",{method:"POST",headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json"},body:JSON.stringify({refresh_token:SESSION.refresh_token})});
+    d=await r.json();
+    if(!r.ok) d=null;
+  }catch(e){ d=null; }
+  if(!d||!d.access_token){ SESSION=null; throw new Error(SESSION_DEAD); }
+  return setSession(d);
+}
+// Rinnova un minuto prima della scadenza. Se il server rifiuta il token
+// lo stesso, forza un refresh e ritenta una volta sola.
+async function authed(token,run){
+  let t=token;
+  if(SESSION){ t=SESSION.access_token; if(Date.now()>SESSION.expires_at-60000) t=await refreshSession(); }
+  let r=await run(t);
+  if(r.status===401||r.status===403){
+    let body=""; try{ body=await r.clone().text(); }catch(e){}
+    if(/jwt|expired|PGRST303/i.test(body)){ t=await refreshSession(); r=await run(t); }
+  }
+  return r;
+}
 async function apiGetNews(){ try{ const r=await fetch(API+"/news?select=*&order=date.desc.nullslast,created_at.desc",{headers:hdr()}); return r.ok?await r.json():[]; }catch(e){ return []; } }
 async function apiGetInfo(){ try{ const r=await fetch(API+"/site_info?id=eq.1&select=*",{headers:hdr()}); const a=r.ok?await r.json():[]; return a[0]||null; }catch(e){ return null; } }
-async function apiAddNews(token,o){ const r=await fetch(API+"/news",{method:"POST",headers:{...hdr(token,true),Prefer:"return=representation"},body:JSON.stringify(o)}); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
-async function apiUpdNews(token,id,o){ const r=await fetch(API+"/news?id=eq."+id,{method:"PATCH",headers:{...hdr(token,true),Prefer:"return=representation"},body:JSON.stringify(o)}); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
-async function apiDelNews(token,id){ const r=await fetch(API+"/news?id=eq."+id,{method:"DELETE",headers:hdr(token)}); if(!r.ok)throw new Error(await r.text()); }
-async function apiUpdInfo(token,o){ const r=await fetch(API+"/site_info?id=eq.1",{method:"PATCH",headers:{...hdr(token,true),Prefer:"return=representation"},body:JSON.stringify(o)}); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
+async function apiAddNews(token,o){ const r=await authed(token,t=>fetch(API+"/news",{method:"POST",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(o)})); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
+async function apiUpdNews(token,id,o){ const r=await authed(token,t=>fetch(API+"/news?id=eq."+id,{method:"PATCH",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(o)})); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
+async function apiDelNews(token,id){ const r=await authed(token,t=>fetch(API+"/news?id=eq."+id,{method:"DELETE",headers:hdr(t)})); if(!r.ok)throw new Error(await r.text()); }
+async function apiUpdInfo(token,o){ const r=await authed(token,t=>fetch(API+"/site_info?id=eq.1",{method:"PATCH",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(o)})); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
 async function apiLogin(email,password){ const r=await fetch(SUPABASE_URL+"/auth/v1/token?grant_type=password",{method:"POST",headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json"},body:JSON.stringify({email,password})}); const d=await r.json(); if(!r.ok)throw new Error(d.error_description||d.msg||"Accesso non riuscito"); return d; }
-async function apiUpload(token,file,folder){ const ext=(file.name.split(".").pop()||"bin"); const path=folder+"/"+(crypto.randomUUID?crypto.randomUUID():Date.now())+"."+ext; const r=await fetch(SUPABASE_URL+"/storage/v1/object/media/"+path,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+token,"x-upsert":"true","Content-Type":file.type||"application/octet-stream"},body:file}); if(!r.ok)throw new Error(await r.text()); return SUPABASE_URL+"/storage/v1/object/public/media/"+path; }
+async function apiUpload(token,file,folder){ const ext=(file.name.split(".").pop()||"bin"); const path=folder+"/"+(crypto.randomUUID?crypto.randomUUID():Date.now())+"."+ext; const r=await authed(token,t=>fetch(SUPABASE_URL+"/storage/v1/object/media/"+path,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+t,"x-upsert":"true","Content-Type":file.type||"application/octet-stream"},body:file})); if(!r.ok)throw new Error(await r.text()); return SUPABASE_URL+"/storage/v1/object/public/media/"+path; }
 
 function Ic({n,s=18,c="currentColor",fill="none"}){
   const P={
@@ -105,11 +143,11 @@ function App(){
   useEffect(()=>{ (async()=>{ const [n,i]=await Promise.all([apiGetNews(),apiGetInfo()]); setNews(n); if(i)setInfo({...DEFAULT_INFO,...i,logo_cfg:i.logo_cfg||DEFAULT_INFO.logo_cfg}); setLoading(false); })(); },[]);
 
   const reloadNews=async()=>setNews(await apiGetNews());
-  const saveItem=async(item)=>{ try{ const {id,...rest}=item; if(id)await apiUpdNews(token,id,rest); else await apiAddNews(token,rest); await reloadNews(); setShowForm(false); setEditing(null); note("Salvato."); }catch(e){ alert("Errore nel salvataggio:\n\n"+(e.message||e)); } };
+  const saveItem=async(item)=>{ try{ const {id,...rest}=item; if(id)await apiUpdNews(token,id,rest); else await apiAddNews(token,rest); await reloadNews(); setShowForm(false); setEditing(null); note("Salvato."); }catch(e){ const m=String(e.message||e); if(m.indexOf("Sessione scaduta")===0) setShowLogin(true); alert("Errore nel salvataggio:\n\n"+m); } };
   const removeItem=async(id)=>{ try{ await apiDelNews(token,id); await reloadNews(); note("Eliminato."); }catch(e){ alert("Errore:\n\n"+(e.message||e)); } };
-  const saveInfo=async(next)=>{ try{ const {id,...rest}=next; const r=await apiUpdInfo(token,rest); setInfo({...DEFAULT_INFO,...r}); setShowInfo(false); note("Aggiornato."); }catch(e){ alert("Errore salvataggio:\n\n"+(e.message||e)); } };
+  const saveInfo=async(next)=>{ try{ const {id,...rest}=next; const r=await apiUpdInfo(token,rest); setInfo({...DEFAULT_INFO,...r}); setShowInfo(false); note("Aggiornato."); }catch(e){ const m=String(e.message||e); if(m.indexOf("Sessione scaduta")===0) setShowLogin(true); alert("Errore salvataggio:\n\n"+m); } };
   const saveLogo=async(url,cfg)=>{ try{ const r=await apiUpdInfo(token,{logo_url:url,logo_cfg:cfg}); setInfo(p=>({...p,logo_url:r.logo_url,logo_cfg:r.logo_cfg})); }catch(e){ alert("Errore logo:\n\n"+(e.message||e)); } };
-  const doLogin=async(email,password)=>{ const d=await apiLogin(email,password); setToken(d.access_token); setShowLogin(false); note("Bentornato in redazione."); };
+  const doLogin=async(email,password)=>{ const d=await apiLogin(email,password); setToken(setSession(d)); setShowLogin(false); note("Bentornato in redazione."); };
   const logout=()=>{ setToken(null); note("Uscito dalla redazione."); };
 
   const go=(v,anchor)=>{ setMenuOpen(false); if(window.location.pathname!=="/"){ history.pushState(null,"","/"+(window.location.search||"")); } setArticleId(null); if(v==="home")setActiveCat("Tutte"); setView(v); if(v==="home"&&anchor){ setTimeout(()=>{const el=document.getElementById(anchor); if(el)el.scrollIntoView({behavior:"smooth"});},40);} else { window.scrollTo(0,0);} };
@@ -178,7 +216,7 @@ function App(){
       {showForm&&admin&&<NewsForm initial={editing} token={token} onClose={()=>{setShowForm(false);setEditing(null);}} onSave={saveItem}/>}
       {showInfo&&admin&&<InfoModal initial={info} onClose={()=>setShowInfo(false)} onSave={saveInfo}/>}
       {video&&<VideoModal item={video} onClose={()=>setVideo(null)}/>}
-      {showLogin&&!admin&&<LoginModal onClose={()=>setShowLogin(false)} onLogin={doLogin}/>}
+      {showLogin&&<LoginModal onClose={()=>setShowLogin(false)} onLogin={doLogin}/>}
 
       {toast&&<div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",background:C.navy,color:"#fff",padding:"11px 18px",borderRadius:10,fontSize:14,fontWeight:600,zIndex:80,maxWidth:"90vw",textAlign:"center"}}>{toast}</div>}
       <style>{`*{box-sizing:border-box}*::-webkit-scrollbar{height:6px;width:6px}*::-webkit-scrollbar-thumb{background:${C.line};border-radius:3px}html{scroll-behavior:smooth}html,body{margin:0;padding:0;width:100%;max-width:100%;overflow-x:hidden}img,iframe,video{max-width:100%}@media(max-width:560px){.tagline{display:none}.btn-label{display:none}}.article-body h2{font-family:Anton;font-weight:400;font-size:24px;color:${C.navy};margin:22px 0 8px;line-height:1.15}.article-body h3{font-family:Anton;font-weight:400;font-size:19px;color:${C.navy};margin:18px 0 6px;line-height:1.2}.article-body p{margin:0 0 14px}.article-body ul,.article-body ol{margin:0 0 14px;padding-left:22px}.article-body li{margin:4px 0}.article-body a{color:${C.blueDeep};font-weight:600}.article-body blockquote{border-left:4px solid ${C.amber};margin:16px 0;padding:8px 16px;color:${C.navy};font-style:italic;background:${C.cream};border-radius:0 8px 8px 0}.article-body hr{border:none;border-top:1px solid ${C.line};margin:22px 0}.article-body img{border-radius:12px;margin:8px 0}.article-body b,.article-body strong{color:${C.navy}}.rich-input:empty:before{content:"Scrivi qui l'articolo…";color:${C.gray}}.rich-input p{margin:0 0 12px}.rich-input h2{font-family:Anton;font-weight:400;font-size:22px;color:${C.navy};margin:14px 0 6px}.rich-input h3{font-family:Anton;font-weight:400;font-size:18px;color:${C.navy};margin:12px 0 6px}.rich-input ul,.rich-input ol{padding-left:22px}.rich-input a{color:${C.blueDeep}}.rich-input blockquote{border-left:4px solid ${C.amber};margin:12px 0;padding:6px 14px;font-style:italic;background:#fff;border-radius:0 8px 8px 0}.rich-input hr{border:none;border-top:1px solid ${C.line};margin:16px 0}`}</style>
