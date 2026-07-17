@@ -349,6 +349,18 @@ function RichEditor({value,onChange}){
   const saved=React.useRef(null);
   const SIZE_PX={"1":"13px","2":"15px","3":"17px","4":"20px","5":"25px","6":"31px","7":"40px"};
 
+  // Font mostrato nella tendina. Prima veniva resettato con selectedIndex=0 subito
+  // dopo l'applicazione: il carattere cambiava davvero, ma la tendina tornava sempre
+  // sull'etichetta "Carattere". Ora e' uno stato controllato, risincronizzato con la
+  // posizione del cursore cosi' riflette il font del punto in cui stai scrivendo.
+  const FONTS=["Barlow","Georgia, serif","Times New Roman, serif","Arial, sans-serif","Courier New, monospace"];
+  const [fontSel,setFontSel]=useState("");
+  const syncFont=()=>{
+    let v=""; try{ v=document.queryCommandValue("fontName")||""; }catch(e){}
+    v=v.replace(/["']/g,"").split(",")[0].trim().toLowerCase();
+    setFontSel(FONTS.find(x=>x.split(",")[0].trim().toLowerCase()===v)||"");
+  };
+
   const inEd=(n)=>{ const el=ref.current; return !!(el&&n&&(el===n||el.contains(n))); };
 
   // Assicura che il contenuto stia dentro un blocco: senza questo formatBlock (Titolo) non funziona.
@@ -412,7 +424,7 @@ function RichEditor({value,onChange}){
         <label title="Evidenziatore" style={{...swatch,background:"#FFF3B0"}} onMouseDown={saveSel}><span style={{fontWeight:800,fontSize:13,color:C.navy}}>A</span><input type="color" defaultValue="#FFE55C" onChange={e=>run("hiliteColor",e.target.value)} style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}/></label>
         <Sep/>
         <select onMouseDown={saveSel} onChange={e=>{size(e.target.value); e.target.selectedIndex=0;}} title="Dimensione testo (seleziona prima il testo)" style={selStyle}><option value="">Dimensione</option><option value="1">Molto piccolo</option><option value="2">Piccolo</option><option value="3">Normale</option><option value="4">Medio</option><option value="5">Grande</option><option value="6">Molto grande</option><option value="7">Enorme</option></select>
-        <select onMouseDown={saveSel} onChange={e=>{font(e.target.value); e.target.selectedIndex=0;}} title="Carattere (seleziona prima il testo)" style={selStyle}><option value="">Carattere</option><option value="Barlow">Barlow</option><option value="Georgia, serif">Georgia</option><option value="Times New Roman, serif">Times</option><option value="Arial, sans-serif">Arial</option><option value="Courier New, monospace">Monospazio</option></select>
+        <select value={fontSel} onMouseDown={saveSel} onChange={e=>{setFontSel(e.target.value); font(e.target.value);}} title="Carattere (seleziona prima il testo)" style={selStyle}><option value="">Carattere</option><option value="Barlow">Barlow</option><option value="Georgia, serif">Georgia</option><option value="Times New Roman, serif">Times</option><option value="Arial, sans-serif">Arial</option><option value="Courier New, monospace">Monospazio</option></select>
         <Sep/>
         <TbBtn onClick={()=>block("h2")} title="Titolo di sezione" wide>Titolo</TbBtn>
         <TbBtn onClick={()=>block("h3")} title="Sottotitolo di sezione" wide>Sottot.</TbBtn>
@@ -438,8 +450,8 @@ function RichEditor({value,onChange}){
       </div>
       <div ref={ref} contentEditable suppressContentEditableWarning
         onInput={()=>{saveSel();emit();}}
-        onKeyUp={saveSel} onMouseUp={saveSel}
-        onFocus={()=>{ensureBlock();saveSel();}}
+        onKeyUp={()=>{saveSel();syncFont();}} onMouseUp={()=>{saveSel();syncFont();}}
+        onFocus={()=>{ensureBlock();saveSel();syncFont();}}
         onBlur={()=>{saveSel();emit();}}
         className="rich-input" style={{minHeight:220,maxHeight:420,overflowY:"auto",padding:"12px 14px",fontSize:15,lineHeight:1.6,color:C.navy,outline:"none",fontFamily:"Barlow",background:C.cream}}/>
     </div>
@@ -450,8 +462,17 @@ function NewsForm({initial,token,onClose,onSave}){
   const [f,setF]=useState(()=> initial ? {...initial, body: initial.body || plainToHtml(initial.summary||"")} : {title:"",subtitle:"",category:"Attualità",author_name:"Lorenzo",summary:"",body:"",date:new Date().toISOString().slice(0,10),link:"",video:"",image:"",og_image:"",featured:false});
   const [busy,setBusy]=useState(false);
   const [busyOg,setBusyOg]=useState(false);
-  const set=(k,v)=>setF(s=>({...s,[k]:v}));
+  const [dirty,setDirty]=useState(false);
+  const set=(k,v)=>{ setDirty(true); setF(s=>({...s,[k]:v})); };
   const valid=(f.title||"").trim().length>0;
+  // Uscita protetta. Prima lo sfondo del modale aveva onClick={onClose}: bastava
+  // un click fuori dal riquadro (o rilasciare li' il mouse dopo aver selezionato
+  // del testo) per chiudere tutto e perdere l'articolo senza un avviso.
+  const tryClose=()=>{ if(dirty && !window.confirm("Hai modifiche non salvate.\n\nVuoi chiudere e perderle?")) return; onClose(); };
+  useEffect(()=>{ const h=(e)=>{ if(e.key==="Escape"){ e.preventDefault(); tryClose(); } };
+    window.addEventListener("keydown",h); return ()=>window.removeEventListener("keydown",h); });
+  useEffect(()=>{ const h=(e)=>{ if(dirty){ e.preventDefault(); e.returnValue=""; } };
+    window.addEventListener("beforeunload",h); return ()=>window.removeEventListener("beforeunload",h); },[dirty]);
   const upImg=async(e)=>{ const file=e.target.files&&e.target.files[0]; if(!file)return; if(!checkImg(file))return; setBusy(true); try{ const url=await apiUpload(token,file,"covers"); set("image",url); }catch(err){ alert("Upload non riuscito:\n\n"+(err.message||err)); } setBusy(false); };
   const upOg=async(e)=>{ const file=e.target.files&&e.target.files[0]; if(!file)return; if(!checkImg(file))return; setBusyOg(true); try{ const url=await apiUpload(token,file,"covers"); set("og_image",url); }catch(err){ alert("Upload non riuscito:\n\n"+(err.message||err)); } setBusyOg(false); };
   // Facebook rifiuta og:image sopra gli 8 MB, e una cover pesante affossa
@@ -462,9 +483,9 @@ function NewsForm({initial,token,onClose,onSave}){
     if(mb>2 && !confirm("L'immagine pesa "+mb.toFixed(1)+" MB. Caricarla comunque?\n\nSotto 1 MB il sito va molto piu' veloce.")) return false;
     return true;
   };
-  return (<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(14,17,23,.55)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:560,background:C.card,borderRadius:"18px 18px 0 0",maxHeight:"92vh",overflowY:"auto"}}>
-      <div style={{position:"sticky",top:0,background:C.card,padding:"16px 18px",borderBottom:"1px solid "+C.line,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>{initial?"Modifica news":"Nuova news"}</strong><button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
+  return (<div style={{position:"fixed",inset:0,background:"rgba(14,17,23,.55)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+    <div style={{width:"100%",maxWidth:560,background:C.card,borderRadius:"18px 18px 0 0",maxHeight:"92vh",overflowY:"auto"}}>
+      <div style={{position:"sticky",top:0,background:C.card,padding:"16px 18px",borderBottom:"1px solid "+C.line,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>{initial?"Modifica news":"Nuova news"}</strong><button onClick={tryClose} style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
       <div style={{padding:18,display:"flex",flexDirection:"column",gap:14}}>
         <div><label style={labStyle}>Titolo *</label><input style={inStyle} value={f.title} onChange={e=>set("title",e.target.value)} placeholder="Es. Caro auto, l'Italia in cima alle classifiche"/></div>
         <div><label style={labStyle}>Sottotitolo</label><input style={inStyle} value={f.subtitle||""} onChange={e=>set("subtitle",e.target.value)} placeholder="Una riga che appare sotto il titolo in home"/></div>
@@ -666,10 +687,14 @@ function SiteFooter({info,admin,onEdit,onPage}){
 
 function InfoModal({initial,onClose,onSave}){
   const [f,setF]=useState(initial);
-  const set=(k,v)=>setF(s=>({...s,[k]:v}));
-  return (<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(14,17,23,.55)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:560,background:C.card,borderRadius:"18px 18px 0 0",maxHeight:"92vh",overflowY:"auto"}}>
-      <div style={{position:"sticky",top:0,background:C.card,padding:"16px 18px",borderBottom:"1px solid "+C.line,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>Social e contatti</strong><button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
+  const [dirty,setDirty]=useState(false);
+  const set=(k,v)=>{ setDirty(true); setF(s=>({...s,[k]:v})); };
+  const tryClose=()=>{ if(dirty && !window.confirm("Hai modifiche non salvate.\n\nVuoi chiudere e perderle?")) return; onClose(); };
+  useEffect(()=>{ const h=(e)=>{ if(e.key==="Escape"){ e.preventDefault(); tryClose(); } };
+    window.addEventListener("keydown",h); return ()=>window.removeEventListener("keydown",h); });
+  return (<div style={{position:"fixed",inset:0,background:"rgba(14,17,23,.55)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+    <div style={{width:"100%",maxWidth:560,background:C.card,borderRadius:"18px 18px 0 0",maxHeight:"92vh",overflowY:"auto"}}>
+      <div style={{position:"sticky",top:0,background:C.card,padding:"16px 18px",borderBottom:"1px solid "+C.line,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>Social e contatti</strong><button onClick={tryClose} style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
       <div style={{padding:18,display:"flex",flexDirection:"column",gap:14}}>
         <div style={{fontSize:12.5,fontWeight:800,color:C.gray,letterSpacing:.5,textTransform:"uppercase"}}>Chi siamo</div>
         <textarea style={{...inStyle,minHeight:90,resize:"vertical"}} value={f.about||""} onChange={e=>set("about",e.target.value)} placeholder="Iattualità è una testata digitale indipendente…"/>
