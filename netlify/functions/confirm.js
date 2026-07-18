@@ -16,7 +16,7 @@ exports.handler = async (event) => {
       return L.html(200, L.page("Sei già iscritto", "La tua iscrizione era già confermata. Riceverai la newsletter di Iattualità."));
 
     await L.sbPatch(sub.id, { status: "confirmed", confirmed_at: new Date().toISOString(), unsubscribed_at: null });
-    return L.html(200, L.page("Iscrizione confermata", "Ci sei. Da ora riceverai la newsletter di Iattualità: gli articoli nuovi, raccolti una volta a settimana."));
+    return L.html(200, L.page("Iscrizione confermata", "Benvenuto tra i lettori di Iattualità. Ogni settimana ti arriverà il meglio, raccolto in una sola email."));
   } catch (e) {
     return L.html(500, L.page("Qualcosa è andato storto", "Riprova tra poco. Se il problema resta, scrivici."));
   }
