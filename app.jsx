@@ -678,6 +678,20 @@ const STATIC_PAGES={
       {h:"Cosa resta umano",p:["La scelta delle notizie, la verifica dei fatti, la scrittura dei testi e la responsabilità editoriale sono di Lorenzo, direttore di Iattualità. Nessun contenuto viene pubblicato senza un controllo umano."]},
       {h:"Perché lo diciamo",p:["Crediamo che chi ci segue abbia diritto di sapere come è fatto ciò che guarda. La tecnologia cambia la forma, non il patto con il pubblico: informazione verificata con i dati e senza appartenenze."]}
     ]
+  },
+  "privacy":{ title:"Privacy policy · Iattualità", desc:"Come Iattualità tratta i dati personali di chi si iscrive alla newsletter, scrive dai contatti o naviga il sito. Informativa ai sensi del GDPR.", h1:"Privacy policy",
+    intro:"Questa pagina spiega quali dati personali raccogliamo, perché, per quanto tempo li conserviamo e quali diritti hai. La aggiorniamo quando cambiano gli strumenti che usiamo.",
+    blocks:[
+      {h:"Contitolari del trattamento",p:["Iattualità è gestita da André Renzuto Iodice e Nicola Ferrone, che determinano insieme finalità e modalità del trattamento e ne sono pertanto contitolari ai sensi dell'art. 26 del Regolamento (UE) 2016/679. Puoi rivolgere a entrambi qualsiasi richiesta relativa ai tuoi dati scrivendo a redazione@iattualita.it, punto di contatto unico per gli interessati.","Recapito di riferimento: redazione@iattualita.it."]},
+      {h:"Quali dati raccogliamo",p:["Newsletter: quando ti iscrivi raccogliamo il tuo indirizzo email e la data di iscrizione e di conferma. Non chiediamo altri dati.","Contatti: se ci scrivi tramite il modulo di contatto, raccogliamo i dati che inserisci (nome, email, oggetto, messaggio) per poterti rispondere.","Navigazione: raccogliamo statistiche di visita in forma aggregata e anonima, senza cookie e senza identificarti."]},
+      {h:"Perché li usiamo e con quale base giuridica",p:["Newsletter: per inviarti i nostri aggiornamenti. La base giuridica è il tuo consenso, che presti confermando l'iscrizione con il doppio opt-in e che puoi revocare in ogni momento.","Contatti: per rispondere alla tua richiesta. La base giuridica è il riscontro alla tua richiesta e il nostro legittimo interesse a gestire le comunicazioni.","Statistiche: per capire quali contenuti funzionano, in forma anonima. La base giuridica è il legittimo interesse a migliorare il sito, senza profilazione."]},
+      {h:"Newsletter e doppio consenso",p:["Usiamo il doppio opt-in: dopo l'iscrizione ti inviamo un'email di conferma, e sei iscritto solo se clicchi il link. Ogni email contiene un link di disiscrizione immediato. Per l'invio ci appoggiamo a Brevo (Sendinblue), che tratta il tuo indirizzo come responsabile per nostro conto."]},
+      {h:"Statistiche senza cookie",p:["Per le statistiche di visita usiamo Umami, uno strumento che non installa cookie di profilazione e non raccoglie dati che permettano di identificarti. Per questo il sito non mostra un banner cookie di profilazione: non ne usiamo."]},
+      {h:"Con chi condividiamo i dati",p:["Non vendiamo e non cediamo i tuoi dati a terzi per finalità commerciali. Ci avvaliamo di alcuni fornitori che trattano i dati per nostro conto, come responsabili: Brevo per l'invio della newsletter, Netlify per l'hosting del sito, Supabase per l'archiviazione degli iscritti. Alcuni di questi fornitori possono trattare i dati anche fuori dall'Unione Europea; in tal caso il trasferimento avviene con le garanzie previste dalla normativa (ad esempio le clausole contrattuali standard)."]},
+      {h:"Per quanto tempo li conserviamo",p:["Conserviamo il tuo indirizzo email finché resti iscritto alla newsletter. Se ti disiscrivi, l'indirizzo viene marcato come disiscritto e non riceverai più comunicazioni. I messaggi inviati dai contatti sono conservati per il tempo necessario a gestire la richiesta."]},
+      {h:"I tuoi diritti",p:["Puoi chiedere in ogni momento di accedere ai tuoi dati, correggerli, cancellarli, limitarne il trattamento o opporti, oltre a revocare il consenso alla newsletter. Per esercitare questi diritti scrivi a redazione@iattualita.it: la disiscrizione è comunque possibile con un clic dal link presente in ogni email.","Se ritieni che il trattamento violi la normativa, hai diritto di presentare reclamo all'autorità di controllo competente (in Italia, il Garante per la protezione dei dati personali)."]},
+      {h:"Modifiche a questa informativa",p:["Possiamo aggiornare questa pagina se cambiano gli strumenti o le finalità del trattamento. La versione pubblicata su questa pagina è sempre quella in vigore."]}
+    ]
   }
 };
 
@@ -738,7 +752,7 @@ function Newsletter(){
             <button onClick={submit} disabled={state==="busy"} style={{background:C.amber,color:C.navy,border:"none",borderRadius:11,padding:"12px 20px",fontWeight:800,fontSize:15,cursor:state==="busy"?"default":"pointer",whiteSpace:"nowrap"}}>{state==="busy"?"Invio…":"Iscriviti"}</button>
           </div>
           {state==="error"&&<div style={{color:"#FFD2CE",fontSize:13.5,marginTop:8}}>{msg}</div>}
-          <div style={{color:"rgba(255,255,255,.5)",fontSize:12,marginTop:8}}>Iscrivendoti accetti di ricevere le email di Iattualità. Trattiamo i tuoi dati secondo la Privacy policy.</div>
+          <div style={{color:"rgba(255,255,255,.5)",fontSize:12,marginTop:8}}>Iscrivendoti accetti di ricevere le email di Iattualità. Trattiamo i tuoi dati secondo la <a href="/privacy" style={{color:"rgba(255,255,255,.7)",textDecoration:"underline"}}>Privacy policy</a>.</div>
         </div>}
   </div>);
 }
