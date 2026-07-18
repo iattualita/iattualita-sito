@@ -155,6 +155,20 @@ function App(){
   const removeItem=async(id)=>{ try{ await apiDelNews(token,id); await reloadNews(); note("Eliminato."); }catch(e){ alert("Errore:\n\n"+(e.message||e)); } };
   const saveInfo=async(next)=>{ try{ const {id,...rest}=next; const r=await apiUpdInfo(token,rest); setInfo({...DEFAULT_INFO,...r}); setShowInfo(false); note("Aggiornato."); }catch(e){ const m=String(e.message||e); if(m.indexOf("Sessione scaduta")===0) setShowLogin(true); alert("Errore salvataggio:\n\n"+m); } };
   const saveLogo=async(url,cfg)=>{ try{ const r=await apiUpdInfo(token,{logo_url:url,logo_cfg:cfg}); setInfo(p=>({...p,logo_url:r.logo_url,logo_cfg:r.logo_cfg})); }catch(e){ alert("Errore logo:\n\n"+(e.message||e)); } };
+  const sendNewsletter=async()=>{
+    const call=(dry)=>authed(token,t=>fetch("/.netlify/functions/send-digest",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+t},body:JSON.stringify({dry})}));
+    try{
+      let r=await call(true); let d=await r.json();
+      if(!r.ok) throw new Error(d.message||"Errore anteprima");
+      if(d.articles===0){ alert("Nessun articolo nuovo dall'ultimo invio: la newsletter non partirebbe vuota."); return; }
+      if(d.recipients===0){ alert("Nessun iscritto confermato al momento."); return; }
+      if(!window.confirm("Newsletter pronta:\n\n• "+d.articles+" articoli (dal "+new Date(d.since).toLocaleDateString("it-IT")+")\n• "+d.recipients+" iscritti\n\nInviare adesso?")) return;
+      r=await call(false); d=await r.json();
+      if(!r.ok) throw new Error(d.message||"Errore invio");
+      if(d.sent) note("Newsletter inviata a "+d.delivered+" iscritti"+(d.failed?" ("+d.failed+" falliti)":"")+".");
+      else alert("Invio non eseguito: "+(d.reason||"?"));
+    }catch(e){ const m=String(e.message||e); if(/JWT|Sessione scaduta/i.test(m)) setShowLogin(true); alert("Newsletter:\n\n"+m); }
+  };
   const doLogin=async(email,password)=>{ const d=await apiLogin(email,password); setToken(setSession(d)); setShowLogin(false); note("Bentornato in redazione."); };
   const logout=()=>{ setToken(null); note("Uscito dalla redazione."); };
 
@@ -219,7 +233,7 @@ function App(){
       </main>
       )}
 
-      <SiteFooter info={info} admin={admin} onEdit={()=>setShowInfo(true)} onPage={openPage}/>
+      <SiteFooter info={info} admin={admin} onEdit={()=>setShowInfo(true)} onPage={openPage} onSendNewsletter={sendNewsletter}/>
 
       {showForm&&admin&&<NewsForm initial={editing} token={token} onClose={()=>{setShowForm(false);setEditing(null);}} onSave={saveItem}/>}
       {showInfo&&admin&&<InfoModal initial={info} onClose={()=>setShowInfo(false)} onSave={saveInfo}/>}
@@ -729,12 +743,15 @@ function Newsletter(){
   </div>);
 }
 
-function SiteFooter({info,admin,onEdit,onPage}){
+function SiteFooter({info,admin,onEdit,onPage,onSendNewsletter}){
   const hasSocial=SOCIALS.some(s=>info[s.k]);
   const hasContact=info.email||info.phone;
   return (<footer style={{background:C.navy,color:"#fff",marginTop:28}}>
     <div style={{maxWidth:980,margin:"0 auto",padding:"32px 16px 24px"}}>
-      {admin&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={onEdit} style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,.12)",color:"#fff",border:"1px solid rgba(255,255,255,.25)",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}><Ic n="set" s={14} c="#fff"/> Modifica social e contatti</button></div>}
+      {admin&&<div style={{display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap",marginBottom:8}}>
+        <button onClick={onSendNewsletter} style={{display:"flex",alignItems:"center",gap:6,background:C.amber,color:C.navy,border:"none",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:700,cursor:"pointer"}}><Ic n="mail" s={14} c={C.navy}/> Invia newsletter</button>
+        <button onClick={onEdit} style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,.12)",color:"#fff",border:"1px solid rgba(255,255,255,.25)",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}><Ic n="set" s={14} c="#fff"/> Modifica social e contatti</button>
+      </div>}
       {(info.about||admin)&&<div id="chisiamo" style={{marginBottom:28,paddingBottom:24,borderBottom:"1px solid rgba(255,255,255,.12)"}}>
         <h3 style={{fontFamily:"Anton",fontSize:20,margin:"0 0 12px",color:"#fff",fontWeight:400}}>Chi siamo</h3>
         {info.about? <p style={{color:"rgba(255,255,255,.85)",fontSize:15,lineHeight:1.6,margin:0,maxWidth:720,whiteSpace:"pre-line"}}>{info.about}</p> : <p style={{color:"rgba(255,255,255,.6)",fontSize:14,margin:0}}>Aggiungi una breve descrizione dal pulsante qui sopra.</p>}
