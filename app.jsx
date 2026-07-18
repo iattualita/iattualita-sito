@@ -50,6 +50,12 @@ async function authed(token,run){
 }
 async function apiGetNews(){ try{ const r=await fetch(API+"/news?select=*&order=date.desc.nullslast,created_at.desc",{headers:hdr()}); return r.ok?await r.json():[]; }catch(e){ return []; } }
 async function apiGetInfo(){ try{ const r=await fetch(API+"/site_info?id=eq.1&select=*",{headers:hdr()}); const a=r.ok?await r.json():[]; return a[0]||null; }catch(e){ return null; } }
+async function apiSubscribe(email){
+  const r=await fetch(API+"/subscribers",{method:"POST",headers:{...hdr(null,true),Prefer:"return=minimal"},body:JSON.stringify({email:email,status:"pending"})});
+  if(r.status===409) return "già iscritto";        // vincolo unique: email presente
+  if(!r.ok) throw new Error("Iscrizione non riuscita. Riprova tra poco.");
+  return "ok";
+}
 async function apiAddNews(token,o){ const r=await authed(token,t=>fetch(API+"/news",{method:"POST",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(o)})); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
 async function apiUpdNews(token,id,o){ const r=await authed(token,t=>fetch(API+"/news?id=eq."+id,{method:"PATCH",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(o)})); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
 async function apiDelNews(token,id){ const r=await authed(token,t=>fetch(API+"/news?id=eq."+id,{method:"DELETE",headers:hdr(t)})); if(!r.ok)throw new Error(await r.text()); }
@@ -689,6 +695,38 @@ function StaticPage({page,info,onPage}){
   );
 }
 
+function Newsletter(){
+  const [email,setEmail]=useState("");
+  const [state,setState]=useState("idle"); // idle | busy | done | already | error
+  const [msg,setMsg]=useState("");
+  const valid=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  const submit=async()=>{
+    if(!valid){ setState("error"); setMsg("Controlla l'indirizzo email."); return; }
+    setState("busy"); setMsg("");
+    try{
+      const r=await apiSubscribe(email.trim().toLowerCase());
+      if(r==="già iscritto"){ setState("already"); setMsg("Questo indirizzo risulta già iscritto."); }
+      else { setState("done"); setMsg("Ci siamo quasi: apri la mail di conferma per completare l'iscrizione."); }
+    }catch(e){ setState("error"); setMsg(e.message||"Iscrizione non riuscita."); }
+  };
+  const inNL={flex:"1 1 220px",boxSizing:"border-box",padding:"12px 14px",border:"1px solid rgba(255,255,255,.25)",borderRadius:11,fontSize:15,fontFamily:"Barlow",color:"#fff",outline:"none",background:"rgba(255,255,255,.08)"};
+  const done=state==="done"||state==="already";
+  return (<div style={{marginBottom:28,paddingBottom:26,borderBottom:"1px solid rgba(255,255,255,.12)"}}>
+    <h3 style={{fontFamily:"Anton",fontSize:22,margin:"0 0 6px",color:"#fff",fontWeight:400}}>La newsletter di Iattualità</h3>
+    <p style={{color:"rgba(255,255,255,.8)",fontSize:14.5,lineHeight:1.5,margin:"0 0 14px",maxWidth:560}}>Gli articoli nuovi, raccolti in una sola email. Niente spam, niente appartenenze: solo i fatti verificati. Ti disiscrivi quando vuoi.</p>
+    {done
+      ? <div style={{display:"flex",alignItems:"center",gap:10,color:"#fff",fontSize:15,background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.18)",borderRadius:11,padding:"13px 15px",maxWidth:560}}><Ic n="mail" s={18} c={C.amber}/><span>{msg}</span></div>
+      : <div style={{maxWidth:560}}>
+          <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+            <input type="email" value={email} onChange={e=>{setEmail(e.target.value); if(state==="error")setState("idle");}} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="La tua email" style={inNL}/>
+            <button onClick={submit} disabled={state==="busy"} style={{background:C.amber,color:C.navy,border:"none",borderRadius:11,padding:"12px 20px",fontWeight:800,fontSize:15,cursor:state==="busy"?"default":"pointer",whiteSpace:"nowrap"}}>{state==="busy"?"Invio…":"Iscriviti"}</button>
+          </div>
+          {state==="error"&&<div style={{color:"#FFD2CE",fontSize:13.5,marginTop:8}}>{msg}</div>}
+          <div style={{color:"rgba(255,255,255,.5)",fontSize:12,marginTop:8}}>Iscrivendoti accetti di ricevere le email di Iattualità. Trattiamo i tuoi dati secondo la Privacy policy.</div>
+        </div>}
+  </div>);
+}
+
 function SiteFooter({info,admin,onEdit,onPage}){
   const hasSocial=SOCIALS.some(s=>info[s.k]);
   const hasContact=info.email||info.phone;
@@ -699,6 +737,7 @@ function SiteFooter({info,admin,onEdit,onPage}){
         <h3 style={{fontFamily:"Anton",fontSize:20,margin:"0 0 12px",color:"#fff",fontWeight:400}}>Chi siamo</h3>
         {info.about? <p style={{color:"rgba(255,255,255,.85)",fontSize:15,lineHeight:1.6,margin:0,maxWidth:720,whiteSpace:"pre-line"}}>{info.about}</p> : <p style={{color:"rgba(255,255,255,.6)",fontSize:14,margin:0}}>Aggiungi una breve descrizione dal pulsante qui sopra.</p>}
       </div>}
+      <Newsletter/>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))",gap:28}}>
         <div>
           <h3 style={{fontFamily:"Anton",fontSize:20,margin:"0 0 14px",color:"#fff",fontWeight:400}}>Seguici</h3>
