@@ -51,10 +51,12 @@ async function authed(token,run){
 async function apiGetNews(){ try{ const r=await fetch(API+"/news?select=*&order=date.desc.nullslast,created_at.desc",{headers:hdr()}); return r.ok?await r.json():[]; }catch(e){ return []; } }
 async function apiGetInfo(){ try{ const r=await fetch(API+"/site_info?id=eq.1&select=*",{headers:hdr()}); const a=r.ok?await r.json():[]; return a[0]||null; }catch(e){ return null; } }
 async function apiSubscribe(email){
-  const r=await fetch(API+"/subscribers",{method:"POST",headers:{...hdr(null,true),Prefer:"return=minimal"},body:JSON.stringify({email:email,status:"pending"})});
-  if(r.status===409) return "già iscritto";        // vincolo unique: email presente
-  if(!r.ok) throw new Error("Iscrizione non riuscita. Riprova tra poco.");
-  return "ok";
+  // Passa dalla funzione serverless: e' lei che invia la mail di conferma
+  // (la chiave Brevo resta lato server, mai nel browser).
+  const r=await fetch("/.netlify/functions/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:email})});
+  let d={}; try{ d=await r.json(); }catch(e){}
+  if(!r.ok) throw new Error((d&&d.message)||"Iscrizione non riuscita. Riprova tra poco.");
+  return (d&&d.state)||"sent";   // sent | resent | already_confirmed
 }
 async function apiAddNews(token,o){ const r=await authed(token,t=>fetch(API+"/news",{method:"POST",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(o)})); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
 async function apiUpdNews(token,id,o){ const r=await authed(token,t=>fetch(API+"/news?id=eq."+id,{method:"PATCH",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(o)})); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
@@ -705,8 +707,8 @@ function Newsletter(){
     setState("busy"); setMsg("");
     try{
       const r=await apiSubscribe(email.trim().toLowerCase());
-      if(r==="già iscritto"){ setState("already"); setMsg("Questo indirizzo risulta già iscritto."); }
-      else { setState("done"); setMsg("Ci siamo quasi: apri la mail di conferma per completare l'iscrizione."); }
+      if(r==="already_confirmed"){ setState("already"); setMsg("Questo indirizzo è già iscritto e confermato."); }
+      else { setState("done"); setMsg("Ci siamo quasi: ti abbiamo inviato una mail, apri il link per confermare l'iscrizione."); }
     }catch(e){ setState("error"); setMsg(e.message||"Iscrizione non riuscita."); }
   };
   const inNL={flex:"1 1 220px",boxSizing:"border-box",padding:"12px 14px",border:"1px solid rgba(255,255,255,.25)",borderRadius:11,fontSize:15,fontFamily:"Barlow",color:"#fff",outline:"none",background:"rgba(255,255,255,.08)"};
