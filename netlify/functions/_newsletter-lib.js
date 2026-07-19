@@ -54,15 +54,27 @@ async function sbPatch(id, patch){
 }
 
 // --- Brevo (invio email transazionale) ---
-async function brevoSend(toEmail, subject, html){
+function htmlToText(html){
+  return String(html||"")
+    .replace(/<style[\s\S]*?<\/style>/gi," ")
+    .replace(/<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi,"$2 ($1)")
+    .replace(/<\/(p|div|tr|h[1-6]|li)>/gi,"\n")
+    .replace(/<br\s*\/?>(?=)/gi,"\n")
+    .replace(/<[^>]+>/g," ")
+    .replace(/&nbsp;/gi," ").replace(/&amp;/gi,"&").replace(/&agrave;/gi,"à").replace(/&egrave;/gi,"è").replace(/&middot;/gi,"·").replace(/&rarr;/gi,"->")
+    .replace(/[ \t]+/g," ").replace(/\n{3,}/g,"\n\n").trim();
+}
+async function brevoSend(toEmail, subject, html, text){
   const r = await fetch("https://api.brevo.com/v3/smtp/email", {
     method:"POST",
     headers:{ "api-key": BREVO_API_KEY, "Content-Type":"application/json", accept:"application/json" },
     body: JSON.stringify({
       sender:{ name: SENDER_NAME, email: SENDER_EMAIL },
+      replyTo:{ email: SENDER_EMAIL, name: SENDER_NAME },
       to:[{ email: toEmail }],
       subject,
-      htmlContent: html
+      htmlContent: html,
+      textContent: text || htmlToText(html)
     })
   });
   if(!r.ok) throw new Error("brevo " + r.status + " " + (await r.text()));
