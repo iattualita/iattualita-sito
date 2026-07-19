@@ -133,7 +133,7 @@ function App(){
   const [loading,setLoading]=useState(true);
   const [query,setQuery]=useState("");
   const [activeCat,setActiveCat]=useState("Tutte");
-  const HOME_VETRINA=8, LIST_STEP=12;
+  const HOME_VETRINA=9, LIST_STEP=12;
   const [shown,setShown]=useState(LIST_STEP);
   const [token,setToken]=useState(null);
   const [showForm,setShowForm]=useState(false);
@@ -236,16 +236,16 @@ function App(){
                 const vetrina = rest.slice(0, HOME_VETRINA);
                 return <React.Fragment>
                   {featured&&<Card item={featured} big admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={(i)=>{setEditing(i);setShowForm(true);}} onDelete={removeItem}/>}
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(270px, 1fr))",gap:14,marginTop:16}}>
-                    {vetrina.map(n=><Card key={n.id} item={n} admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={(i)=>{setEditing(i);setShowForm(true);}} onDelete={removeItem}/>)}
+                  <div style={{display:"flex",flexWrap:"wrap",gap:14,marginTop:16}}>
+                    {vetrina.map(n=><div key={n.id} style={{flex:"1 1 270px",minWidth:0,display:"flex",flexDirection:"column"}}><Card item={n} admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={(i)=>{setEditing(i);setShowForm(true);}} onDelete={removeItem}/></div>)}
                   </div>
                   {rest.length>HOME_VETRINA&&<a href="/archivio" onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0) return; e.preventDefault(); openArchive(); }} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:22,background:C.navy,color:"#fff",borderRadius:12,padding:"14px 18px",fontSize:15,fontWeight:700,textDecoration:"none",fontFamily:"Barlow"}}>Vedi tutti gli articoli nell'archivio <Ic n="enter" s={16} c="#fff"/></a>}
                 </React.Fragment>;
               }
               const list = filtered.slice(0, shown);
               return <React.Fragment>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(270px, 1fr))",gap:14,marginTop:16}}>
-                  {list.map(n=><Card key={n.id} item={n} admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={(i)=>{setEditing(i);setShowForm(true);}} onDelete={removeItem}/>)}
+                <div style={{display:"flex",flexWrap:"wrap",gap:14,marginTop:16}}>
+                  {list.map(n=><div key={n.id} style={{flex:"1 1 270px",minWidth:0,display:"flex",flexDirection:"column"}}><Card item={n} admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={(i)=>{setEditing(i);setShowForm(true);}} onDelete={removeItem}/></div>)}
                 </div>
                 {filtered.length>shown&&<div style={{display:"flex",justifyContent:"center",marginTop:22}}><button onClick={()=>setShown(s=>s+LIST_STEP)} style={{background:C.card,color:C.navy,border:"1px solid "+C.line,borderRadius:12,padding:"12px 24px",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"Barlow"}}>Mostra altri ({filtered.length-shown})</button></div>}
               </React.Fragment>;
