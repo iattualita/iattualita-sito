@@ -117,7 +117,7 @@ function articlePath(item){ return "/articolo/"+item.id+"/"+slugify(item.title);
 function articleFullUrl(item){ return window.location.origin+articlePath(item); }
 function topicPath(cat){ return "/argomento/"+encodeURIComponent(cat); }
 function topicFullUrl(cat){ return window.location.origin+topicPath(cat); }
-function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } const seg=p.replace(/^\/+|\/+$/g,""); if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
+function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } const seg=p.replace(/^\/+|\/+$/g,""); if(seg==="archivio"){ return {name:"archivio"}; } if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
 function copyToClipboard(url,onOk,onFail){ (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(onOk).catch(()=>{ try{ window.prompt("Copia il link:",url); }catch(e){} if(onFail)onFail(); }); }
 
 // ====== TESTO FORMATTATO (rich text) ======
@@ -133,6 +133,8 @@ function App(){
   const [loading,setLoading]=useState(true);
   const [query,setQuery]=useState("");
   const [activeCat,setActiveCat]=useState("Tutte");
+  const HOME_VETRINA=8, LIST_STEP=12;
+  const [shown,setShown]=useState(LIST_STEP);
   const [token,setToken]=useState(null);
   const [showForm,setShowForm]=useState(false);
   const [editing,setEditing]=useState(null);
@@ -143,6 +145,7 @@ function App(){
   const [view,setView]=useState("home");
   const [menuOpen,setMenuOpen]=useState(false);
   const [articleId,setArticleId]=useState(null);
+  useEffect(()=>{ setShown(LIST_STEP); },[activeCat,query,view]);
 
   const adminGate=(window.location.search+window.location.hash).toLowerCase().includes("admin");
   const admin=!!token;
@@ -176,9 +179,10 @@ function App(){
   const openArticle=(item)=>{ history.pushState(null,"",articlePath(item)); setArticleId(item.id); setView("article"); window.scrollTo(0,0); };
   const openPage=(slug)=>{ setMenuOpen(false); history.pushState(null,"","/"+slug); setArticleId(null); setView(slug); window.scrollTo(0,0); };
   const openTopic=(cat)=>{ setMenuOpen(false); if(cat==="Tutte"){ if(window.location.pathname!=="/"){ history.pushState(null,"","/"+(window.location.search||"")); } setActiveCat("Tutte"); } else { history.pushState(null,"",topicPath(cat)); setActiveCat(cat); } setArticleId(null); setView("home"); window.scrollTo(0,0); };
+  const openArchive=()=>{ setMenuOpen(false); history.pushState(null,"","/archivio"); setArticleId(null); setActiveCat("Tutte"); setQuery(""); setView("archivio"); window.scrollTo(0,0); };
   const copyArticleLink=(item)=>copyToClipboard(articleFullUrl(item),()=>note("Link articolo copiato negli appunti."));
   const copyTopicLink=(cat)=>copyToClipboard(topicFullUrl(cat),()=>note("Link argomento copiato negli appunti."));
-  useEffect(()=>{ if(window.location.hash && /^#\/(articolo|argomento)\//.test(window.location.hash)){ try{ history.replaceState(null,"",window.location.hash.slice(1)); }catch(e){} } const apply=()=>{ const r=parsePath(); if(r.name==="article"){ setArticleId(r.id); setView("article"); } else if(r.name==="topic"){ setArticleId(null); setActiveCat(r.cat); setView(v=>(v==="article")?"home":v); } else if(r.name==="page"){ setArticleId(null); setView(r.page); } else { setArticleId(null); setActiveCat("Tutte"); setView(v=>(v==="article")?"home":v); } }; apply(); window.addEventListener("popstate",apply); return ()=>window.removeEventListener("popstate",apply); },[]);
+  useEffect(()=>{ if(window.location.hash && /^#\/(articolo|argomento)\//.test(window.location.hash)){ try{ history.replaceState(null,"",window.location.hash.slice(1)); }catch(e){} } const apply=()=>{ const r=parsePath(); if(r.name==="article"){ setArticleId(r.id); setView("article"); } else if(r.name==="topic"){ setArticleId(null); setActiveCat(r.cat); setView(v=>(v==="article")?"home":v); } else if(r.name==="page"){ setArticleId(null); setView(r.page); } else if(r.name==="archivio"){ setArticleId(null); setActiveCat("Tutte"); setView("archivio"); } else { setArticleId(null); setActiveCat("Tutte"); setView(v=>(v==="article")?"home":v); } }; apply(); window.addEventListener("popstate",apply); return ()=>window.removeEventListener("popstate",apply); },[]);
 
   const filtered=news
     .filter(n=>activeCat==="Tutte"||n.category===activeCat)
@@ -200,6 +204,7 @@ function App(){
           <button onClick={()=>setMenuOpen(o=>!o)} title="Menu" style={{display:"flex",alignItems:"center",justifyContent:"center",background:C.cream,color:C.navy,border:"1px solid "+C.line,borderRadius:10,width:40,height:40,cursor:"pointer",flexShrink:0}}><Ic n={menuOpen?"x":"menu"} s={19} c={C.navy}/></button>
           {menuOpen&&<nav style={{flexBasis:"100%",display:"flex",flexDirection:"column",gap:2,paddingTop:6,marginTop:6,borderTop:"1px solid "+C.line}}>
             <button onClick={()=>go("home","top")} style={menuItem}>News</button>
+            <button onClick={openArchive} style={menuItem}>Archivio</button>
             <button onClick={()=>openTopic("Sport")} style={menuItem}>Sport</button>
             <button onClick={()=>openPage("chi-siamo")} style={menuItem}>Chi siamo</button>
             <button onClick={()=>go("social")} style={menuItem}>Social</button>
@@ -210,6 +215,7 @@ function App(){
 
       {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
       <main id="top" style={{maxWidth:980,margin:"0 auto",padding:"16px"}}>
+        {view==="archivio"&&<div style={{marginBottom:14}}><div style={{fontFamily:"Anton",fontSize:26,color:C.navy}}>Archivio</div><div style={{fontSize:14,color:C.gray}}>Tutti gli articoli di Iattualità. Cerca o filtra per argomento.</div></div>}
         <div style={{display:"flex",alignItems:"center",gap:8,background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"10px 14px",marginBottom:14}}>
           <Ic n="search" s={18} c={C.gray}/>
           <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cerca tra le news…" style={{border:"none",outline:"none",flex:1,fontSize:15,fontFamily:"Barlow",background:"transparent",color:C.navy,minWidth:0}}/>
@@ -224,12 +230,26 @@ function App(){
         </div>}
         {loading? <div style={{textAlign:"center",padding:60,color:C.gray}}>Caricamento…</div>
           : filtered.length===0? <Empty admin={admin} gate={adminGate} hasNews={news.length>0} onAdd={()=>{setEditing(null);setShowForm(true);}} onLogin={()=>setShowLogin(true)}/>
-          : <React.Fragment>
-              {featured&&!query&&activeCat==="Tutte"&&<Card item={featured} big admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={(i)=>{setEditing(i);setShowForm(true);}} onDelete={removeItem}/>}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(270px, 1fr))",gap:14,marginTop:16}}>
-                {(query||activeCat!=="Tutte"?filtered:rest).map(n=><Card key={n.id} item={n} admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={(i)=>{setEditing(i);setShowForm(true);}} onDelete={removeItem}/>)}
-              </div>
-            </React.Fragment>}
+          : (()=>{
+              const isVetrina = view!=="archivio" && activeCat==="Tutte" && !query;
+              if(isVetrina){
+                const vetrina = rest.slice(0, HOME_VETRINA);
+                return <React.Fragment>
+                  {featured&&<Card item={featured} big admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={(i)=>{setEditing(i);setShowForm(true);}} onDelete={removeItem}/>}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(270px, 1fr))",gap:14,marginTop:16}}>
+                    {vetrina.map(n=><Card key={n.id} item={n} admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={(i)=>{setEditing(i);setShowForm(true);}} onDelete={removeItem}/>)}
+                  </div>
+                  {rest.length>HOME_VETRINA&&<a href="/archivio" onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0) return; e.preventDefault(); openArchive(); }} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:22,background:C.navy,color:"#fff",borderRadius:12,padding:"14px 18px",fontSize:15,fontWeight:700,textDecoration:"none",fontFamily:"Barlow"}}>Vedi tutti gli articoli nell'archivio <Ic n="enter" s={16} c="#fff"/></a>}
+                </React.Fragment>;
+              }
+              const list = filtered.slice(0, shown);
+              return <React.Fragment>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(270px, 1fr))",gap:14,marginTop:16}}>
+                  {list.map(n=><Card key={n.id} item={n} admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={(i)=>{setEditing(i);setShowForm(true);}} onDelete={removeItem}/>)}
+                </div>
+                {filtered.length>shown&&<div style={{display:"flex",justifyContent:"center",marginTop:22}}><button onClick={()=>setShown(s=>s+LIST_STEP)} style={{background:C.card,color:C.navy,border:"1px solid "+C.line,borderRadius:12,padding:"12px 24px",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"Barlow"}}>Mostra altri ({filtered.length-shown})</button></div>}
+              </React.Fragment>;
+            })()}
       </main>
       )}
 
