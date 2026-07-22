@@ -117,7 +117,7 @@ function articlePath(item){ return "/articolo/"+item.id+"/"+slugify(item.title);
 function articleFullUrl(item){ return window.location.origin+articlePath(item); }
 function topicPath(cat){ return "/argomento/"+encodeURIComponent(cat); }
 function topicFullUrl(cat){ return window.location.origin+topicPath(cat); }
-function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } const seg=p.replace(/^\/+|\/+$/g,""); if(seg==="archivio"){ return {name:"archivio"}; } if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
+function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } const seg=p.replace(/^\/+|\/+$/g,""); if(seg==="archivio"){ return {name:"archivio"}; } if(seg==="newsletter"){ return {name:"page",page:"newsletter"}; } if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
 function copyToClipboard(url,onOk,onFail){ (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(onOk).catch(()=>{ try{ window.prompt("Copia il link:",url); }catch(e){} if(onFail)onFail(); }); }
 
 // ====== TESTO FORMATTATO (rich text) ======
@@ -209,11 +209,12 @@ function App(){
             <button onClick={()=>openPage("chi-siamo")} style={menuItem}>Chi siamo</button>
             <button onClick={()=>go("social")} style={menuItem}>Social</button>
             <button onClick={()=>go("contatti")} style={menuItem}>Contatti</button>
+            <button onClick={()=>openPage("newsletter")} style={menuItem}>Newsletter</button>
           </nav>}
         </div>
       </header>
 
-      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
+      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="newsletter" ? <NewsletterPage/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
       <main id="top" style={{maxWidth:980,margin:"0 auto",padding:"16px"}}>
         {view==="archivio"&&<div style={{marginBottom:14}}><div style={{fontFamily:"Anton",fontSize:26,color:C.navy}}>Archivio</div><div style={{fontSize:14,color:C.gray}}>Tutti gli articoli di Iattualità. Cerca o filtra per argomento.</div></div>}
         <div style={{display:"flex",alignItems:"center",gap:8,background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"10px 14px",marginBottom:14}}>
@@ -662,6 +663,60 @@ function ContactPage({info}){
   );
 }
 
+function NewsletterPage(){
+  const [email,setEmail]=useState("");
+  const [consenso,setConsenso]=useState(false);
+  const [state,setState]=useState("idle"); // idle | busy | done | already | error
+  const [msg,setMsg]=useState("");
+  const emailOk=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  const valid=emailOk&&consenso;
+  useEffect(()=>{
+    document.title="Newsletter · Iattualità";
+    const c=document.querySelector('link[rel="canonical"]'); if(c)c.setAttribute("href","https://iattualita.it/newsletter");
+    const dm=document.querySelector('meta[name="description"]'); const prev=dm?dm.getAttribute("content"):null;
+    if(dm)dm.setAttribute("content","Iscriviti alla newsletter di Iattualità: gli articoli verificati della settimana in una sola email. Niente spam, nessuna appartenenza politica.");
+    return ()=>{ document.title="Iattualità · L'informazione intelligente e in tempo reale"; const cc=document.querySelector('link[rel="canonical"]'); if(cc)cc.setAttribute("href","https://iattualita.it/"); if(dm&&prev!=null)dm.setAttribute("content",prev); };
+  },[]);
+  const submit=async()=>{
+    if(!emailOk){ setState("error"); setMsg("Controlla l'indirizzo email."); return; }
+    if(!consenso){ setState("error"); setMsg("Serve il consenso per completare l'iscrizione."); return; }
+    setState("busy"); setMsg("");
+    try{
+      const r=await apiSubscribe(email.trim().toLowerCase());
+      if(r==="already_confirmed"){ setState("already"); setMsg("Questo indirizzo è già iscritto e confermato."); }
+      else { setState("done"); setMsg("Ci siamo quasi: ti abbiamo inviato una mail, apri il link al suo interno per confermare l'iscrizione. Se non la trovi, controlla anche spam e promozioni."); }
+      if(window.umami&&window.umami.track)window.umami.track("newsletter_iscrizione");
+    }catch(e){ setState("error"); setMsg(e.message||"Iscrizione non riuscita. Riprova tra poco."); }
+  };
+  const done=state==="done"||state==="already";
+  return (
+    <main id="top" style={{maxWidth:760,margin:"0 auto",padding:"24px 16px 8px"}}>
+      <h1 style={{fontFamily:"Anton",fontSize:"clamp(26px,6vw,38px)",color:C.navy,margin:"0 0 8px",fontWeight:400,letterSpacing:.3}}>Newsletter</h1>
+      <p style={{color:C.navySoft,fontSize:15.5,lineHeight:1.5,marginTop:0}}>Gli articoli della settimana di Iattualità, raccolti in una sola email. Notizie verificate con i dati, senza appartenenze politiche. Niente spam: puoi disiscriverti quando vuoi.</p>
+      <div style={{background:C.card,border:"1px solid "+C.line,borderRadius:16,padding:18,marginTop:18}}>
+        {done
+          ? <div style={{textAlign:"center",padding:"14px 6px"}}>
+              <div style={{fontFamily:"Anton",fontSize:22,color:C.navy,marginBottom:8}}>{state==="already"?"Sei già iscritto":"Controlla la tua email"}</div>
+              <p style={{color:C.navySoft,fontSize:14.5,margin:0,lineHeight:1.55}}>{msg}</p>
+            </div>
+          : <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div>
+                <label style={labStyle}>Email</label>
+                <input type="email" value={email} onChange={e=>{setEmail(e.target.value); if(state==="error")setState("idle");}} onKeyDown={e=>e.key==="Enter"&&submit()} style={inStyle} placeholder="nome@esempio.it"/>
+              </div>
+              <label style={{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer"}}>
+                <input type="checkbox" checked={consenso} onChange={e=>{setConsenso(e.target.checked); if(state==="error")setState("idle");}} style={{width:18,height:18,accentColor:C.blue,marginTop:2,flexShrink:0}}/>
+                <span style={{fontSize:13.5,color:C.navySoft,lineHeight:1.45}}>Acconsento a ricevere la newsletter di Iattualità all'indirizzo indicato. Trattiamo i tuoi dati secondo la <a href="/privacy" onClick={e=>{e.preventDefault(); if(window.history){history.pushState(null,"","/privacy"); window.dispatchEvent(new PopStateEvent("popstate"));}}} style={{color:C.blueDeep,fontWeight:600,textDecoration:"underline"}}>Privacy policy</a>. Posso disiscrivermi in qualsiasi momento dal link presente in ogni email.</span>
+              </label>
+              {state==="error"&&<div style={{background:"#FDECEA",border:"1px solid #F5C6C0",color:"#B3261E",borderRadius:10,padding:"10px 12px",fontSize:14}}>{msg}</div>}
+              <button disabled={!valid||state==="busy"} onClick={submit} style={{background:(valid&&state!=="busy")?C.blue:C.line,color:"#fff",border:"none",borderRadius:12,padding:13,fontWeight:700,fontSize:16,cursor:(valid&&state!=="busy")?"pointer":"not-allowed"}}>{state==="busy"?"Iscrizione…":"Iscriviti"}</button>
+              <p style={{fontSize:12.5,color:C.gray,margin:0,lineHeight:1.5}}>Iscrizione con doppia conferma: dopo il click ti arriva un'email per confermare. I dati non vengono ceduti a terzi.</p>
+            </div>}
+      </div>
+    </main>
+  );
+}
+
 const STATIC_PAGES={
   "chi-siamo":{ title:"Chi siamo · Iattualità", desc:"Iattualità è un progetto di informazione indipendente: attualità, geopolitica, inchieste ed economia verificate con i dati, senza appartenenze politiche.", h1:"Chi siamo",
     intro:"Iattualità è un progetto di informazione indipendente. Raccontiamo attualità, geopolitica, inchieste ed economia con un metodo semplice: verificare con i dati e lasciare il giudizio a chi legge.",
@@ -806,6 +861,7 @@ function SiteFooter({info,admin,onEdit,onPage,onSendNewsletter}){
         </div>
       </div>
       <div style={{borderTop:"1px solid rgba(255,255,255,.12)",marginTop:26,paddingTop:18,display:"flex",flexWrap:"wrap",gap:"6px 18px",justifyContent:"center"}}>
+        <a href="/newsletter" onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage("newsletter"); }} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>Newsletter</a>
         {Object.keys(STATIC_PAGES).map(k=>(
           <a key={k} href={"/"+k} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage(k); }} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>{STATIC_PAGES[k].h1}</a>
         ))}
