@@ -24,6 +24,13 @@ function slugify(s) {
 function stripHtml(h) {
   return (h || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
+// URL assoluto passato dalla Netlify Image CDN: i feed reader e gli aggregatori
+// scaricano una copia ridotta servita da Netlify, non l'originale da Supabase.
+// fm=jpg perche' non tutti gli aggregatori leggono il webp.
+function cdnAbs(u, w) {
+  if (!u || !/^https?:\/\//.test(u)) return u || "";
+  return SITE + "/.netlify/images?url=" + encodeURIComponent(u) + "&w=" + w + "&q=80&fm=jpg";
+}
 
 export default async () => {
   let items = [];
@@ -50,7 +57,7 @@ export default async () => {
       <pubDate>${pub}</pubDate>${it.category ? `
       <category>${esc(it.category)}</category>` : ""}
       <description>${esc(desc)}</description>${it.image ? `
-      <enclosure url="${esc(it.image)}" type="image/jpeg"/>` : ""}
+      <enclosure url="${esc(cdnAbs(it.image, 1200))}" type="image/jpeg"/>` : ""}
     </item>`;
   }).join("\n");
 

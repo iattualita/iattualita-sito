@@ -19,6 +19,30 @@ const SUPABASE_KEY = "sb_publishable_I3s4phA5Be9qnV4pLbWQMQ_8-IGUE-b";
 const SITE = "https://iattualita.it";
 const OG_DEFAULT = SITE + "/og-default.jpg";
 
+// Se le anteprime social si rompessero, metti false e rideploya: si torna
+// a servire og:image direttamente da Supabase, senza toccare altro codice.
+const OG_VIA_CDN = true;
+
+// ---------- Netlify Image CDN ----------
+// Senza questo, l'HTML pre-renderizzato faceva scaricare al browser la cover
+// ORIGINALE da Supabase a OGNI apertura di articolo: imgCDN() di app.jsx entra
+// in gioco solo dopo il mount di React, troppo tardi per evitare il download.
+// Il dominio Supabase e' gia' in allowlist nel blocco [images] di netlify.toml.
+// w=900 e' lo stesso valore usato da ArticlePage in app.jsx: stessa variante,
+// una sola richiesta di origine verso Supabase invece di due.
+const cdn = (u, w) =>
+  !u || !/^https?:\/\//.test(u)
+    ? u || ""
+    : "/.netlify/images?url=" + encodeURIComponent(u) + "&w=" + w + "&q=72&fm=webp";
+
+// Variante assoluta per gli scraper social, che non hanno una <base> e non
+// rispettano la cache del browser: ogni condivisione riscarica l'immagine.
+// fm=jpg perche' non tutti gli scraper leggono il webp.
+const cdnAbs = (u, w) =>
+  OG_VIA_CDN && /^https?:\/\//.test(u || "") && u.indexOf(SITE) !== 0
+    ? SITE + "/.netlify/images?url=" + encodeURIComponent(u) + "&w=" + w + "&q=80&fm=jpg"
+    : u;
+
 // ---------- utility ----------
 
 const esc = (s) =>
@@ -110,6 +134,7 @@ function ogBlock(a) {
   // sempre da make_og.py (1200×630), e og-default.jpg e' anch'essa 1200×630.
   // Sulla cover caricata a mano non sappiamo la misura: meglio tacere che
   // mentire, altrimenti lo scraper costruisce un'anteprima sbagliata.
+  const imgOg = cdnAbs(img, 1200);
   const knownSize = hasOg || img === OG_DEFAULT;
   const imgMeta = knownSize
     ? `<meta property="og:image:width" content="1200">
@@ -126,8 +151,8 @@ function ogBlock(a) {
 <meta property="og:title" content="${esc(a.title)}">
 <meta property="og:description" content="${esc(desc)}">
 <meta property="og:url" content="${esc(url)}">
-<meta property="og:image" content="${esc(img)}">
-<meta property="og:image:secure_url" content="${esc(img)}">
+<meta property="og:image" content="${esc(imgOg)}">
+<meta property="og:image:secure_url" content="${esc(imgOg)}">
 <meta property="og:image:alt" content="${esc(a.title)}">
 ${imgMeta}
 ${published ? `<meta property="article:published_time" content="${esc(published)}">` : ""}
@@ -137,8 +162,8 @@ ${a.category ? `<meta property="article:section" content="${esc(a.category)}">` 
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${esc(a.title)}">
 <meta name="twitter:description" content="${esc(desc)}">
-<meta name="twitter:image" content="${esc(img)}">
-<script type="application/ld+json">${ld(newsArticleLd(a, url, img, published, modified, desc))}</script>
+<meta name="twitter:image" content="${esc(imgOg)}">
+<script type="application/ld+json">${ld(newsArticleLd(a, url, imgOg, published, modified, desc))}</script>
 <script type="application/ld+json">${ld(breadcrumbLd(a, url))}</script>`;
 }
 
@@ -202,8 +227,9 @@ function articleHtml(a) {
       ? safeBody(a.body)
       : "<p>" + esc(a.summary || "").replace(/\n/g, "<br>") + "</p>";
 
+  // La cover passa dalla Image CDN: e' la riga che pesava di piu' sull'egress.
   const cover = a.image
-    ? `<img src="${esc(a.image)}" alt="${esc(a.title)}" width="760" height="428" style="width:100%;height:auto;border-radius:16px;margin:0 0 18px">`
+    ? `<img src="${esc(cdn(a.image, 900))}" alt="${esc(a.title)}" width="760" height="428" decoding="async" style="width:100%;height:auto;border-radius:16px;margin:0 0 18px">`
     : "";
 
   return `<article style="max-width:760px;margin:0 auto;padding:18px 16px;font-family:Barlow,system-ui,sans-serif;color:#2A3A57;line-height:1.7">
