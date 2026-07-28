@@ -63,7 +63,32 @@ async function apiUpdNews(token,id,o){ const r=await authed(token,t=>fetch(API+"
 async function apiDelNews(token,id){ const r=await authed(token,t=>fetch(API+"/news?id=eq."+id,{method:"DELETE",headers:hdr(t)})); if(!r.ok)throw new Error(await r.text()); }
 async function apiUpdInfo(token,o){ const r=await authed(token,t=>fetch(API+"/site_info?id=eq.1",{method:"PATCH",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(o)})); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
 async function apiLogin(email,password){ const r=await fetch(SUPABASE_URL+"/auth/v1/token?grant_type=password",{method:"POST",headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json"},body:JSON.stringify({email,password})}); const d=await r.json(); if(!r.ok)throw new Error(d.error_description||d.msg||"Accesso non riuscito"); return d; }
-async function apiUpload(token,file,folder){ const ext=(file.name.split(".").pop()||"bin"); const path=folder+"/"+(crypto.randomUUID?crypto.randomUUID():Date.now())+"."+ext; const r=await authed(token,t=>fetch(SUPABASE_URL+"/storage/v1/object/media/"+path,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+t,"x-upsert":"true","Content-Type":file.type||"application/octet-stream"},body:file})); if(!r.ok)throw new Error(await r.text()); return SUPABASE_URL+"/storage/v1/object/public/media/"+path; }
+// Ridimensiona e ricomprime la foto nel browser PRIMA di caricarla su Supabase.
+// Le cover 1080x1920 q93 di reel_iattualita.py pesano 400-700 KB: qui scendono
+// sotto i 150 KB, e ogni fetch di origine costa un quinto. 1600 px di lato lungo
+// coprono la richiesta piu' grande del sito (imgCDN a 900).
+// Il logo resta intatto: e' un PNG con trasparenza, il JPEG la annerirebbe.
+// Se qualcosa va storto si carica il file originale: l'upload non si rompe mai.
+async function shrinkImage(file,folder,maxSide,quality){
+  maxSide=maxSide||1600; quality=quality||0.82;
+  if(folder==="logo") return file;
+  if(!file||!/^image\//.test(file.type||"")) return file;
+  if(/gif|svg/.test(file.type||"")) return file;
+  try{
+    const bmp=await createImageBitmap(file);
+    const scale=Math.min(1,maxSide/Math.max(bmp.width,bmp.height));
+    const w=Math.round(bmp.width*scale), h=Math.round(bmp.height*scale);
+    const cv=document.createElement("canvas"); cv.width=w; cv.height=h;
+    const ctx=cv.getContext("2d");
+    ctx.fillStyle="#ffffff"; ctx.fillRect(0,0,w,h);   // niente alone nero sui PNG
+    ctx.drawImage(bmp,0,0,w,h);
+    if(bmp.close) bmp.close();
+    const blob=await new Promise(ok=>cv.toBlob(ok,"image/jpeg",quality));
+    if(!blob||blob.size>=file.size) return file;      // gia' piu' leggero cosi': lascia stare
+    return new File([blob],(file.name||"img").replace(/\.\w+$/,"")+".jpg",{type:"image/jpeg"});
+  }catch(e){ return file; }
+}
+async function apiUpload(token,file,folder){ file=await shrinkImage(file,folder); const ext=(file.name.split(".").pop()||"bin"); const path=folder+"/"+(crypto.randomUUID?crypto.randomUUID():Date.now())+"."+ext; const r=await authed(token,t=>fetch(SUPABASE_URL+"/storage/v1/object/media/"+path,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+t,"x-upsert":"true","Content-Type":file.type||"application/octet-stream"},body:file})); if(!r.ok)throw new Error(await r.text()); return SUPABASE_URL+"/storage/v1/object/public/media/"+path; }
 
 function Ic({n,s=18,c="currentColor",fill="none"}){
   const P={
@@ -273,7 +298,7 @@ function Logo({info,admin,token,onSaveLogo,onHome}){
   const cfg=info.logo_cfg||DEFAULT_INFO.logo_cfg;
   const upload=async(e)=>{ const f=e.target.files&&e.target.files[0]; if(!f)return; setBusy(true); try{ const url=await apiUpload(token,f,"logo"); await onSaveLogo(url,cfg); }catch(err){ alert("Errore caricamento logo:\n\n"+(err.message||err)); } setBusy(false); };
   const Word=()=>(<div onClick={onHome} style={{lineHeight:1.1,cursor:"pointer"}}><div style={{fontFamily:"Anton",fontSize:21,letterSpacing:.3}}><span style={{color:C.blue}}>IA</span><span style={{color:C.navy}}>ttualità</span></div><div className="tagline" style={{fontSize:9.5,color:C.gray,marginTop:3}}>L'informazione intelligente e in tempo reale</div></div>);
-  const Box=()=> info.logo_url? <div onClick={onHome} style={{width:44,height:44,borderRadius:10,background:"#fff",flexShrink:0,border:"1px solid "+C.line,overflow:"hidden",cursor:"pointer",backgroundImage:"url("+info.logo_url+")",backgroundRepeat:"no-repeat",backgroundSize:(cfg.scale*100)+"%",backgroundPosition:cfg.x+"% "+cfg.y+"%"}}/> : null;
+  const Box=()=> info.logo_url? <div onClick={onHome} style={{width:44,height:44,borderRadius:10,background:"#fff",flexShrink:0,border:"1px solid "+C.line,overflow:"hidden",cursor:"pointer",backgroundImage:"url("+imgCDN(info.logo_url,400)+")",backgroundRepeat:"no-repeat",backgroundSize:(cfg.scale*100)+"%",backgroundPosition:cfg.x+"% "+cfg.y+"%"}}/> : null;
 
   if(!admin) return <div style={{display:"flex",alignItems:"center",gap:10}}><Box/><Word/></div>;
   return (
