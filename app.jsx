@@ -9,6 +9,35 @@ const C = { cream:"#F4F2EC", card:"#FFFFFF", navy:"#16243F", navySoft:"#2A3A57",
 const CATEGORIES = ["Economia","Cronaca","Geopolitica","Attualità","Salute","Ambiente","Tecnologia","Sport"];
 const catColor = (c)=>({Economia:C.blueDeep,Cronaca:C.red,Geopolitica:C.navy,Salute:"#159A8C",Ambiente:"#2E8B57",Tecnologia:C.blue,Sport:C.sport})[c]||C.amber;
 
+// ====== SERIE: etichetta trasversale, NON una categoria ======
+// La categoria resta tematica (Geopolitica, Economia, Cronaca...). La serie
+// raccoglie gli articoli di un filone ricorrente: il podcast, un'inchiesta a
+// puntate. Un articolo puo' avere entrambe le cose: quello sull'episodio di
+// geopolitica compare sia in /argomento/Geopolitica sia in /podcast, e resta
+// in homepage come qualsiasi altro articolo. Per aggiungere una serie basta
+// scrivere il nome qui: rotta, pagina e sitemap seguono da sole.
+const SERIES = ["Podcast","Ponte sullo Stretto","Licenze taxi e NCC"];
+// URL breve per le serie che meritano un indirizzo proprio; le altre vivono su
+// /serie/<slug>. Una serie ha sempre un solo URL: niente doppioni per Google.
+const SERIE_ALIAS = { "Podcast":"/podcast" };
+const SERIE_META = {
+  "Podcast":{
+    title:"Podcast · Iattualità",
+    desc:"Il podcast di Iattualità: ogni episodio raccontato per intero, con i dati verificati e le fonti in chiaro.",
+    intro:"Ogni episodio del podcast di Iattualità, raccontato per intero: i fatti, i numeri verificati e le fonti in chiaro. Nessuna appartenenza, il giudizio a chi legge."
+  },
+  "Ponte sullo Stretto":{
+    title:"Ponte sullo Stretto · Iattualità",
+    desc:"Tutte le puntate dell'inchiesta di Iattualità sul Ponte sullo Stretto: costi, tempi, atti ufficiali.",
+    intro:"L'inchiesta a puntate sul Ponte sullo Stretto: costi, tempi, pareri tecnici e atti ufficiali, aggiornati man mano che escono."
+  },
+  "Licenze taxi e NCC":{
+    title:"Licenze taxi e NCC · Iattualità",
+    desc:"L'inchiesta di Iattualità sulle licenze taxi e NCC in Italia: numeri, regole e nodi mai sciolti.",
+    intro:"L'inchiesta sulle licenze taxi e NCC: quante sono, come vengono assegnate e perché il nodo non si scioglie da vent'anni."
+  }
+};
+
 function hdr(token,json){ const h={apikey:SUPABASE_KEY}; if(token)h.Authorization="Bearer "+token; if(json)h["Content-Type"]="application/json"; return h; }
 
 // --- Sessione redazione: rinnovo automatico del token --------------------
@@ -142,7 +171,11 @@ function articlePath(item){ return "/articolo/"+item.id+"/"+slugify(item.title);
 function articleFullUrl(item){ return window.location.origin+articlePath(item); }
 function topicPath(cat){ return "/argomento/"+encodeURIComponent(cat); }
 function topicFullUrl(cat){ return window.location.origin+topicPath(cat); }
-function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } const seg=p.replace(/^\/+|\/+$/g,""); if(seg==="archivio"){ return {name:"archivio"}; } if(seg==="newsletter"){ return {name:"page",page:"newsletter"}; } if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
+function seriePath(s){ return SERIE_ALIAS[s] || ("/serie/"+slugify(s)); }
+function serieFullUrl(s){ return window.location.origin+seriePath(s); }
+function serieFromSlug(slug){ return SERIES.find(s=>slugify(s)===slug)||null; }
+function serieFromAlias(seg){ return Object.keys(SERIE_ALIAS).find(s=>SERIE_ALIAS[s]==="/"+seg)||null; }
+function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } if(p.indexOf("/serie/")===0){ const s=serieFromSlug(decodeURIComponent(p.slice("/serie/".length).split("/")[0])); if(s) return {name:"serie",serie:s}; } const seg=p.replace(/^\/+|\/+$/g,""); const alias=seg?serieFromAlias(seg):null; if(alias){ return {name:"serie",serie:alias}; } if(seg==="archivio"){ return {name:"archivio"}; } if(seg==="newsletter"){ return {name:"page",page:"newsletter"}; } if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
 function copyToClipboard(url,onOk,onFail){ (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(onOk).catch(()=>{ try{ window.prompt("Copia il link:",url); }catch(e){} if(onFail)onFail(); }); }
 
 // ====== TESTO FORMATTATO (rich text) ======
@@ -158,6 +191,7 @@ function App(){
   const [loading,setLoading]=useState(true);
   const [query,setQuery]=useState("");
   const [activeCat,setActiveCat]=useState("Tutte");
+  const [activeSerie,setActiveSerie]=useState(null);
   const HOME_VETRINA=9, LIST_STEP=12;
   const [shown,setShown]=useState(LIST_STEP);
   const [token,setToken]=useState(null);
@@ -170,7 +204,7 @@ function App(){
   const [view,setView]=useState("home");
   const [menuOpen,setMenuOpen]=useState(false);
   const [articleId,setArticleId]=useState(null);
-  useEffect(()=>{ setShown(LIST_STEP); },[activeCat,query,view]);
+  useEffect(()=>{ setShown(LIST_STEP); },[activeCat,activeSerie,query,view]);
 
   const adminGate=(window.location.search+window.location.hash).toLowerCase().includes("admin");
   const admin=!!token;
@@ -200,16 +234,33 @@ function App(){
   const doLogin=async(email,password)=>{ const d=await apiLogin(email,password); setToken(setSession(d)); setShowLogin(false); note("Bentornato in redazione."); };
   const logout=()=>{ setToken(null); note("Uscito dalla redazione."); };
 
-  const go=(v,anchor)=>{ setMenuOpen(false); if(window.location.pathname!=="/"){ history.pushState(null,"","/"+(window.location.search||"")); } setArticleId(null); if(v==="home")setActiveCat("Tutte"); setView(v); if(v==="home"&&anchor){ setTimeout(()=>{const el=document.getElementById(anchor); if(el)el.scrollIntoView({behavior:"smooth"});},40);} else { window.scrollTo(0,0);} };
+  const go=(v,anchor)=>{ setMenuOpen(false); if(window.location.pathname!=="/"){ history.pushState(null,"","/"+(window.location.search||"")); } setArticleId(null); setActiveSerie(null); if(v==="home")setActiveCat("Tutte"); setView(v); if(v==="home"&&anchor){ setTimeout(()=>{const el=document.getElementById(anchor); if(el)el.scrollIntoView({behavior:"smooth"});},40);} else { window.scrollTo(0,0);} };
   const openArticle=(item)=>{ history.pushState(null,"",articlePath(item)); setArticleId(item.id); setView("article"); window.scrollTo(0,0); };
-  const openPage=(slug)=>{ setMenuOpen(false); history.pushState(null,"","/"+slug); setArticleId(null); setView(slug); window.scrollTo(0,0); };
-  const openTopic=(cat)=>{ setMenuOpen(false); if(cat==="Tutte"){ if(window.location.pathname!=="/"){ history.pushState(null,"","/"+(window.location.search||"")); } setActiveCat("Tutte"); } else { history.pushState(null,"",topicPath(cat)); setActiveCat(cat); } setArticleId(null); setView("home"); window.scrollTo(0,0); };
-  const openArchive=()=>{ setMenuOpen(false); history.pushState(null,"","/archivio"); setArticleId(null); setActiveCat("Tutte"); setQuery(""); setView("archivio"); window.scrollTo(0,0); };
+  const openPage=(slug)=>{ setMenuOpen(false); history.pushState(null,"","/"+slug); setArticleId(null); setActiveSerie(null); setView(slug); window.scrollTo(0,0); };
+  const openTopic=(cat)=>{ setMenuOpen(false); if(cat==="Tutte"){ if(window.location.pathname!=="/"){ history.pushState(null,"","/"+(window.location.search||"")); } setActiveCat("Tutte"); } else { history.pushState(null,"",topicPath(cat)); setActiveCat(cat); } setArticleId(null); setActiveSerie(null); setView("home"); window.scrollTo(0,0); };
+  const openSerie=(s)=>{ setMenuOpen(false); history.pushState(null,"",seriePath(s)); setArticleId(null); setActiveCat("Tutte"); setQuery(""); setActiveSerie(s); setView("serie"); window.scrollTo(0,0); };
+  const openArchive=()=>{ setMenuOpen(false); history.pushState(null,"","/archivio"); setArticleId(null); setActiveSerie(null); setActiveCat("Tutte"); setQuery(""); setView("archivio"); window.scrollTo(0,0); };
   const copyArticleLink=(item)=>copyToClipboard(articleFullUrl(item),()=>note("Link articolo copiato negli appunti."));
   const copyTopicLink=(cat)=>copyToClipboard(topicFullUrl(cat),()=>note("Link argomento copiato negli appunti."));
-  useEffect(()=>{ if(window.location.hash && /^#\/(articolo|argomento)\//.test(window.location.hash)){ try{ history.replaceState(null,"",window.location.hash.slice(1)); }catch(e){} } const apply=()=>{ const r=parsePath(); if(r.name==="article"){ setArticleId(r.id); setView("article"); } else if(r.name==="topic"){ setArticleId(null); setActiveCat(r.cat); setView(v=>(v==="article")?"home":v); } else if(r.name==="page"){ setArticleId(null); setView(r.page); } else if(r.name==="archivio"){ setArticleId(null); setActiveCat("Tutte"); setView("archivio"); } else { setArticleId(null); setActiveCat("Tutte"); setView(v=>(v==="article")?"home":v); } }; apply(); window.addEventListener("popstate",apply); return ()=>window.removeEventListener("popstate",apply); },[]);
+  const copySerieLink=(s)=>copyToClipboard(serieFullUrl(s),()=>note("Link serie copiato negli appunti."));
+  useEffect(()=>{ if(window.location.hash && /^#\/(articolo|argomento|serie)\//.test(window.location.hash)){ try{ history.replaceState(null,"",window.location.hash.slice(1)); }catch(e){} } const apply=()=>{ const r=parsePath(); const back=(v)=>(v==="article"||v==="serie")?"home":v; if(r.name==="article"){ setArticleId(r.id); setView("article"); } else if(r.name==="serie"){ const cp=seriePath(r.serie); if(window.location.pathname!==cp){ try{ history.replaceState(null,"",cp); }catch(e){} } setArticleId(null); setActiveCat("Tutte"); setActiveSerie(r.serie); setView("serie"); } else if(r.name==="topic"){ setArticleId(null); setActiveSerie(null); setActiveCat(r.cat); setView(back); } else if(r.name==="page"){ setArticleId(null); setActiveSerie(null); setView(r.page); } else if(r.name==="archivio"){ setArticleId(null); setActiveSerie(null); setActiveCat("Tutte"); setView("archivio"); } else { setArticleId(null); setActiveSerie(null); setActiveCat("Tutte"); setView(back); } }; apply(); window.addEventListener("popstate",apply); return ()=>window.removeEventListener("popstate",apply); },[]);
+
+  // SEO delle pagine serie: titolo, description e canonical dedicati, come per
+  // le pagine statiche. Senza questo /podcast erediterebbe i meta della home.
+  useEffect(()=>{
+    if(view!=="serie"||!activeSerie) return;
+    const d=SERIE_META[activeSerie]||{};
+    document.title=d.title||(activeSerie+" · Iattualità");
+    let m=document.querySelector('meta[name="description"]');
+    if(!m){ m=document.createElement("meta"); m.setAttribute("name","description"); document.head.appendChild(m); }
+    m.setAttribute("content",d.desc||"");
+    const c=document.querySelector('link[rel="canonical"]');
+    if(c)c.setAttribute("href","https://iattualita.it"+seriePath(activeSerie));
+    return ()=>{ document.title="Iattualità · L'informazione intelligente e in tempo reale"; const cc=document.querySelector('link[rel="canonical"]'); if(cc)cc.setAttribute("href","https://iattualita.it/"); };
+  },[view,activeSerie]);
 
   const filtered=news
+    .filter(n=> view!=="serie" ? true : (n.serie===activeSerie))
     .filter(n=>activeCat==="Tutte"||n.category===activeCat)
     .filter(n=>{ if(!query.trim())return true; const q=query.toLowerCase(); return (n.title||"").toLowerCase().includes(q)||(n.subtitle||"").toLowerCase().includes(q)||(n.summary||"").toLowerCase().includes(q)||(n.category||"").toLowerCase().includes(q); });
   const featured=filtered.find(n=>n.featured)||filtered[0];
@@ -229,6 +280,7 @@ function App(){
           <button onClick={()=>setMenuOpen(o=>!o)} title="Menu" style={{display:"flex",alignItems:"center",justifyContent:"center",background:C.cream,color:C.navy,border:"1px solid "+C.line,borderRadius:10,width:40,height:40,cursor:"pointer",flexShrink:0}}><Ic n={menuOpen?"x":"menu"} s={19} c={C.navy}/></button>
           {menuOpen&&<nav style={{flexBasis:"100%",display:"flex",flexDirection:"column",gap:2,paddingTop:6,marginTop:6,borderTop:"1px solid "+C.line}}>
             <button onClick={()=>go("home","top")} style={menuItem}>News</button>
+            <button onClick={()=>openSerie("Podcast")} style={menuItem}>Podcast</button>
             <button onClick={openArchive} style={menuItem}>Archivio</button>
             <button onClick={()=>openTopic("Sport")} style={menuItem}>Sport</button>
             <button onClick={()=>openPage("chi-siamo")} style={menuItem}>Chi siamo</button>
@@ -242,14 +294,23 @@ function App(){
       {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="newsletter" ? <NewsletterPage/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
       <main id="top" style={{maxWidth:980,margin:"0 auto",padding:"16px"}}>
         {view==="archivio"&&<div style={{marginBottom:14}}><div style={{fontFamily:"Anton",fontSize:26,color:C.navy}}>Archivio</div><div style={{fontSize:14,color:C.gray}}>Tutti gli articoli di Iattualità. Cerca o filtra per argomento.</div></div>}
+        {view==="serie"&&activeSerie&&<div style={{marginBottom:16,background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"14px 16px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <span style={{background:C.navy,color:"#fff",fontSize:10.5,fontWeight:800,padding:"3px 9px",borderRadius:6,textTransform:"uppercase",letterSpacing:.5}}>Serie</span>
+            <h1 style={{fontFamily:"Anton",fontSize:26,color:C.navy,margin:0,fontWeight:400,letterSpacing:.3}}>{activeSerie}</h1>
+            <span style={{fontSize:13,color:C.gray}}>{filtered.length} {filtered.length===1?"articolo":"articoli"}</span>
+          </div>
+          <p style={{fontSize:14.5,color:C.navySoft,lineHeight:1.55,margin:"8px 0 0",maxWidth:720}}>{(SERIE_META[activeSerie]||{}).intro||("Tutti gli articoli della serie "+activeSerie+".")}</p>
+          <button onClick={()=>copySerieLink(activeSerie)} style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:12,background:C.cream,color:C.navy,border:"1px solid "+C.line,borderRadius:10,padding:"8px 12px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"Barlow"}}><Ic n="link" s={15} c={C.navy}/> Copia link serie</button>
+        </div>}
         <div style={{display:"flex",alignItems:"center",gap:8,background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"10px 14px",marginBottom:14}}>
           <Ic n="search" s={18} c={C.gray}/>
           <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cerca tra le news…" style={{border:"none",outline:"none",flex:1,fontSize:15,fontFamily:"Barlow",background:"transparent",color:C.navy,minWidth:0}}/>
           {query&&<span onClick={()=>setQuery("")} style={{cursor:"pointer",display:"flex"}}><Ic n="x" s={17} c={C.gray}/></span>}
         </div>
-        <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:6,marginBottom:16}}>
+        {view!=="serie"&&<div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:6,marginBottom:16}}>
           {["Tutte",...CATEGORIES].map(c=>{ const on=activeCat===c; const href=c==="Tutte"?"/":topicPath(c); return <a key={c} href={href} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0) return; e.preventDefault(); openTopic(c); }} style={{whiteSpace:"nowrap",border:"1px solid "+(on?C.navy:C.line),background:on?C.navy:C.card,color:on?"#fff":C.navySoft,borderRadius:999,padding:"7px 14px",fontSize:13,fontWeight:600,cursor:"pointer",textDecoration:"none",fontFamily:"Barlow"}}>{c}</a>; })}
-        </div>
+        </div>}
         {activeCat!=="Tutte"&&!query&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"10px 14px",marginBottom:16}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}><Pill c={activeCat}/><span style={{fontFamily:"Anton",fontSize:18,color:C.navy}}>{activeCat}</span><span style={{fontSize:13,color:C.gray}}>{filtered.length} {filtered.length===1?"articolo":"articoli"}</span></div>
           <button onClick={()=>copyTopicLink(activeCat)} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.cream,color:C.navy,border:"1px solid "+C.line,borderRadius:10,padding:"8px 12px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"Barlow"}}><Ic n="link" s={15} c={C.navy}/> Copia link argomento</button>
@@ -257,7 +318,7 @@ function App(){
         {loading? <div style={{textAlign:"center",padding:60,color:C.gray}}>Caricamento…</div>
           : filtered.length===0? <Empty admin={admin} gate={adminGate} hasNews={news.length>0} onAdd={()=>{setEditing(null);setShowForm(true);}} onLogin={()=>setShowLogin(true)}/>
           : (()=>{
-              const isVetrina = view!=="archivio" && activeCat==="Tutte" && !query;
+              const isVetrina = view!=="archivio" && view!=="serie" && activeCat==="Tutte" && !query;
               if(isVetrina){
                 const vetrina = rest.slice(0, HOME_VETRINA);
                 return <React.Fragment>
@@ -344,6 +405,7 @@ function Card({item,big,admin,onOpen,onPlay,onEdit,onDelete,onCopy}){
   const clampStyle=(lines)=>({display:"-webkit-box",WebkitLineClamp:lines,WebkitBoxOrient:"vertical",overflow:"hidden"});
   const meta=(<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginTop:big?0:"auto"}}>
     <span style={{display:"flex",alignItems:"center",gap:5,fontSize:big?12.5:11.5,color:C.gray}}><Ic n="cal" s={big?13:12} c={C.gray}/> {fmtDate(item.date)}</span>
+    {item.serie&&<a href={seriePath(item.serie)} onClick={e=>e.stopPropagation()} title={"Vai alla serie "+item.serie} style={{background:C.navy,color:"#fff",fontSize:big?11:10.5,fontWeight:800,padding:"3px 9px",borderRadius:6,textTransform:"uppercase",letterSpacing:.5,textDecoration:"none"}}>{item.serie}</a>}
     {item.link&&<a href={item.link} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:4,fontSize:big?12.5:11.5,color:C.blueDeep,textDecoration:"none",fontWeight:600}}>{platform(item.link)} <Ic n="ext" s={big?13:12} c={C.blueDeep}/></a>}
   </div>);
 
@@ -565,7 +627,7 @@ function RichEditor({value,onChange}){
 }
 
 function NewsForm({initial,token,onClose,onSave}){
-  const [f,setF]=useState(()=> initial ? {...initial, body: initial.body || plainToHtml(initial.summary||"")} : {title:"",subtitle:"",category:"Attualità",author_name:"Lorenzo",summary:"",body:"",date:new Date().toISOString().slice(0,10),link:"",video:"",image:"",og_image:"",featured:false});
+  const [f,setF]=useState(()=> initial ? {...initial, body: initial.body || plainToHtml(initial.summary||"")} : {title:"",subtitle:"",category:"Attualità",serie:"",author_name:"Lorenzo",summary:"",body:"",date:new Date().toISOString().slice(0,10),link:"",video:"",image:"",og_image:"",featured:false});
   const [busy,setBusy]=useState(false);
   const [busyOg,setBusyOg]=useState(false);
   const [dirty,setDirty]=useState(false);
@@ -598,6 +660,13 @@ function NewsForm({initial,token,onClose,onSave}){
         <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
           <div style={{flex:"1 1 140px"}}><label style={labStyle}>Categoria</label><select style={inStyle} value={f.category} onChange={e=>set("category",e.target.value)}>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
           <div style={{flex:"1 1 140px"}}><label style={labStyle}>Data</label><input type="date" style={inStyle} value={f.date||""} onChange={e=>set("date",e.target.value)}/></div>
+        </div>
+        <div><label style={labStyle}>Serie</label>
+          <select style={inStyle} value={f.serie||""} onChange={e=>set("serie",e.target.value||null)}>
+            <option value="">— nessuna —</option>
+            {SERIES.map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+          <div style={{fontSize:12,color:C.gray,marginTop:5}}>Per gli articoli del podcast scegli "Podcast": l'articolo compare in <b>/podcast</b> e resta comunque in home e nella sua categoria tematica. La categoria non va mai usata per il formato.</div>
         </div>
         <div><label style={labStyle}>Firma</label><input style={inStyle} value={f.author_name||""} onChange={e=>set("author_name",e.target.value)} placeholder="Lorenzo"/>
           <div style={{fontSize:12,color:C.gray,marginTop:5}}>Compare sotto il titolo e nei dati strutturati. Una firma visibile è uno dei segnali di affidabilità più forti per Google.</div>
@@ -886,6 +955,7 @@ function SiteFooter({info,admin,onEdit,onPage,onSendNewsletter}){
         </div>
       </div>
       <div style={{borderTop:"1px solid rgba(255,255,255,.12)",marginTop:26,paddingTop:18,display:"flex",flexWrap:"wrap",gap:"6px 18px",justifyContent:"center"}}>
+        <a href={seriePath("Podcast")} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>Podcast</a>
         <a href="/newsletter" onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage("newsletter"); }} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>Newsletter</a>
         {Object.keys(STATIC_PAGES).map(k=>(
           <a key={k} href={"/"+k} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage(k); }} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>{STATIC_PAGES[k].h1}</a>
