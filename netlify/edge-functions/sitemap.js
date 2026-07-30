@@ -18,6 +18,13 @@ function slugify(s) {
     .slice(0, 60) || "articolo";
 }
 
+// Deve restare identica a SERIE_ALIAS dentro app.jsx: se cambia lì, cambia qui.
+// Le serie senza alias vivono su /serie/<slug>.
+const SERIE_ALIAS = { Podcast: "/podcast" };
+function seriePath(s) {
+  return SERIE_ALIAS[s] || "/serie/" + slugify(s);
+}
+
 function esc(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -38,7 +45,7 @@ export default async function handler() {
   try {
     const res = await fetch(
       SUPABASE_URL +
-        "/rest/v1/news?select=id,title,category,date,created_at&order=date.desc.nullslast,created_at.desc",
+        "/rest/v1/news?select=id,title,category,serie,date,created_at&order=date.desc.nullslast,created_at.desc",
       { headers: { apikey: SUPABASE_KEY } }
     );
     if (res.ok) news = await res.json();
@@ -59,6 +66,20 @@ export default async function handler() {
     urls.push({
       loc: SITE + "/argomento/" + encodeURIComponent(c),
       changefreq: "daily",
+      priority: "0.7",
+    });
+  }
+
+  // Pagine serie — dedotte dalle serie realmente presenti in archivio.
+  // Gli articoli della serie restano indicizzati anche come articoli: la serie
+  // e' un'etichetta trasversale, non un tipo di contenuto separato.
+  const series = [...new Set(news.map((n) => n.serie).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, "it")
+  );
+  for (const s of series) {
+    urls.push({
+      loc: SITE + seriePath(s),
+      changefreq: "weekly",
       priority: "0.7",
     });
   }
