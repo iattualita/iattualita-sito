@@ -282,7 +282,6 @@ function App(){
             <button onClick={()=>go("home","top")} style={menuItem}>News</button>
             <button onClick={()=>openSerie("Podcast")} style={menuItem}>Podcast</button>
             <button onClick={openArchive} style={menuItem}>Archivio</button>
-            <button onClick={()=>openTopic("Sport")} style={menuItem}>Sport</button>
             <button onClick={()=>openPage("chi-siamo")} style={menuItem}>Chi siamo</button>
             <button onClick={()=>go("social")} style={menuItem}>Social</button>
             <button onClick={()=>go("contatti")} style={menuItem}>Contatti</button>
