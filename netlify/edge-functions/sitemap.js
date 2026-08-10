@@ -58,6 +58,16 @@ export default async function handler() {
   // Home
   urls.push({ loc: SITE + "/", changefreq: "hourly", priority: "1.0" });
 
+  // Pagine istituzionali. Sono quelle da cui Google News valuta la testata:
+  // chi firma, con quali regole, come si correggono gli errori, come si usa
+  // l'IA. Devono stare in sitemap anche se non cambiano quasi mai.
+  // Se aggiungi una voce a STATIC_PAGES in app.jsx, aggiungila anche qui.
+  for (const p of ["chi-siamo", "standard-editoriali", "rettifiche", "trasparenza-ia", "privacy"]) {
+    urls.push({ loc: SITE + "/" + p, changefreq: "monthly", priority: "0.5" });
+  }
+  urls.push({ loc: SITE + "/archivio", changefreq: "daily", priority: "0.6" });
+  urls.push({ loc: SITE + "/newsletter", changefreq: "monthly", priority: "0.5" });
+
   // Pagine argomento — dedotte dalle categorie realmente presenti in archivio
   const cats = [...new Set(news.map((n) => n.category).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b, "it")
