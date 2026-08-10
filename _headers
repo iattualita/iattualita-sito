@@ -1,0 +1,21 @@
+# Sicurezza di base su tutto il sito
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), interest-cohort=()
+
+# app.js non ha un hash nel nome: cache breve lato browser,
+# ma la CDN puo' tenerlo piu' a lungo e rivalidare in background.
+/app.js
+  Cache-Control: public, max-age=600, stale-while-revalidate=86400
+
+# Risorse immutabili: cambiano solo se cambia il nome del file
+/favicon.ico
+  Cache-Control: public, max-age=2592000
+/favicon-192.png
+  Cache-Control: public, max-age=2592000
+/apple-touch-icon.png
+  Cache-Control: public, max-age=2592000
+/og-default.jpg
+  Cache-Control: public, max-age=2592000

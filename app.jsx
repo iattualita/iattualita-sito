@@ -77,7 +77,12 @@ async function authed(token,run){
   }
   return r;
 }
-async function apiGetNews(){ try{ const r=await fetch(API+"/news?select=*&order=date.desc.nullslast,created_at.desc",{headers:hdr()}); return r.ok?await r.json():[]; }catch(e){ return []; } }
+// La lista NON scarica il campo body. Con select=* ogni visitatore si portava
+// a casa il testo integrale di TUTTO l'archivio per mostrare qualche card, e il
+// peso cresceva a ogni articolo pubblicato. Il body arriva solo quando serve.
+const LIST_COLS = "id,title,subtitle,summary,category,serie,date,created_at,updated_at,image,og_image,video,link,featured,author_name";
+async function apiGetNews(){ try{ const r=await fetch(API+"/news?select="+LIST_COLS+"&order=date.desc.nullslast,created_at.desc",{headers:hdr()}); return r.ok?await r.json():[]; }catch(e){ return []; } }
+async function apiGetArticle(id){ try{ const r=await fetch(API+"/news?id=eq."+encodeURIComponent(id)+"&select=*&limit=1",{headers:hdr()}); const a=r.ok?await r.json():[]; return a[0]||null; }catch(e){ return null; } }
 async function apiGetInfo(){ try{ const r=await fetch(API+"/site_info?id=eq.1&select=*",{headers:hdr()}); const a=r.ok?await r.json():[]; return a[0]||null; }catch(e){ return null; } }
 async function apiSubscribe(email){
   // Passa dalla funzione serverless: e' lei che invia la mail di conferma
@@ -204,6 +209,7 @@ function App(){
   const [view,setView]=useState("home");
   const [menuOpen,setMenuOpen]=useState(false);
   const [articleId,setArticleId]=useState(null);
+  const [full,setFull]=useState(null);
   useEffect(()=>{ setShown(LIST_STEP); },[activeCat,activeSerie,query,view]);
 
   const adminGate=(window.location.search+window.location.hash).toLowerCase().includes("admin");
@@ -213,6 +219,9 @@ function App(){
   useEffect(()=>{ (async()=>{ const [n,i]=await Promise.all([apiGetNews(),apiGetInfo()]); setNews(n); if(i)setInfo({...DEFAULT_INFO,...i,logo_cfg:i.logo_cfg||DEFAULT_INFO.logo_cfg}); setLoading(false); })(); },[]);
 
   const reloadNews=async()=>setNews(await apiGetNews());
+  useEffect(()=>{ let alive=true; if(!articleId){ setFull(null); return; } (async()=>{ const a=await apiGetArticle(articleId); if(alive)setFull(a); })(); return ()=>{ alive=false; }; },[articleId]);
+  // L'editor ha bisogno del testo completo, che nella lista non c'e' piu'.
+  const openEditor=async(i)=>{ const f=await apiGetArticle(i.id); setEditing(f||i); setShowForm(true); };
   const saveItem=async(item)=>{ try{ const {id,...rest}=item; if(id)await apiUpdNews(token,id,rest); else await apiAddNews(token,rest); await reloadNews(); setShowForm(false); setEditing(null); note("Salvato."); }catch(e){ const m=String(e.message||e); if(m.indexOf("Sessione scaduta")===0) setShowLogin(true); alert("Errore nel salvataggio:\n\n"+m); } };
   const removeItem=async(id)=>{ try{ await apiDelNews(token,id); await reloadNews(); note("Eliminato."); }catch(e){ alert("Errore:\n\n"+(e.message||e)); } };
   const saveInfo=async(next)=>{ try{ const {id,...rest}=next; const r=await apiUpdInfo(token,rest); setInfo({...DEFAULT_INFO,...r}); setShowInfo(false); note("Aggiornato."); }catch(e){ const m=String(e.message||e); if(m.indexOf("Sessione scaduta")===0) setShowLogin(true); alert("Errore salvataggio:\n\n"+m); } };
@@ -265,7 +274,10 @@ function App(){
     .filter(n=>{ if(!query.trim())return true; const q=query.toLowerCase(); return (n.title||"").toLowerCase().includes(q)||(n.subtitle||"").toLowerCase().includes(q)||(n.summary||"").toLowerCase().includes(q)||(n.category||"").toLowerCase().includes(q); });
   const featured=filtered.find(n=>n.featured)||filtered[0];
   const rest=filtered.filter(n=>featured&&n.id!==featured.id);
-  const article=articleId?(news.find(n=>String(n.id)===String(articleId))||null):null;
+  // La card della lista basta per titolo, cover e sottotitolo: si mostra subito.
+  // Il body arriva con una seconda richiesta e sostituisce l'oggetto parziale.
+  const base=articleId?(news.find(n=>String(n.id)===String(articleId))||null):null;
+  const article=articleId?((full&&String(full.id)===String(articleId))?{...base,...full}:base):null;
 
   const menuItem={textAlign:"left",background:"none",border:"none",color:C.navy,fontSize:16,fontWeight:600,fontFamily:"Barlow",padding:"13px 8px",borderRadius:8,cursor:"pointer"};
 
@@ -321,9 +333,9 @@ function App(){
               if(isVetrina){
                 const vetrina = rest.slice(0, HOME_VETRINA);
                 return <React.Fragment>
-                  {featured&&<Card item={featured} big admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={(i)=>{setEditing(i);setShowForm(true);}} onDelete={removeItem}/>}
+                  {featured&&<Card item={featured} big admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={openEditor} onDelete={removeItem}/>}
                   <div style={{display:"flex",flexWrap:"wrap",gap:14,marginTop:16}}>
-                    {vetrina.map(n=><div key={n.id} style={{flex:"1 1 270px",minWidth:0,display:"flex",flexDirection:"column"}}><Card item={n} admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={(i)=>{setEditing(i);setShowForm(true);}} onDelete={removeItem}/></div>)}
+                    {vetrina.map(n=><div key={n.id} style={{flex:"1 1 270px",minWidth:0,display:"flex",flexDirection:"column"}}><Card item={n} admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={openEditor} onDelete={removeItem}/></div>)}
                   </div>
                   {rest.length>HOME_VETRINA&&<a href="/archivio" onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0) return; e.preventDefault(); openArchive(); }} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:22,background:C.navy,color:"#fff",borderRadius:12,padding:"14px 18px",fontSize:15,fontWeight:700,textDecoration:"none",fontFamily:"Barlow"}}>Vedi tutti gli articoli nell'archivio <Ic n="enter" s={16} c="#fff"/></a>}
                 </React.Fragment>;
@@ -331,7 +343,7 @@ function App(){
               const list = filtered.slice(0, shown);
               return <React.Fragment>
                 <div style={{display:"flex",flexWrap:"wrap",gap:14,marginTop:16}}>
-                  {list.map(n=><div key={n.id} style={{flex:"1 1 270px",minWidth:0,display:"flex",flexDirection:"column"}}><Card item={n} admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={(i)=>{setEditing(i);setShowForm(true);}} onDelete={removeItem}/></div>)}
+                  {list.map(n=><div key={n.id} style={{flex:"1 1 270px",minWidth:0,display:"flex",flexDirection:"column"}}><Card item={n} admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={openEditor} onDelete={removeItem}/></div>)}
                 </div>
                 {filtered.length>shown&&<div style={{display:"flex",justifyContent:"center",marginTop:22}}><button onClick={()=>setShown(s=>s+LIST_STEP)} style={{background:C.card,color:C.navy,border:"1px solid "+C.line,borderRadius:12,padding:"12px 24px",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"Barlow"}}>Mostra altri ({filtered.length-shown})</button></div>}
               </React.Fragment>;
