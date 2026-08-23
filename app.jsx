@@ -789,7 +789,7 @@ function NewsletterPage(){
     try{
       const r=await apiSubscribe(email.trim().toLowerCase());
       if(r==="already_confirmed"){ setState("already"); setMsg("Questo indirizzo è già iscritto e confermato."); }
-      else { setState("done"); setMsg("Ci siamo quasi: ti abbiamo inviato una mail, apri il link al suo interno per confermare l'iscrizione. Se non la trovi, controlla anche spam e promozioni."); }
+      else { setState("done"); setMsg("Ci siamo quasi: ti abbiamo inviato una mail, apri il link al suo interno per confermare l'iscrizione. Se non la trovi, controlla anche spam e promozioni — spostarla in Posta principale aiuta a ricevere le prossime nella casella giusta."); }
       if(window.umami&&window.umami.track)window.umami.track("newsletter_iscrizione");
     }catch(e){ setState("error"); setMsg(e.message||"Iscrizione non riuscita. Riprova tra poco."); }
   };
@@ -916,7 +916,7 @@ function Newsletter(){
     try{
       const r=await apiSubscribe(email.trim().toLowerCase());
       if(r==="already_confirmed"){ setState("already"); setMsg("Questo indirizzo è già iscritto e confermato."); }
-      else { setState("done"); setMsg("Ci siamo quasi: ti abbiamo inviato una mail, apri il link per confermare l'iscrizione."); }
+      else { setState("done"); setMsg("Ci siamo quasi: ti abbiamo inviato una mail, apri il link per confermare l'iscrizione. Se non la trovi, guarda in Promozioni o Spam."); }
     }catch(e){ setState("error"); setMsg(e.message||"Iscrizione non riuscita."); }
   };
   const inNL={flex:"1 1 220px",boxSizing:"border-box",padding:"12px 14px",border:"1px solid rgba(255,255,255,.25)",borderRadius:11,fontSize:15,fontFamily:"Barlow",color:"#fff",outline:"none",background:"rgba(255,255,255,.08)"};
