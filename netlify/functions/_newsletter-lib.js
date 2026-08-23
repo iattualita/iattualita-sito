@@ -8,6 +8,11 @@ const SERVICE_ROLE   = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const BREVO_API_KEY  = process.env.BREVO_API_KEY || "";
 const SENDER_EMAIL   = process.env.NEWSLETTER_SENDER_EMAIL || "newsletter@iattualita.it";
 const SENDER_NAME    = process.env.NEWSLETTER_SENDER_NAME  || "Iattualità";
+// Mittente separato per la sola email di conferma (double opt-in):
+// un indirizzo "newsletter@" e' un marcatore promozionale per Gmail e spinge
+// il messaggio nella scheda Promozioni, dove l'opt-in rischia di non essere visto.
+const CONFIRM_SENDER_EMAIL = process.env.CONFIRM_SENDER_EMAIL || "conferma@iattualita.it";
+const CONFIRM_SENDER_NAME  = process.env.CONFIRM_SENDER_NAME  || "Redazione Iattualità";
 const SITE_URL       = process.env.SITE_URL || "https://iattualita.it";
 const FN = SITE_URL + "/.netlify/functions";
 
@@ -64,13 +69,15 @@ function htmlToText(html){
     .replace(/&nbsp;/gi," ").replace(/&amp;/gi,"&").replace(/&agrave;/gi,"à").replace(/&egrave;/gi,"è").replace(/&middot;/gi,"·").replace(/&rarr;/gi,"->")
     .replace(/[ \t]+/g," ").replace(/\n{3,}/g,"\n\n").trim();
 }
-async function brevoSend(toEmail, subject, html, text){
+// sender opzionale: { name, email }. Se assente usa il mittente newsletter.
+async function brevoSend(toEmail, subject, html, text, sender){
+  const from = sender && sender.email ? sender : { name: SENDER_NAME, email: SENDER_EMAIL };
   const r = await fetch("https://api.brevo.com/v3/smtp/email", {
     method:"POST",
     headers:{ "api-key": BREVO_API_KEY, "Content-Type":"application/json", accept:"application/json" },
     body: JSON.stringify({
-      sender:{ name: SENDER_NAME, email: SENDER_EMAIL },
-      replyTo:{ email: SENDER_EMAIL, name: SENDER_NAME },
+      sender:{ name: from.name, email: from.email },
+      replyTo:{ email: from.email, name: from.name },
       to:[{ email: toEmail }],
       subject,
       htmlContent: html,
@@ -84,15 +91,15 @@ async function brevoSend(toEmail, subject, html, text){
 const newToken = () => crypto.randomUUID();
 
 // --- Email di conferma (double opt-in) ---
+// Template volutamente spoglio: niente bottone colorato, niente immagini,
+// niente tagline di brand, un solo link visibile come testo. Sono tutti
+// marcatori che Gmail usa per classificare un messaggio come promozionale.
 function confirmEmailHtml(token){
   const link = FN + "/confirm?token=" + token;
-  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#16243F">
-    <h1 style="font-size:22px;margin:0 0 12px">Conferma la tua iscrizione</h1>
-    <p style="font-size:15px;line-height:1.6;color:#2A3A57">Hai chiesto di ricevere la newsletter di Iattualità. Per completare l'iscrizione clicca qui sotto:</p>
-    <p style="margin:22px 0"><a href="${link}" style="background:#E8A33D;color:#16243F;text-decoration:none;font-weight:bold;padding:13px 22px;border-radius:10px;display:inline-block">Confermo l'iscrizione</a></p>
-    <p style="font-size:13px;line-height:1.6;color:#7A8499">Se non sei stato tu, ignora questa email: senza conferma non riceverai nulla.</p>
-    <p style="font-size:12px;color:#7A8499;margin-top:24px">Iattualità · L'informazione intelligente e in tempo reale</p>
-  </div>`;
+  return `<p>Hai chiesto di ricevere la newsletter di Iattualità.</p>
+<p>Per completare l'iscrizione apri questo indirizzo:<br>
+<a href="${link}">${link}</a></p>
+<p>Se non sei stato tu, ignora questa email: senza conferma non riceverai nulla.</p>`;
 }
 
 // --- Pagine HTML mostrate dopo il click (conferma / disiscrizione) ---
@@ -199,5 +206,6 @@ module.exports = {
   sbSelectByEmail, sbSelectByToken, sbInsert, sbPatch,
   brevoSend, newToken, confirmEmailHtml, page, html, json, validEmail,
   runDigest, verifyRedazione,
+  confirmSender: { name: CONFIRM_SENDER_NAME, email: CONFIRM_SENDER_EMAIL },
   SITE_URL, config: { SERVICE_ROLE, BREVO_API_KEY }
 };

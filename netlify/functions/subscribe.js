@@ -29,7 +29,9 @@ exports.handler = async (event) => {
       await L.sbPatch(existing.id, { status: "pending", token, confirmed_at: null, unsubscribed_at: null });
     }
 
-    await L.brevoSend(email, "Conferma la tua iscrizione a Iattualità", L.confirmEmailHtml(token));
+    // Oggetto corto e senza nome del brand + mittente dedicato: entrambi
+    // riducono la probabilita' che Gmail smisti la conferma in Promozioni.
+    await L.brevoSend(email, "Conferma il tuo indirizzo", L.confirmEmailHtml(token), null, L.confirmSender);
     return L.json(200, { ok: true, state: existing ? "resent" : "sent" });
   } catch (e) {
     return L.json(500, { error: "server", message: String(e.message || e) });
