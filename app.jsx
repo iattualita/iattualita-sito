@@ -369,7 +369,7 @@ function App(){
           <div style={{display:"flex",alignItems:"center",gap:10}}><Pill c={activeCat}/><span style={{fontFamily:"Anton",fontSize:18,color:C.navy}}>{activeCat}</span><span style={{fontSize:13,color:C.gray}}>{filtered.length} {filtered.length===1?"articolo":"articoli"}</span></div>
           <button onClick={()=>copyTopicLink(activeCat)} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.cream,color:C.navy,border:"1px solid "+C.line,borderRadius:10,padding:"8px 12px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"Barlow"}}><Ic n="link" s={15} c={C.navy}/> Copia link argomento</button>
         </div>}
-        {loading? <div style={{textAlign:"center",padding:60,color:C.gray}}>Caricamento…</div>
+        {loading? <Scheletro n={HOME_VETRINA}/>
           : filtered.length===0? <Empty admin={admin} gate={adminGate} hasNews={news.length>0} onAdd={()=>{setEditing(null);setShowForm(true);}} onLogin={()=>setShowLogin(true)}/>
           : (()=>{
               const isVetrina = view!=="archivio" && view!=="serie" && activeCat==="Tutte" && !query;
@@ -506,7 +506,7 @@ function ArticlePage({item,news,onOpen,loading,onBack,onCopy,note,onTopic}){
     let s=document.getElementById("ld-article"); if(!s){ s=document.createElement("script"); s.type="application/ld+json"; s.id="ld-article"; document.head.appendChild(s); } s.textContent=JSON.stringify(ld);
   } return ()=>{ document.title="Iattualità · L'informazione intelligente e in tempo reale"; const s=document.getElementById("ld-article"); if(s)s.remove(); }; },[item]);
   const backBtn=(<button onClick={onBack} style={{display:"inline-flex",alignItems:"center",gap:6,background:"none",border:"none",color:C.blueDeep,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",marginBottom:12}}>‹ Torna alle news</button>);
-  if(!item) return (<main style={{maxWidth:760,margin:"0 auto",padding:"40px 16px",textAlign:"center"}}>{loading? <div style={{color:C.gray}}>Caricamento…</div> : <React.Fragment><div style={{fontFamily:"Anton",fontSize:22,color:C.navy,marginBottom:8}}>Articolo non trovato</div><p style={{color:C.gray,marginBottom:16,fontSize:14.5}}>Il link potrebbe non essere più valido.</p>{backBtn}</React.Fragment>}</main>);
+  if(!item) return (<main style={{maxWidth:760,margin:"0 auto",padding:"40px 16px",textAlign:"center"}}>{loading? <ScheletroArticolo/> : <React.Fragment><div style={{fontFamily:"Anton",fontSize:22,color:C.navy,marginBottom:8}}>Articolo non trovato</div><p style={{color:C.gray,marginBottom:16,fontSize:14.5}}>Il link potrebbe non essere più valido.</p>{backBtn}</React.Fragment>}</main>);
   const yt=ytId(item.video);
   const share=()=>{ const url=articleFullUrl(item); if(navigator.share){ navigator.share({title:item.title,text:item.subtitle||item.summary||"",url}).catch(()=>{}); } else { onCopy&&onCopy(item); } };
   return (
@@ -753,6 +753,80 @@ function NewsForm({initial,token,onClose,onSave}){
       </div>
     </div>
   </div>);
+}
+
+// Segnaposto mostrati mentre gli articoli arrivano dal database.
+//
+// Prima al loro posto c'era la scritta "Caricamento…" dentro un riquadro
+// alto un centinaio di pixel. Quando i dati arrivavano, la pagina passava
+// di colpo a migliaia di pixel e tutto cio' che stava sotto veniva
+// scaraventato via: era la causa del Cumulative Layout Shift di 0,939,
+// nove volte oltre la soglia di 0,1.
+//
+// Questi segnaposto hanno la stessa forma delle schede vere — stesse
+// proporzioni dell'immagine, stessi margini, stesso numero — quindi quando
+// il contenuto arriva prende esattamente il posto gia' occupato e non si
+// muove niente. Le misure devono restare allineate a Card: se cambi il
+// taglio delle immagini li', cambialo anche qui.
+function Scheletro({n}){
+  const box={background:C.card,border:"1px solid "+C.line,borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"};
+  const grigio="#E9E6DF";
+  const riga=(larghezza,altezza,sotto)=>({background:grigio,width:larghezza,height:altezza,borderRadius:4,marginBottom:sotto});
+  return (
+    // minHeight garantisce che il footer resti sotto il bordo dello schermo
+    // durante il caricamento su qualunque altezza di schermo: e' cio' che
+    // impedisce il salto, perche' il browser conta solo cio' che si vede.
+    <div role="status" aria-live="polite" aria-busy="true" style={{minHeight:"115vh"}}>
+      {/* Solo per chi usa uno screen reader: i segnaposto sono muti. */}
+      <span style={{position:"absolute",left:-9999,width:1,height:1,overflow:"hidden"}}>Caricamento degli articoli in corso…</span>
+      <div style={{...box,borderRadius:16}} aria-hidden="true">
+        <div style={{background:grigio,aspectRatio:"16/9"}}/>
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:14,marginTop:16}} aria-hidden="true">
+        {Array.from({length:n},(_,i)=>(
+          <div key={i} style={{...box,flex:"1 1 260px",minWidth:0}}>
+            <div style={{background:grigio,aspectRatio:"16/10"}}/>
+            <div style={{padding:"12px 14px"}}>
+              <div style={riga("92%",18,6)}/>
+              <div style={riga("64%",18,10)}/>
+              <div style={riga("100%",13,6)}/>
+              <div style={riga("48%",11,0)}/>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Stessa logica di Scheletro, per la pagina di un singolo articolo.
+//
+// Conta almeno quanto la home: chi arriva da Google atterra quasi sempre su
+// un articolo. Prima qui compariva "Caricamento…" su una pagina alta un
+// centinaio di pixel, poi l'articolo intero: il footer partiva dentro lo
+// schermo e veniva spinto fuori, che e' esattamente cio' che fa salire il
+// Cumulative Layout Shift.
+function ScheletroArticolo(){
+  const grigio="#E9E6DF";
+  const riga=(larghezza,altezza,sotto)=>({background:grigio,width:larghezza,height:altezza,borderRadius:4,marginBottom:sotto});
+  return (
+    // minHeight in vh e non un numero di righe: quel che conta e' che il
+    // footer resti sotto il bordo dello schermo mentre si carica, e questo
+    // deve valere su qualunque altezza di schermo, non solo su quella su
+    // cui e' stato provato. Contando le righe il margine era di 59 pixel.
+    <div role="status" aria-live="polite" aria-busy="true" style={{textAlign:"left",minHeight:"115vh"}}>
+      <span style={{position:"absolute",left:-9999,width:1,height:1,overflow:"hidden"}}>Caricamento dell'articolo in corso…</span>
+      <div aria-hidden="true">
+        <div style={riga("40%",13,18)}/>
+        <div style={riga("100%",30,10)}/>
+        <div style={riga("80%",30,18)}/>
+        <div style={{background:grigio,aspectRatio:"16/9",borderRadius:16,marginBottom:22}}/>
+        {Array.from({length:14},(_,i)=>(
+          <div key={i} style={riga(i%4===3?"62%":"100%",14,12)}/>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function SocialPage({info}){
