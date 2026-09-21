@@ -199,10 +199,34 @@ const validEmail = (e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
 function slugify(x){ return (x||"").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60)||"articolo"; }
 const articleUrl = (a) => SITE_URL + "/articolo/" + a.id + "/" + slugify(a.title);
 
+// Legge gli iscritti confermati.
+//
+// last_digest_at arriva dalla migrazione 002. Se quella non e' ancora stata
+// eseguita, chiedere quella colonna farebbe fallire l'intero invio: la
+// newsletter smetterebbe di partire per una modifica al database non
+// ancora applicata. Quindi si riprova senza, e si torna al comportamento
+// di prima — invio in un colpo solo, senza ripartenza — avvisando nei log.
+//
+// Il fallback e' volutamente rumoroso: funziona, ma dice che manca qualcosa.
 async function sbConfirmedSubscribers(){
-  const r = await fetch(REST + "/subscribers?status=eq.confirmed&select=id,email,token,last_digest_at", { headers: sbHeaders() });
-  if(!r.ok) throw await sbError("db select", r);
-  return r.json();
+  let r = await fetch(REST + "/subscribers?status=eq.confirmed&select=id,email,token,last_digest_at", { headers: sbHeaders() });
+  if(r.ok) return r.json();
+
+  const testo = await r.text().catch(() => "");
+  if(r.status === 400 && /last_digest_at/.test(testo)){
+    console.warn(
+      "ATTENZIONE: manca la colonna subscribers.last_digest_at. Esegui " +
+      "supabase/migrations/002_last_digest_at.sql nel SQL Editor di Supabase. " +
+      "Finche' manca, un invio interrotto a meta' ripartira' da capo e " +
+      "qualcuno potrebbe ricevere la newsletter due volte."
+    );
+    r = await fetch(REST + "/subscribers?status=eq.confirmed&select=id,email,token", { headers: sbHeaders() });
+    if(!r.ok) throw await sbError("db select", r);
+    const righe = await r.json();
+    righe.tracciabile = false;   // vedi runDigest: niente invio a blocchi
+    return righe;
+  }
+  throw new Error("db select " + r.status + (testo ? " — " + testo.slice(0,300) : ""));
 }
 // Segna che a questo iscritto il digest corrente e' partito. Va scritto
 // subito dopo l'invio, non in fondo al giro: e' cio' che rende l'invio
@@ -210,6 +234,7 @@ async function sbConfirmedSubscribers(){
 async function sbMarkDigestSent(id){
   await sbPatch(id, { last_digest_at: new Date().toISOString() });
 }
+
 async function sbLastSend(){
   const r = await fetch(REST + "/newsletter_log?select=sent_at&order=sent_at.desc&limit=1", { headers: sbHeaders() });
   if(!r.ok) throw await sbError("db select", r);
@@ -320,7 +345,13 @@ async function runDigest(opts){
     return { sent:true, done:true, since, articles: articles.length, recipients: subs.length, delivered:0, failed:0, remaining:0 };
   }
 
-  const batch = pending.slice(0, limit);
+  // Senza la colonna last_digest_at non possiamo segnare chi e' gia' stato
+  // servito. L'invio a blocchi diventerebbe pericoloso: nessuno risulta
+  // marcato, quindi ogni chiamata successiva ripartirebbe dagli stessi
+  // indirizzi e continuerebbe a riscrivere alle stesse persone. In quel
+  // caso si torna al comportamento precedente: tutti in un colpo solo.
+  const tracciabile = subs.tracciabile !== false;
+  const batch = tracciabile ? pending.slice(0, limit) : pending;
   const html = digestHtml(articles, "{{UNSUB}}");
   let ok = 0, failed = 0;
 
@@ -328,7 +359,7 @@ async function runDigest(opts){
     const unsub = FN + "/unsubscribe?token=" + s.token;
     try{
       await brevoSend(s.email, "Iattualità — gli articoli della settimana", html.split("{{UNSUB}}").join(unsub), null, null, unsub);
-      await sbMarkDigestSent(s.id);
+      if(tracciabile) await sbMarkDigestSent(s.id);
       ok++;
     }catch(e){
       // Non marchiamo: chi fallisce resta in coda e ci riprova al giro dopo.
@@ -337,8 +368,10 @@ async function runDigest(opts){
     }
   });
 
-  const remaining = pending.length - ok;
-  const done = remaining === 0;
+  // Senza tracciamento non si puo' ripartire: il giro e' comunque finito,
+  // perche' abbiamo appena scritto a tutti.
+  const remaining = tracciabile ? pending.length - ok : 0;
+  const done = !tracciabile || remaining === 0;
   if(done) await sbLogSend(articles.map(a=>a.id), subs.length);
 
   return { sent:true, done, since, articles: articles.length, recipients: subs.length, delivered: ok, failed, remaining };

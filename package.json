@@ -4,7 +4,7 @@
   "private": true,
   "description": "iattualita.it — L'informazione intelligente e in tempo reale",
   "scripts": {
-    "build": "node scripts/copia-vendor.mjs && esbuild app.jsx --bundle --format=iife --loader:.jsx=jsx --minify --target=es2017 --outfile=app.js",
+    "build": "node scripts/copia-vendor.mjs && esbuild app.jsx --bundle --format=iife --loader:.jsx=jsx --minify --target=es2017 --outfile=app.js && node scripts/prepara-dist.mjs",
     "test": "node test/subscribe.test.js && node test/digest.test.js && node test/optin.test.js && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON test/prerender.test.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON test/sanitize.test.mjs",
     "watch": "esbuild app.jsx --bundle --format=iife --loader:.jsx=jsx --minify --target=es2017 --outfile=app.js --watch",
     "fixtures": "node scripts/scarica-corpi.mjs",

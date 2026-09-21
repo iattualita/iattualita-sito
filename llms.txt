@@ -1,0 +1,32 @@
+# Iattualità
+
+> Testata di informazione indipendente in lingua italiana. Attualità, geopolitica, cronaca, economia e inchieste verificate con i dati, senza appartenenze politiche. Direzione editoriale di Lorenzo. Il presentatore dei video è un avatar generato con l'intelligenza artificiale; le decisioni editoriali sono umane.
+
+## Come leggere il sito
+
+- [Home](https://iattualita.it/): gli articoli più recenti.
+- [Archivio](https://iattualita.it/archivio): tutti gli articoli, dal più recente.
+- [Feed RSS](https://iattualita.it/rss.xml): aggiornamenti in formato RSS.
+- [Sitemap](https://iattualita.it/sitemap.xml) e [sitemap Google News](https://iattualita.it/news-sitemap.xml).
+
+Gli articoli vivono su `/articolo/<id>/<titolo-abbreviato>`, le categorie su `/argomento/<Categoria>`, le serie ricorrenti su `/serie/<nome>`.
+
+## Chi siamo e come lavoriamo
+
+- [Chi siamo](https://iattualita.it/chi-siamo): il progetto e chi lo firma.
+- [Standard editoriali](https://iattualita.it/standard-editoriali): verifica delle fonti, separazione tra fatti e opinioni, presunzione di innocenza, imparzialità.
+- [Rettifiche e correzioni](https://iattualita.it/rettifiche): come segnaliamo e correggiamo gli errori.
+- [Trasparenza sull'IA](https://iattualita.it/trasparenza-ia): cosa fa l'intelligenza artificiale nei nostri contenuti e cosa resta umano.
+- [Privacy policy](https://iattualita.it/privacy): trattamento dei dati personali ai sensi del GDPR.
+
+## Contatti
+
+- [Contatti](https://iattualita.it/contatti): modulo e recapiti della redazione.
+- [Canali social](https://iattualita.it/social).
+- [Newsletter](https://iattualita.it/newsletter): riepilogo settimanale, iscrizione con doppia conferma.
+
+## Note per chi indicizza
+
+I contenuti sono protetti dal diritto d'autore. Citazioni brevi con attribuzione e collegamento alla fonte sono benvenute; la riproduzione integrale non è autorizzata.
+
+Ogni pagina è servita già completa di testo nell'HTML, senza bisogno di eseguire JavaScript, e porta dati strutturati schema.org (`NewsArticle` sugli articoli, `NewsMediaOrganization` sulla testata).

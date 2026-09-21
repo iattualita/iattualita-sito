@@ -131,6 +131,30 @@ const SETTIMANA_SCORSA = new Date(Date.now() - 7 * 864e5).toISOString();
   check("  ^ e il link nel corpo e' quello dell'iscritto, non un segnaposto",
     !!(inviato && inviato.htmlContent.includes("unsubscribe?token=t1") && !inviato.htmlContent.includes("{{UNSUB}}")));
 
+  // --- se la migrazione 002 non e' stata eseguita ---------------------------
+  // Deve continuare a funzionare: la newsletter non puo' smettere di partire
+  // per una modifica al database non ancora applicata. E soprattutto NON deve
+  // riscrivere alle stesse persone: senza la colonna nessuno risulta servito,
+  // quindi l'invio a blocchi ripartirebbe ogni volta dagli stessi indirizzi.
+  console.log("");
+  const fetchCompleto = global.fetch;
+  global.fetch = async (url, opt = {}) => {
+    const u = String(url);
+    if (u.includes("/subscribers") && u.includes("last_digest_at") && (opt.method || "GET") === "GET")
+      return { ok: false, status: 400, text: async () => '{"code":"42703","message":"column subscribers.last_digest_at does not exist"}' };
+    if (u.includes("/subscribers") && (opt.method || "GET") === "PATCH")
+      return { ok: false, status: 400, text: async () => "colonna assente" };
+    return fetchCompleto(url, opt);
+  };
+
+  reset({ subscribers: iscritti(60), articles: UN_ARTICOLO, lastSend: SETTIMANA_SCORSA });
+  r = await L.runDigest({ dry: false, limit: 25 });
+  check("senza la migrazione 002: l'invio parte lo stesso", r.sent === true && r.delivered === 60, JSON.stringify(r));
+  check("  ^ e in un colpo solo, senza blocchi che si ripeterebbero", r.done === true && r.remaining === 0);
+  check("  ^ ogni iscritto riceve una volta sola", spedite.length === 60 && new Set(spedite).size === 60);
+  check("  ^ e il registro viene chiuso", db.log.length === 1);
+  global.fetch = fetchCompleto;
+
   const falliti = results.filter((x) => !x).length;
   console.log("\n" + results.length + " controlli, " + falliti + " falliti");
   process.exit(falliti ? 1 : 0);

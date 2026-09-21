@@ -336,28 +336,70 @@ ${a.category ? `<p style="margin-top:24px"><a href="/argomento/${encodeURICompon
 </article>`;
 }
 
+// La home pre-renderizzata deve occupare lo STESSO spazio che occupera'
+// React, altrimenti quando React monta la pagina si allunga di colpo e tutto
+// cio' che sta sotto salta. Era esattamente il difetto misurato: il
+// contenitore passava da 1009 a 6797 pixel a un secondo dal caricamento, per
+// un Cumulative Layout Shift di 0,939 (oltre nove volte la soglia di 0,1).
+//
+// Quindi qui si replica la geometria delle schede di app.jsx: stesso numero
+// di articoli (10), stesse proporzioni dell'immagine (16/9 per la scheda
+// grande, 16/10 per le altre), stessi caratteri, margini e spaziature.
+// aspect-ratio fa il lavoro pesante: lo spazio dell'immagine e' riservato
+// prima ancora che l'immagine arrivi, a qualunque larghezza di schermo.
+//
+// Le proporzioni e i valori qui sotto devono restare allineati a NewsCard in
+// app.jsx. Se cambi il taglio delle immagini li', cambialo anche qui,
+// altrimenti il salto torna.
 function homeHtml(list) {
-  const items = list
-    .map(
-      (a) =>
-        `<li style="margin:0 0 14px"><a href="/articolo/${esc(a.id)}/${slugify(a.title)}" style="color:#16243F;font-weight:700;text-decoration:none">${esc(a.title)}</a>${
-          a.subtitle ? `<br><span style="color:#2A3A57;font-size:14px">${esc(a.subtitle)}</span>` : ""
-        }</li>`
-    )
-    .join("\n");
+  const card = (a, grande) => {
+    const url = "/articolo/" + esc(a.id) + "/" + slugify(a.title);
+    const img = a.image
+      ? `<img src="${esc(cdn(a.image, grande ? 900 : 600))}" alt="${esc(a.title)}" ${grande ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async" style="width:100%;height:100%;object-fit:cover">`
+      : '<div style="width:100%;height:100%;background:linear-gradient(135deg,#16243F,#2C5AA0)"></div>';
+
+    if (grande) {
+      // Scheda in evidenza: il titolo sta sopra l'immagine, quindi l'altezza
+      // e' quella dell'immagine e basta.
+      return `<div style="background:#FFFFFF;border-radius:16px;overflow:hidden;border:1px solid #E3DFD6;margin:0 0 16px">
+  <div style="position:relative;aspect-ratio:16/9;background:#16243F">${img}
+    <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(14,17,23,.85),transparent 60%)"></div>
+    <div style="position:absolute;bottom:14px;left:16px;right:16px">
+      <h2 style="font-family:Anton,sans-serif;font-weight:400;font-size:clamp(20px,5vw,30px);margin:0;line-height:1.05">
+        <a href="${url}" style="color:#F5F5F5;text-decoration:none">${esc(a.title)}</a>
+      </h2>
+    </div>
+  </div>
+</div>`;
+    }
+
+    return `<div style="background:#FFFFFF;border-radius:14px;overflow:hidden;border:1px solid #E3DFD6;display:flex;flex-direction:column">
+  <div style="position:relative;aspect-ratio:16/10;background:#16243F">${img}</div>
+  <div style="padding:12px 14px;flex:1;display:flex;flex-direction:column">
+    <h3 style="font-family:Anton,sans-serif;font-weight:400;font-size:18px;margin:0 0 6px;line-height:1.1">
+      <a href="${url}" style="color:#16243F;text-decoration:none">${esc(a.title)}</a>
+    </h3>
+    ${a.subtitle ? `<p style="margin:0 0 10px;font-size:13.5px;color:#2A3A57;line-height:1.4;font-weight:600">${esc(a.subtitle)}</p>` : ""}
+    <div style="margin-top:auto;font-size:11.5px;color:#7A8499">${a.category ? esc(a.category) : ""}</div>
+  </div>
+</div>`;
+  };
 
   const cats = [...new Set(list.map((a) => a.category).filter(Boolean))].sort();
   const catLinks = cats
-    .map(
-      (c) =>
-        `<a href="/argomento/${encodeURIComponent(c)}" style="color:#2C5AA0;margin-right:12px">${esc(c)}</a>`
-    )
+    .map((c) => `<a href="/argomento/${encodeURIComponent(c)}" style="color:#2C5AA0;margin-right:12px;font-weight:600">${esc(c)}</a>`)
     .join("");
 
+  const [primo, ...altri] = list;
+
   return `<div style="max-width:980px;margin:0 auto;padding:16px;font-family:Barlow,system-ui,sans-serif">
-<h1 style="font-family:Anton,sans-serif;font-weight:400;color:#16243F">Iattualità — L'informazione intelligente e in tempo reale</h1>
-<nav style="margin:0 0 18px">${catLinks}</nav>
-<ul style="list-style:none;padding:0">${items}</ul>
+<h1 style="font-family:Anton,sans-serif;font-weight:400;color:#16243F;font-size:clamp(22px,5vw,30px);margin:0 0 10px">Iattualità — L'informazione intelligente e in tempo reale</h1>
+<nav style="margin:0 0 16px;font-size:14px">${catLinks}</nav>
+${primo ? card(primo, true) : ""}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px">
+${altri.map((a) => card(a, false)).join("\n")}
+</div>
+<p style="margin:22px 0 0"><a href="/archivio" style="color:#2C5AA0;font-weight:700">Tutti gli articoli</a></p>
 </div>`;
 }
 
@@ -465,20 +507,45 @@ function webPageLd(name, desc, url) {
   };
 }
 
+// Le risposte costruite qui sostituiscono quella originale, e con essa
+// tutti gli header impostati in _headers. Senza questo passaggio le pagine
+// HTML uscivano SENZA Content-Security-Policy, X-Frame-Options,
+// X-Content-Type-Options e Referrer-Policy: restavano solo sui file statici,
+// cioe' esattamente dove non servono. Qui si riparte dagli header originali
+// e si sovrascrivono solo i due che ci riguardano.
+//
+// content-length e content-encoding vanno tolti: descrivono il corpo di
+// prima, non quello nuovo.
+function intestazioni(res, cacheControl) {
+  const h = new Headers(res.headers);
+  h.set("content-type", "text/html; charset=utf-8");
+  if (cacheControl) h.set("cache-control", cacheControl);
+  h.delete("content-length");
+  h.delete("content-encoding");
+  return h;
+}
+
+// Serve la shell non modificata. Serve nei casi di errore del database:
+// il corpo della risposta originale e' gia' stato consumato da res.text(),
+// quindi restituire "res" non funziona — la richiesta finisce in errore 500.
+// E' esattamente cio' che succedeva: un id di articolo malformato mandava
+// Supabase in errore e il lettore si prendeva un 500 invece di un 404.
+// no-store perche' un guasto momentaneo non va messo in cache.
+function shell(res, html) {
+  return new Response(html, { status: 200, headers: intestazioni(res, "no-store") });
+}
+
 // Pagina non esistente: 404 vero + noindex. Senza questo, il rewrite
 // "/* -> /index.html 200" di netlify.toml trasforma ogni URL sbagliato
 // in una copia della home con stato 200 (soft 404).
-function notFound(html) {
+function notFound(res, html) {
   const nf =
     "<!--OG_START-->\n<title>Pagina non trovata · Iattualità</title>\n" +
     '<meta name="robots" content="noindex">\n<!--OG_END-->';
   const out = html
     .replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => nf)
     .replace(/<meta name="robots" content="index, follow[^"]*">/, () => "");
-  return new Response(out, {
-    status: 404,
-    headers: { "content-type": "text/html; charset=utf-8" },
-  });
+  return new Response(out, { status: 404, headers: intestazioni(res, "no-store") });
 }
 
 // ---------- handler ----------
@@ -502,19 +569,13 @@ export default async function handler(request, context) {
   if (path === "/") {
     try {
       const list = await sb(
-        "news?select=id,title,subtitle,category&order=date.desc.nullslast,created_at.desc&limit=30"
+        "news?select=id,title,subtitle,category,image&order=date.desc.nullslast,created_at.desc&limit=10"
       );
       if (list.length) html = inject(homeHtml(list));
     } catch {
       /* in caso di errore si serve la shell originale */
     }
-    return new Response(html, {
-      status: 200,
-      headers: {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "public, max-age=0, s-maxage=300",
-      },
-    });
+    return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=300") });
   }
 
   // ---- PAGINE ISTITUZIONALI ----
@@ -530,13 +591,7 @@ export default async function handler(request, context) {
       "\n<!--OG_END-->";
     html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => blk);
     html = inject(staticPageHtml(p));
-    return new Response(html, {
-      status: 200,
-      headers: {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "public, max-age=0, s-maxage=3600",
-      },
-    });
+    return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=3600") });
   }
 
   // ---- NEWSLETTER ----
@@ -554,10 +609,7 @@ export default async function handler(request, context) {
 <p style="font-size:19px;font-weight:700;color:#16243F">${esc(d)}</p>
 </div>`
     );
-    return new Response(html, {
-      status: 200,
-      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=0, s-maxage=3600" },
-    });
+    return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=3600") });
   }
 
   // ---- CONTATTI E SOCIAL ----
@@ -626,10 +678,7 @@ export default async function handler(request, context) {
 ${recapiti}
 ${socialHtml}
 </div>`);
-    return new Response(html, {
-      status: 200,
-      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=0, s-maxage=3600" }
-    });
+    return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=3600") });
   }
 
   // ---- ARCHIVIO ----
@@ -638,7 +687,7 @@ ${socialHtml}
     try {
       list = await sb("news?select=id,title,subtitle&order=date.desc.nullslast,created_at.desc&limit=100");
     } catch {
-      return res; // errore DB: shell originale, mai un 404 inventato
+      return shell(res, html); // errore DB: shell originale, mai un 404 inventato
     }
     const u = SITE + "/archivio";
     const t = "Archivio · Iattualità";
@@ -646,10 +695,7 @@ ${socialHtml}
     const blk = "<!--OG_START-->\n" + pageOgBlock(t, d, u, collectionLd("Archivio", u, list)) + "\n<!--OG_END-->";
     html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => blk);
     html = inject(listHtml("Archivio", d, list));
-    return new Response(html, {
-      status: 200,
-      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=0, s-maxage=900" },
-    });
+    return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=900") });
   }
 
   // ---- ARGOMENTO ----
@@ -664,20 +710,17 @@ ${socialHtml}
           "&order=date.desc.nullslast,created_at.desc&limit=60"
       );
     } catch {
-      return res;
+      return shell(res, html);
     }
     // Categoria senza articoli: non esiste. 404 vero invece di pagina vuota.
-    if (!list.length) return notFound(html);
+    if (!list.length) return notFound(res, html);
     const u = SITE + "/argomento/" + encodeURIComponent(cat);
     const t = cat + " · Iattualità";
     const d = "Tutti gli articoli di Iattualità nella categoria " + cat + ", verificati con i dati.";
     const blk = "<!--OG_START-->\n" + pageOgBlock(t, d, u, collectionLd(cat, u, list)) + "\n<!--OG_END-->";
     html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => blk);
     html = inject(listHtml(cat, d, list));
-    return new Response(html, {
-      status: 200,
-      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=0, s-maxage=900" },
-    });
+    return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=900") });
   }
 
   // ---- SERIE (compreso l'alias /podcast) ----
@@ -690,37 +733,44 @@ ${socialHtml}
         "news?serie=not.is.null&select=id,title,subtitle,serie&order=date.desc.nullslast,created_at.desc&limit=200"
       );
     } catch {
-      return res;
+      return shell(res, html);
     }
     const target = ms
       ? (rows.find((r) => slugify(r.serie) === slugify(serieWanted)) || {}).serie
       : ALIAS_TO_SERIE[segRaw];
     const list = target ? rows.filter((r) => r.serie === target) : [];
-    if (!list.length) return notFound(html);
+    if (!list.length) return notFound(res, html);
     const u = SITE + (SERIE_ALIAS[target] || "/serie/" + slugify(target));
     const t = target + " · Iattualità";
     const d = "Tutte le puntate della serie " + target + " di Iattualità.";
     const blk = "<!--OG_START-->\n" + pageOgBlock(t, d, u, collectionLd(target, u, list)) + "\n<!--OG_END-->";
     html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => blk);
     html = inject(listHtml(target, d, list));
-    return new Response(html, {
-      status: 200,
-      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=0, s-maxage=900" },
-    });
+    return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=900") });
   }
 
   // ---- ARTICOLO ----
   const m = path.match(/^\/articolo\/([^/]+)/);
-  if (!m) return notFound(html);
+  if (!m) return notFound(res, html);
   const id = m[1];
 
   let a = null;
   try {
     const rows = await sb("news?id=eq." + encodeURIComponent(id) + "&select=*&limit=1");
     a = rows[0] || null;
-  } catch {
-    // errore DB: non mentire a Google con un 404, servi la shell
-    return res;
+  } catch (e) {
+    // Due casi diversi, che prima finivano insieme nello stesso ramo.
+    //
+    // 4xx = l'id non e' valido per la colonna (gli id sono UUID, quindi
+    // "/articolo/999999/x" fa rispondere errore a Supabase). Quell'articolo
+    // non esiste e non esistera' mai: e' un 404, non un guasto.
+    //
+    // Tutto il resto (5xx, rete, timeout) e' un problema temporaneo nostro:
+    // li' un 404 sarebbe una bugia a Google, che potrebbe deindicizzare un
+    // articolo valido. Si serve la shell e React ritentera'.
+    const stato = Number(String(e && e.message).match(/supabase (\d+)/)?.[1] || 0);
+    if (stato >= 400 && stato < 500) return notFound(res, html);
+    return shell(res, html);
   }
 
   // Articolo inesistente: 404 vero, non un 200 con "Articolo non trovato"
@@ -731,23 +781,14 @@ ${socialHtml}
     html = html
       .replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => nf)
       .replace(/<meta name="robots" content="index, follow[^"]*">/, () => "");
-    return new Response(html, {
-      status: 404,
-      headers: { "content-type": "text/html; charset=utf-8" },
-    });
+    return new Response(html, { status: 404, headers: intestazioni(res, "no-store") });
   }
 
   const block = "<!--OG_START-->\n" + ogBlock(a) + "\n<!--OG_END-->";
   html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => block);
   html = inject(articleHtml(a));
 
-  return new Response(html, {
-    status: 200,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "public, max-age=0, s-maxage=600",
-    },
-  });
+  return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=600") });
 }
 
 // path "/*" serve per restituire un 404 vero sugli URL inesistenti: senza,
