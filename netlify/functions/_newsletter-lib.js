@@ -58,6 +58,46 @@ async function sbPatch(id, patch){
   if(!r.ok) throw await sbError("db patch", r);
 }
 
+// --- Limitazione degli abusi ---
+// Si appoggia alla funzione rate_hit() creata da
+// supabase/migrations/001_rate_limit.sql.
+//
+// FAIL-OPEN di proposito: se la migrazione non e' ancora stata eseguita, o se
+// Supabase non risponde, la richiesta passa. Un form di iscrizione che blocca
+// i lettori veri per un problema di infrastruttura fa piu' danni dello spam
+// che dovrebbe fermare. L'errore finisce nei log della function.
+//
+// Ritorna true = consentito, false = oltre il limite.
+async function rateHit(key, windowSeconds, maxHits) {
+  try {
+    const r = await fetch(REST + "/rpc/rate_hit", {
+      method: "POST",
+      headers: sbHeaders(),
+      body: JSON.stringify({ k: key, window_seconds: windowSeconds, max_hits: maxHits })
+    });
+    if (!r.ok) {
+      console.warn("rateHit non disponibile (" + r.status + "): la migrazione 001_rate_limit.sql e' stata eseguita?");
+      return true;
+    }
+    return (await r.json()) !== false;
+  } catch (e) {
+    console.warn("rateHit errore:", e && e.message);
+    return true;
+  }
+}
+
+// L'IP di chi chiama, come lo espone Netlify. Se manca si usa una chiave
+// unica: senza IP il limite per indirizzo email resta comunque attivo.
+function clientIp(event) {
+  const h = (event && event.headers) || {};
+  return (
+    h["x-nf-client-connection-ip"] ||
+    h["client-ip"] ||
+    String(h["x-forwarded-for"] || "").split(",")[0].trim() ||
+    "sconosciuto"
+  );
+}
+
 // --- Brevo (invio email transazionale) ---
 function htmlToText(html){
   return String(html||"")
@@ -205,6 +245,7 @@ async function runDigest(opts){
 module.exports = {
   sbSelectByEmail, sbSelectByToken, sbInsert, sbPatch,
   brevoSend, newToken, confirmEmailHtml, page, html, json, validEmail,
+  rateHit, clientIp,
   runDigest, verifyRedazione,
   confirmSender: { name: CONFIRM_SENDER_NAME, email: CONFIRM_SENDER_EMAIL },
   SITE_URL, config: { SERVICE_ROLE, BREVO_API_KEY }

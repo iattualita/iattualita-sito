@@ -5,6 +5,7 @@
   "description": "iattualita.it — L'informazione intelligente e in tempo reale",
   "scripts": {
     "build": "esbuild app.jsx --loader:.jsx=jsx --minify --target=es2017 --outfile=app.js",
+    "test": "node test/subscribe.test.js",
     "watch": "esbuild app.jsx --loader:.jsx=jsx --minify --target=es2017 --outfile=app.js --watch"
   },
   "devDependencies": {

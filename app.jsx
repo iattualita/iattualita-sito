@@ -84,10 +84,23 @@ const LIST_COLS = "id,title,subtitle,summary,category,serie,date,created_at,upda
 async function apiGetNews(){ try{ const r=await fetch(API+"/news?select="+LIST_COLS+"&order=date.desc.nullslast,created_at.desc",{headers:hdr()}); return r.ok?await r.json():[]; }catch(e){ return []; } }
 async function apiGetArticle(id){ try{ const r=await fetch(API+"/news?id=eq."+encodeURIComponent(id)+"&select=*&limit=1",{headers:hdr()}); const a=r.ok?await r.json():[]; return a[0]||null; }catch(e){ return null; } }
 async function apiGetInfo(){ try{ const r=await fetch(API+"/site_info?id=eq.1&select=*",{headers:hdr()}); const a=r.ok?await r.json():[]; return a[0]||null; }catch(e){ return null; } }
-async function apiSubscribe(email){
+// Campo trappola per i bot: sta nel DOM ma esce dallo schermo, non prende il
+// focus col tab e gli screen reader lo ignorano. Volutamente NON display:none,
+// perche' i bot piu' diffusi saltano i campi nascosti in quel modo mentre
+// compilano tutto il resto.
+const hpStyle={position:"absolute",left:"-9999px",width:1,height:1,opacity:0,pointerEvents:"none"};
+const Honeypot=({value,onChange})=>(
+  <input type="text" name="website" value={value} onChange={e=>onChange(e.target.value)}
+         tabIndex={-1} autoComplete="off" aria-hidden="true" style={hpStyle}/>
+);
+
+async function apiSubscribe(email,trap){
   // Passa dalla funzione serverless: e' lei che invia la mail di conferma
   // (la chiave Brevo resta lato server, mai nel browser).
-  const r=await fetch("/.netlify/functions/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:email})});
+  // "website" e' il campo trappola (vedi hpStyle): per un lettore vero arriva
+  // sempre vuoto, perche' il campo e' fuori dallo schermo e non riceve il
+  // focus. Se arriva pieno, il server sa che a compilarlo e' stato un bot.
+  const r=await fetch("/.netlify/functions/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:email,website:trap||""})});
   let d={}; try{ d=await r.json(); }catch(e){}
   if(!r.ok) throw new Error((d&&d.message)||"Iscrizione non riuscita. Riprova tra poco.");
   return (d&&d.state)||"sent";   // sent | resent | already_confirmed
@@ -770,6 +783,7 @@ function ContactPage({info}){
 
 function NewsletterPage(){
   const [email,setEmail]=useState("");
+  const [trap,setTrap]=useState("");
   const [consenso,setConsenso]=useState(false);
   const [state,setState]=useState("idle"); // idle | busy | done | already | error
   const [msg,setMsg]=useState("");
@@ -787,7 +801,7 @@ function NewsletterPage(){
     if(!consenso){ setState("error"); setMsg("Serve il consenso per completare l'iscrizione."); return; }
     setState("busy"); setMsg("");
     try{
-      const r=await apiSubscribe(email.trim().toLowerCase());
+      const r=await apiSubscribe(email.trim().toLowerCase(),trap);
       if(r==="already_confirmed"){ setState("already"); setMsg("Questo indirizzo è già iscritto e confermato."); }
       else { setState("done"); setMsg("Ci siamo quasi: ti abbiamo inviato una mail, apri il link al suo interno per confermare l'iscrizione. Se non la trovi, controlla anche spam e promozioni — spostarla in Posta principale aiuta a ricevere le prossime nella casella giusta."); }
       if(window.umami&&window.umami.track)window.umami.track("newsletter_iscrizione");
@@ -808,6 +822,7 @@ function NewsletterPage(){
               <div>
                 <label style={labStyle}>Email</label>
                 <input type="email" value={email} onChange={e=>{setEmail(e.target.value); if(state==="error")setState("idle");}} onKeyDown={e=>e.key==="Enter"&&submit()} style={inStyle} placeholder="nome@esempio.it"/>
+                <Honeypot value={trap} onChange={setTrap}/>
               </div>
               <label style={{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer"}}>
                 <input type="checkbox" checked={consenso} onChange={e=>{setConsenso(e.target.checked); if(state==="error")setState("idle");}} style={{width:18,height:18,accentColor:C.blue,marginTop:2,flexShrink:0}}/>
@@ -907,6 +922,7 @@ function StaticPage({page,info,onPage}){
 
 function Newsletter(){
   const [email,setEmail]=useState("");
+  const [trap,setTrap]=useState("");
   const [state,setState]=useState("idle"); // idle | busy | done | already | error
   const [msg,setMsg]=useState("");
   const valid=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
@@ -914,7 +930,7 @@ function Newsletter(){
     if(!valid){ setState("error"); setMsg("Controlla l'indirizzo email."); return; }
     setState("busy"); setMsg("");
     try{
-      const r=await apiSubscribe(email.trim().toLowerCase());
+      const r=await apiSubscribe(email.trim().toLowerCase(),trap);
       if(r==="already_confirmed"){ setState("already"); setMsg("Questo indirizzo è già iscritto e confermato."); }
       else { setState("done"); setMsg("Ci siamo quasi: ti abbiamo inviato una mail, apri il link per confermare l'iscrizione. Se non la trovi, guarda in Promozioni o Spam."); }
     }catch(e){ setState("error"); setMsg(e.message||"Iscrizione non riuscita."); }
@@ -929,6 +945,7 @@ function Newsletter(){
       : <div style={{maxWidth:560}}>
           <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
             <input type="email" value={email} onChange={e=>{setEmail(e.target.value); if(state==="error")setState("idle");}} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="La tua email" style={inNL}/>
+            <Honeypot value={trap} onChange={setTrap}/>
             <button onClick={submit} disabled={state==="busy"} style={{background:C.amber,color:C.navy,border:"none",borderRadius:11,padding:"12px 20px",fontWeight:800,fontSize:15,cursor:state==="busy"?"default":"pointer",whiteSpace:"nowrap"}}>{state==="busy"?"Invio…":"Iscriviti"}</button>
           </div>
           {state==="error"&&<div style={{color:"#FFD2CE",fontSize:13.5,marginTop:8}}>{msg}</div>}
