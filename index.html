@@ -35,7 +35,30 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:wght@400;500;600;700&display=swap">
-<style>html{background:#F4F2EC}#root{min-height:100vh}</style>
+<style>
+html{background:#F4F2EC}#root{min-height:100vh}
+
+/* I campi del sito impostano outline:none per ragioni estetiche. Va bene
+   con il mouse, ma toglie a chi naviga da tastiera l'unico modo di sapere
+   dove si trova. :focus-visible restituisce il contorno solo in quel caso:
+   compare usando il tab, non compare cliccando. */
+:focus-visible{outline:3px solid #2C5AA0;outline-offset:2px;border-radius:4px}
+
+/* Collegamento per saltare il menu e andare dritti al contenuto. Resta
+   fuori dallo schermo finche' non riceve il focus col tab: chi usa il
+   mouse non lo vede mai, chi usa la tastiera lo trova come prima voce. */
+.salta-al-contenuto{position:absolute;left:-9999px;top:0;z-index:100;
+  background:#16243F;color:#fff;padding:12px 18px;border-radius:0 0 10px 0;
+  font-family:Barlow,system-ui,sans-serif;font-weight:700;text-decoration:none}
+.salta-al-contenuto:focus{left:0}
+
+/* Chi ha chiesto al sistema operativo di ridurre le animazioni non deve
+   subirle comunque: vale anche per lo scorrimento morbido. */
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+}
+</style>
 
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"NewsMediaOrganization","name":"Iattualità","url":"https://iattualita.it","logo":"https://iattualita.it/favicon-192.png","slogan":"L'informazione intelligente e in tempo reale"}
@@ -57,9 +80,17 @@
 
 <div id="root"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<!-- React arriva da qui e non piu' da cdnjs: il sito non deve dipendere da
+     un dominio terzo per partire, e quel dominio non deve vedere chi legge.
+     I file sono gli stessi (hash identico), copiati da npm dentro vendor/
+     durante la build, alla versione fissata in package.json.
 
+     defer su tutti e tre: senza, i due script di React fermavano l'analisi
+     dell'HTML e quindi il primo disegno della pagina. Con defer l'ordine
+     resta garantito — React, ReactDOM, poi app.js — ma il browser puo'
+     intanto finire di costruire la pagina. -->
+<script defer src="/vendor/react.production.min.js"></script>
+<script defer src="/vendor/react-dom.production.min.js"></script>
 <script defer src="/app.js"></script>
 
 </body>

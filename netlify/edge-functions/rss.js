@@ -2,6 +2,8 @@
 // Genera il feed RSS di Iattualità leggendo gli articoli da Supabase.
 // Raggiungibile su https://iattualita.it/rss.xml
 
+import { slugify } from "../../shared/site-pages.js";
+
 const SUPABASE_URL = "https://wzkshpgakvasqwrrgkgd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_I3s4phA5Be9qnV4pLbWQMQ_8-IGUE-b";
 const SITE = "https://iattualita.it";
@@ -12,14 +14,6 @@ function esc(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-}
-function slugify(s) {
-  return (s || "")
-    .toString().toLowerCase().normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60) || "articolo";
 }
 function stripHtml(h) {
   return (h || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();

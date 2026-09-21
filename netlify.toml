@@ -1,3 +1,13 @@
+# app.js e' generato da app.jsx: Netlify lo ricompila a ogni deploy.
+# Senza questo blocco il bundle andava caricato a mano e restava indietro
+# rispetto al sorgente (e' successo: modifiche del 24 agosto mai andate online).
+# Il comando e' lo stesso di "npm run build" in locale, stessi flag.
+[build]
+  command = "npm run build"
+  publish = "."
+  functions = "netlify/functions"
+  edge_functions = "netlify/edge-functions"
+
 # Fa in modo che aprendo direttamente iattualita.it/articolo/123/slug
 # Netlify serva l'app (index.html) invece di un errore 404.
 # Le edge function (og-meta, sitemap) vengono registrate automaticamente

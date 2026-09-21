@@ -1,3 +1,8 @@
+// Testi delle pagine istituzionali, slugify e alias delle serie stanno in un
+// file solo, condiviso con le edge function: prima erano duplicati qui e in
+// prerender.js, e bastava aggiornarne uno per far vedere a Google una
+// versione diversa da quella del lettore.
+import { slugify, SERIE_ALIAS, seriePath, SOCIALS, STATIC_PAGES } from "./shared/site-pages.js";
 
 const { useState, useEffect } = React;
 
@@ -17,9 +22,6 @@ const catColor = (c)=>({Economia:C.blueDeep,Cronaca:C.red,Geopolitica:C.navy,Sal
 // in homepage come qualsiasi altro articolo. Per aggiungere una serie basta
 // scrivere il nome qui: rotta, pagina e sitemap seguono da sole.
 const SERIES = ["Podcast","Ponte sullo Stretto","Licenze taxi e NCC"];
-// URL breve per le serie che meritano un indirizzo proprio; le altre vivono su
-// /serie/<slug>. Una serie ha sempre un solo URL: niente doppioni per Google.
-const SERIE_ALIAS = { "Podcast":"/podcast" };
 const SERIE_META = {
   "Podcast":{
     title:"Podcast · Iattualità",
@@ -84,10 +86,23 @@ const LIST_COLS = "id,title,subtitle,summary,category,serie,date,created_at,upda
 async function apiGetNews(){ try{ const r=await fetch(API+"/news?select="+LIST_COLS+"&order=date.desc.nullslast,created_at.desc",{headers:hdr()}); return r.ok?await r.json():[]; }catch(e){ return []; } }
 async function apiGetArticle(id){ try{ const r=await fetch(API+"/news?id=eq."+encodeURIComponent(id)+"&select=*&limit=1",{headers:hdr()}); const a=r.ok?await r.json():[]; return a[0]||null; }catch(e){ return null; } }
 async function apiGetInfo(){ try{ const r=await fetch(API+"/site_info?id=eq.1&select=*",{headers:hdr()}); const a=r.ok?await r.json():[]; return a[0]||null; }catch(e){ return null; } }
-async function apiSubscribe(email){
+// Campo trappola per i bot: sta nel DOM ma esce dallo schermo, non prende il
+// focus col tab e gli screen reader lo ignorano. Volutamente NON display:none,
+// perche' i bot piu' diffusi saltano i campi nascosti in quel modo mentre
+// compilano tutto il resto.
+const hpStyle={position:"absolute",left:"-9999px",width:1,height:1,opacity:0,pointerEvents:"none"};
+const Honeypot=({value,onChange})=>(
+  <input type="text" name="website" value={value} onChange={e=>onChange(e.target.value)}
+         tabIndex={-1} autoComplete="off" aria-hidden="true" style={hpStyle}/>
+);
+
+async function apiSubscribe(email,trap){
   // Passa dalla funzione serverless: e' lei che invia la mail di conferma
   // (la chiave Brevo resta lato server, mai nel browser).
-  const r=await fetch("/.netlify/functions/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:email})});
+  // "website" e' il campo trappola (vedi hpStyle): per un lettore vero arriva
+  // sempre vuoto, perche' il campo e' fuori dallo schermo e non riceve il
+  // focus. Se arriva pieno, il server sa che a compilarlo e' stato un bot.
+  const r=await fetch("/.netlify/functions/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:email,website:trap||""})});
   let d={}; try{ d=await r.json(); }catch(e){}
   if(!r.ok) throw new Error((d&&d.message)||"Iscrizione non riuscita. Riprova tra poco.");
   return (d&&d.state)||"sent";   // sent | resent | already_confirmed
@@ -154,7 +169,10 @@ function Ic({n,s=18,c="currentColor",fill="none"}){
     tk:'<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
     th:'<circle cx="12" cy="12" r="9.5"/><path d="M16.2 9.2c-.7-2-2.2-3.1-4.2-3.1-3.1 0-4.7 2.6-4.7 6.1s1.6 6 4.7 6c2.1 0 3.5-1.2 3.5-3.1 0-1.9-1.4-3.1-3.3-3.1-1.3 0-2.1.6-2.1 1.6s.8 1.5 1.8 1.5"/>'
   };
-  return <svg width={s} height={s} viewBox="0 0 24 24" fill={fill} stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{__html:P[n]||""}} />;
+  // aria-hidden: l'icona e' decorativa, il nome del comando lo porta
+  // l'aria-label del bottone che la contiene. Senza, lo screen reader
+  // annuncia un elemento grafico senza nome in mezzo alla frase.
+  return <svg width={s} height={s} viewBox="0 0 24 24" fill={fill} stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false" dangerouslySetInnerHTML={{__html:P[n]||""}} />;
 }
 
 function ytId(u){ if(!u)return null; const m=u.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/); return m?m[1]:null; }
@@ -166,21 +184,18 @@ function fmtDate(d){ if(!d)return""; try{return new Date(d).toLocaleDateString("
 function imgCDN(url,w){ if(!url||!/^https?:\/\//.test(url))return url||""; return "/.netlify/images?url="+encodeURIComponent(url)+"&w="+w+"&q=72&fm=webp"; }
 function onImgErr(e,orig){ const t=e.target; if(t&&!t.dataset.fb){ t.dataset.fb="1"; t.src=orig; } }
 const DEFAULT_INFO = { about:"",email:"",phone:"",tiktok:"",instagram:"",facebook:"",youtube:"",threads:"",logo_url:"",logo_cfg:{scale:1,x:50,y:50} };
-const SOCIALS=[{k:"tiktok",n:"TikTok",col:"#000000",ic:"tk"},{k:"instagram",n:"Instagram",col:"#C13584",ic:"ig"},{k:"facebook",n:"Facebook",col:"#1877F2",ic:"fb"},{k:"youtube",n:"YouTube",col:"#FF0000",ic:"yt"},{k:"threads",n:"Threads",col:"#000000",ic:"th"}];
 const inStyle={width:"100%",boxSizing:"border-box",padding:"10px 12px",border:"1px solid "+C.line,borderRadius:10,fontSize:14.5,fontFamily:"Barlow",color:C.navy,outline:"none",background:C.cream};
 const labStyle={fontSize:13,fontWeight:700,color:C.navy,marginBottom:5,display:"block"};
 
 // ====== ROUTING: link diretto per articolo e per argomento ======
-function slugify(s){ return (s||"").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60)||"articolo"; }
 function articlePath(item){ return "/articolo/"+item.id+"/"+slugify(item.title); }
 function articleFullUrl(item){ return window.location.origin+articlePath(item); }
 function topicPath(cat){ return "/argomento/"+encodeURIComponent(cat); }
 function topicFullUrl(cat){ return window.location.origin+topicPath(cat); }
-function seriePath(s){ return SERIE_ALIAS[s] || ("/serie/"+slugify(s)); }
 function serieFullUrl(s){ return window.location.origin+seriePath(s); }
 function serieFromSlug(slug){ return SERIES.find(s=>slugify(s)===slug)||null; }
 function serieFromAlias(seg){ return Object.keys(SERIE_ALIAS).find(s=>SERIE_ALIAS[s]==="/"+seg)||null; }
-function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } if(p.indexOf("/serie/")===0){ const s=serieFromSlug(decodeURIComponent(p.slice("/serie/".length).split("/")[0])); if(s) return {name:"serie",serie:s}; } const seg=p.replace(/^\/+|\/+$/g,""); const alias=seg?serieFromAlias(seg):null; if(alias){ return {name:"serie",serie:alias}; } if(seg==="archivio"){ return {name:"archivio"}; } if(seg==="newsletter"){ return {name:"page",page:"newsletter"}; } if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
+function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } if(p.indexOf("/serie/")===0){ const s=serieFromSlug(decodeURIComponent(p.slice("/serie/".length).split("/")[0])); if(s) return {name:"serie",serie:s}; } const seg=p.replace(/^\/+|\/+$/g,""); const alias=seg?serieFromAlias(seg):null; if(alias){ return {name:"serie",serie:alias}; } if(seg==="archivio"){ return {name:"archivio"}; } if(seg==="newsletter"||seg==="contatti"||seg==="social"){ return {name:"page",page:seg}; } if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
 function copyToClipboard(url,onOk,onFail){ (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(onOk).catch(()=>{ try{ window.prompt("Copia il link:",url); }catch(e){} if(onFail)onFail(); }); }
 
 // ====== TESTO FORMATTATO (rich text) ======
@@ -233,11 +248,28 @@ function App(){
       if(!r.ok) throw new Error(d.message||"Errore anteprima");
       if(d.articles===0){ alert("Nessun articolo nuovo dall'ultimo invio: la newsletter non partirebbe vuota."); return; }
       if(d.recipients===0){ alert("Nessun iscritto confermato al momento."); return; }
-      if(!window.confirm("Newsletter pronta:\n\n• "+d.articles+" articoli (dal "+new Date(d.since).toLocaleDateString("it-IT")+")\n• "+d.recipients+" iscritti\n\nInviare adesso?")) return;
-      r=await call(false); d=await r.json();
-      if(!r.ok) throw new Error(d.message||"Errore invio");
-      if(d.sent) note("Newsletter inviata a "+d.delivered+" iscritti"+(d.failed?" ("+d.failed+" falliti)":"")+".");
-      else alert("Invio non eseguito: "+(d.reason||"?"));
+      const daFare=(d.remaining!=null)?d.remaining:d.recipients;
+      if(daFare===0){ alert("Questa newsletter è già stata inviata a tutti gli iscritti."); return; }
+      if(!window.confirm("Newsletter pronta:\n\n• "+d.articles+" articoli (dal "+new Date(d.since).toLocaleDateString("it-IT")+")\n• "+daFare+" iscritti da servire\n\nInviare adesso?")) return;
+      // L'invio parte a blocchi: una funzione serverless ha pochi secondi, e
+      // provare a servire tutta la lista in una volta la farebbe scadere a
+      // meta' strada. Richiamiamo finche' non dice di aver finito; chi ha
+      // gia' ricevuto viene saltato dal server, quindi nessuno riceve due
+      // volte nemmeno se questo giro si interrompe.
+      let inviate=0, fallite=0, giri=0;
+      for(;;){
+        r=await call(false); d=await r.json();
+        if(!r.ok) throw new Error(d.message||"Errore invio");
+        if(!d.sent){ alert("Invio non eseguito: "+(d.reason||"?")); return; }
+        inviate+=d.delivered||0; fallite+=d.failed||0;
+        if(d.done) break;
+        // Nessun invio riuscito in tutto il blocco: e' un guasto (chiave
+        // Brevo, quota, rete), non un rallentamento. Inutile insistere.
+        if(!d.delivered) throw new Error("Nessun invio riuscito su "+d.failed+" tentativi: controlla la chiave Brevo e la quota. Gli iscritti già serviti non riceveranno doppioni.");
+        if(++giri>200) throw new Error("Invio fermato per sicurezza dopo "+inviate+" iscritti. Ripremi il pulsante per completare: chi ha già ricevuto viene saltato.");
+        note("Invio in corso… "+inviate+" serviti, "+d.remaining+" da fare.");
+      }
+      note("Newsletter inviata a "+inviate+" iscritti"+(fallite?" ("+fallite+" falliti)":"")+".");
     }catch(e){ const m=String(e.message||e); if(/JWT|Sessione scaduta/i.test(m)) setShowLogin(true); alert("Newsletter:\n\n"+m); }
   };
   const doLogin=async(email,password)=>{ const d=await apiLogin(email,password); setToken(setSession(d)); setShowLogin(false); note("Bentornato in redazione."); };
@@ -283,25 +315,36 @@ function App(){
 
   return (
     <div style={{fontFamily:"Barlow, sans-serif",background:C.cream,minHeight:"100vh",color:C.navy}}>
+      {/* Prima voce raggiunta col tab: permette di saltare intestazione e
+          menu invece di attraversarli a ogni pagina. Invisibile col mouse,
+          compare solo quando riceve il focus (stile in index.html). */}
+      <a href="#contenuto" className="salta-al-contenuto">Salta al contenuto</a>
       <header style={{background:C.card,borderBottom:"1px solid "+C.line,position:"sticky",top:0,zIndex:20}}>
         <div style={{maxWidth:980,margin:"0 auto",padding:"12px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <Logo info={info} admin={admin} token={token} onSaveLogo={saveLogo} onHome={()=>go("home","top")} />
           <div style={{flex:1}}/>
           {admin&&<button onClick={()=>{setEditing(null);setShowForm(true);}} style={{display:"flex",alignItems:"center",background:C.blue,color:"#fff",border:"none",borderRadius:10,padding:"9px 12px",fontWeight:700,fontSize:14,cursor:"pointer",flexShrink:0}}><Ic n="plus" s={17} c="#fff"/><span className="btn-label" style={{marginLeft:6}}>Aggiungi</span></button>}
-          {(adminGate||admin)&&<button onClick={()=> admin? logout() : setShowLogin(true)} title={admin?"Esci":"Accesso redazione"} style={{display:"flex",alignItems:"center",justifyContent:"center",background:admin?C.navy:C.cream,color:admin?"#fff":C.gray,border:"1px solid "+(admin?C.navy:C.line),borderRadius:10,width:40,height:40,cursor:"pointer",flexShrink:0}}><Ic n={admin?"unlock":"lock"} s={16} c={admin?"#fff":C.gray}/></button>}
-          <button onClick={()=>setMenuOpen(o=>!o)} title="Menu" style={{display:"flex",alignItems:"center",justifyContent:"center",background:C.cream,color:C.navy,border:"1px solid "+C.line,borderRadius:10,width:40,height:40,cursor:"pointer",flexShrink:0}}><Ic n={menuOpen?"x":"menu"} s={19} c={C.navy}/></button>
+          {(adminGate||admin)&&<button onClick={()=> admin? logout() : setShowLogin(true)} aria-label={admin?"Esci dalla redazione":"Accesso redazione"} title={admin?"Esci":"Accesso redazione"} style={{display:"flex",alignItems:"center",justifyContent:"center",background:admin?C.navy:C.cream,color:admin?"#fff":C.gray,border:"1px solid "+(admin?C.navy:C.line),borderRadius:10,width:40,height:40,cursor:"pointer",flexShrink:0}}><Ic n={admin?"unlock":"lock"} s={16} c={admin?"#fff":C.gray}/></button>}
+          <button onClick={()=>setMenuOpen(o=>!o)} aria-label={menuOpen?"Chiudi il menu":"Apri il menu"} aria-expanded={menuOpen} title="Menu" style={{display:"flex",alignItems:"center",justifyContent:"center",background:C.cream,color:C.navy,border:"1px solid "+C.line,borderRadius:10,width:40,height:40,cursor:"pointer",flexShrink:0}}><Ic n={menuOpen?"x":"menu"} s={19} c={C.navy}/></button>
           {menuOpen&&<nav style={{flexBasis:"100%",display:"flex",flexDirection:"column",gap:2,paddingTop:6,marginTop:6,borderTop:"1px solid "+C.line}}>
             <button onClick={()=>go("home","top")} style={menuItem}>News</button>
             <button onClick={()=>openSerie("Podcast")} style={menuItem}>Podcast</button>
             <button onClick={openArchive} style={menuItem}>Archivio</button>
             <button onClick={()=>openPage("chi-siamo")} style={menuItem}>Chi siamo</button>
-            <button onClick={()=>go("social")} style={menuItem}>Social</button>
-            <button onClick={()=>go("contatti")} style={menuItem}>Contatti</button>
+            {/* openPage e non go: go riporta l'URL a "/", e queste due pagine
+                resterebbero senza indirizzo proprio — non linkabili, non
+                condivisibili, invisibili a Google, e perse a ogni ricarica. */}
+            <button onClick={()=>openPage("social")} style={menuItem}>Social</button>
+            <button onClick={()=>openPage("contatti")} style={menuItem}>Contatti</button>
             <button onClick={()=>openPage("newsletter")} style={menuItem}>Newsletter</button>
           </nav>}
         </div>
       </header>
 
+      {/* Bersaglio del collegamento "Salta al contenuto". tabIndex -1 lo rende
+          raggiungibile dal focus via programma senza inserirlo nel giro del
+          tab: chi salta qui riprende a tabulare dal contenuto, non da capo. */}
+      <div id="contenuto" tabIndex={-1} style={{outline:"none"}}>
       {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="newsletter" ? <NewsletterPage/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
       <main id="top" style={{maxWidth:980,margin:"0 auto",padding:"16px"}}>
         {view==="archivio"&&<div style={{marginBottom:14}}><div style={{fontFamily:"Anton",fontSize:26,color:C.navy}}>Archivio</div><div style={{fontSize:14,color:C.gray}}>Tutti gli articoli di Iattualità. Cerca o filtra per argomento.</div></div>}
@@ -316,7 +359,7 @@ function App(){
         </div>}
         <div style={{display:"flex",alignItems:"center",gap:8,background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"10px 14px",marginBottom:14}}>
           <Ic n="search" s={18} c={C.gray}/>
-          <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cerca tra le news…" style={{border:"none",outline:"none",flex:1,fontSize:15,fontFamily:"Barlow",background:"transparent",color:C.navy,minWidth:0}}/>
+          <input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cerca tra le news…" aria-label="Cerca tra le news" style={{border:"none",outline:"none",flex:1,fontSize:15,fontFamily:"Barlow",background:"transparent",color:C.navy,minWidth:0}}/>
           {query&&<span onClick={()=>setQuery("")} style={{cursor:"pointer",display:"flex"}}><Ic n="x" s={17} c={C.gray}/></span>}
         </div>
         {view!=="serie"&&<div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:6,marginBottom:16}}>
@@ -350,6 +393,7 @@ function App(){
             })()}
       </main>
       )}
+      </div>
 
       <SiteFooter info={info} admin={admin} onEdit={()=>setShowInfo(true)} onPage={openPage} onSendNewsletter={sendNewsletter}/>
 
@@ -514,7 +558,7 @@ function VideoModal({item,onClose}){
   const yt=ytId(item.video);
   return (<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(14,17,23,.8)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
     <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:760,background:C.card,borderRadius:16,overflow:"hidden"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:"1px solid "+C.line}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:18,fontWeight:400}}>{item.title}</strong><button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:"1px solid "+C.line}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:18,fontWeight:400}}>{item.title}</strong><button onClick={onClose} aria-label="Chiudi" style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
       {yt? <div style={{aspectRatio:"16/9",background:"#000"}}><iframe src={"https://www.youtube.com/embed/"+yt} style={{width:"100%",height:"100%",border:"none"}} allowFullScreen/></div>
         : <div style={{padding:32,textAlign:"center"}}><p style={{color:C.navySoft,marginBottom:16}}>I video di {platform(item.video)} si aprono nell'app originale.</p><a href={item.video} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:8,background:C.blue,color:"#fff",padding:"11px 20px",borderRadius:10,textDecoration:"none",fontWeight:700}}>Guarda su {platform(item.video)} <Ic n="ext" s={16} c="#fff"/></a></div>}
     </div>
@@ -664,7 +708,7 @@ function NewsForm({initial,token,onClose,onSave}){
   };
   return (<div style={{position:"fixed",inset:0,background:"rgba(14,17,23,.55)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
     <div style={{width:"100%",maxWidth:560,background:C.card,borderRadius:"18px 18px 0 0",maxHeight:"92vh",overflowY:"auto"}}>
-      <div style={{position:"sticky",top:0,background:C.card,padding:"16px 18px",borderBottom:"1px solid "+C.line,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>{initial?"Modifica news":"Nuova news"}</strong><button onClick={tryClose} style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
+      <div style={{position:"sticky",top:0,background:C.card,padding:"16px 18px",borderBottom:"1px solid "+C.line,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>{initial?"Modifica news":"Nuova news"}</strong><button onClick={tryClose} aria-label="Chiudi" style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
       <div style={{padding:18,display:"flex",flexDirection:"column",gap:14}}>
         <div><label style={labStyle}>Titolo *</label><input style={inStyle} value={f.title} onChange={e=>set("title",e.target.value)} placeholder="Es. Caro auto, l'Italia in cima alle classifiche"/></div>
         <div><label style={labStyle}>Sottotitolo</label><input style={inStyle} value={f.subtitle||""} onChange={e=>set("subtitle",e.target.value)} placeholder="Una riga che appare sotto il titolo in home"/></div>
@@ -748,11 +792,11 @@ function ContactPage({info}){
         {sent? <div style={{textAlign:"center",padding:"24px 8px"}}><div style={{fontFamily:"Anton",fontSize:22,color:C.navy,marginBottom:8}}>Messaggio inviato</div><p style={{color:C.navySoft,margin:0}}>Grazie, ti risponderemo appena possibile.</p></div>
         : <div style={{display:"flex",flexDirection:"column",gap:14}}>
             <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-              <div style={{flex:"1 1 200px"}}><label style={labStyle}>Nome *</label><input style={inStyle} value={f.nome} onChange={e=>set("nome",e.target.value)} placeholder="Come ti chiami"/></div>
-              <div style={{flex:"1 1 200px"}}><label style={labStyle}>Email *</label><input style={inStyle} value={f.email} onChange={e=>set("email",e.target.value)} placeholder="La tua email"/></div>
+              <div style={{flex:"1 1 200px"}}><label style={labStyle}>Nome *</label><input style={inStyle} value={f.nome} onChange={e=>set("nome",e.target.value)} placeholder="Come ti chiami" aria-label="Nome (obbligatorio)" autoComplete="name" required/></div>
+              <div style={{flex:"1 1 200px"}}><label style={labStyle}>Email *</label><input type="email" style={inStyle} value={f.email} onChange={e=>set("email",e.target.value)} placeholder="La tua email" aria-label="Email (obbligatoria)" autoComplete="email" required/></div>
             </div>
-            <div><label style={labStyle}>Oggetto</label><input style={inStyle} value={f.oggetto} onChange={e=>set("oggetto",e.target.value)} placeholder="Di cosa si tratta"/></div>
-            <div><label style={labStyle}>Messaggio *</label><textarea style={{...inStyle,minHeight:120,resize:"vertical"}} value={f.messaggio} onChange={e=>set("messaggio",e.target.value)} placeholder="Scrivi qui…"/></div>
+            <div><label style={labStyle}>Oggetto</label><input style={inStyle} value={f.oggetto} onChange={e=>set("oggetto",e.target.value)} placeholder="Di cosa si tratta" aria-label="Oggetto"/></div>
+            <div><label style={labStyle}>Messaggio *</label><textarea style={{...inStyle,minHeight:120,resize:"vertical"}} value={f.messaggio} onChange={e=>set("messaggio",e.target.value)} placeholder="Scrivi qui…" aria-label="Messaggio (obbligatorio)" required/></div>
             {err&&<div style={{color:C.red,fontSize:13.5}}>{err}</div>}
             <button disabled={!valid||busy} onClick={submit} style={{background:valid&&!busy?C.blue:C.line,color:"#fff",border:"none",borderRadius:12,padding:13,fontWeight:700,fontSize:16,cursor:valid&&!busy?"pointer":"not-allowed"}}>{busy?"Invio…":"Invia messaggio"}</button>
           </div>}
@@ -770,6 +814,7 @@ function ContactPage({info}){
 
 function NewsletterPage(){
   const [email,setEmail]=useState("");
+  const [trap,setTrap]=useState("");
   const [consenso,setConsenso]=useState(false);
   const [state,setState]=useState("idle"); // idle | busy | done | already | error
   const [msg,setMsg]=useState("");
@@ -787,7 +832,7 @@ function NewsletterPage(){
     if(!consenso){ setState("error"); setMsg("Serve il consenso per completare l'iscrizione."); return; }
     setState("busy"); setMsg("");
     try{
-      const r=await apiSubscribe(email.trim().toLowerCase());
+      const r=await apiSubscribe(email.trim().toLowerCase(),trap);
       if(r==="already_confirmed"){ setState("already"); setMsg("Questo indirizzo è già iscritto e confermato."); }
       else { setState("done"); setMsg("Ci siamo quasi: ti abbiamo inviato una mail, apri il link al suo interno per confermare l'iscrizione. Se non la trovi, controlla anche spam e promozioni — spostarla in Posta principale aiuta a ricevere le prossime nella casella giusta."); }
       if(window.umami&&window.umami.track)window.umami.track("newsletter_iscrizione");
@@ -807,7 +852,8 @@ function NewsletterPage(){
           : <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <div>
                 <label style={labStyle}>Email</label>
-                <input type="email" value={email} onChange={e=>{setEmail(e.target.value); if(state==="error")setState("idle");}} onKeyDown={e=>e.key==="Enter"&&submit()} style={inStyle} placeholder="nome@esempio.it"/>
+                <input type="email" value={email} onChange={e=>{setEmail(e.target.value); if(state==="error")setState("idle");}} onKeyDown={e=>e.key==="Enter"&&submit()} style={inStyle} placeholder="nome@esempio.it" aria-label="Il tuo indirizzo email" autoComplete="email"/>
+                <Honeypot value={trap} onChange={setTrap}/>
               </div>
               <label style={{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer"}}>
                 <input type="checkbox" checked={consenso} onChange={e=>{setConsenso(e.target.checked); if(state==="error")setState("idle");}} style={{width:18,height:18,accentColor:C.blue,marginTop:2,flexShrink:0}}/>
@@ -822,58 +868,6 @@ function NewsletterPage(){
   );
 }
 
-const STATIC_PAGES={
-  "chi-siamo":{ title:"Chi siamo · Iattualità", desc:"Iattualità è un progetto di informazione indipendente: attualità, geopolitica, inchieste ed economia verificate con i dati, senza appartenenze politiche.", h1:"Chi siamo",
-    intro:"Iattualità è un progetto di informazione indipendente. Raccontiamo attualità, geopolitica, inchieste ed economia con un metodo semplice: verificare con i dati e lasciare il giudizio a chi legge.",
-    blocks:[
-      {h:"La nostra missione",p:["Viviamo in un'epoca di informazione veloce e spesso urlata. Noi proviamo a fare il contrario: controllare prima di pubblicare, distinguere i fatti dalle opinioni e restare fuori dagli schieramenti. Mostriamo ciò che è documentato; le conclusioni le trai tu."]},
-      {h:"Chi c'è dietro",p:["La direzione e la responsabilità editoriale di Iattualità sono di Lorenzo, che coordina le scelte editoriali, la verifica delle fonti e la produzione dei contenuti. Dietro ogni pubblicazione c'è una persona reale che se ne assume la responsabilità."]},
-      {h:"Come lavoriamo",p:["Seguiamo regole precise su verifica, imparzialità e rispetto delle persone: le trovi nella pagina Standard editoriali. Quando commettiamo un errore lo correggiamo in modo trasparente, come spiegato nella pagina Rettifiche."]},
-      {h:"Il presentatore in IA",p:["Il volto e la voce dei nostri video sono generati con strumenti di intelligenza artificiale, ma le decisioni editoriali restano umane. Lo raccontiamo per intero nella pagina Trasparenza sull'IA: l'IA è il volto, non il cervello."]}
-    ]
-  },
-  "standard-editoriali":{ title:"Standard editoriali · Iattualità", desc:"Le regole che Iattualità segue prima di pubblicare: verifica con i dati, separazione tra fatti e opinioni, presunzione di innocenza, imparzialità.", h1:"Standard editoriali",
-    intro:"Le regole che seguiamo prima di pubblicare qualsiasi cosa. Sono ciò che rende l'informazione di Iattualità verificata e senza appartenenze.",
-    blocks:[
-      {h:"Verifica con i dati",p:["Nessun contenuto esce senza un controllo delle fonti. Diamo la precedenza a fonti primarie e ufficiali e, quando possibile, incrociamo più fonti indipendenti."]},
-      {h:"Fatti e opinioni separati",p:["Distinguiamo ciò che è documentato da ciò che è interpretazione. Sulle notizie non ancora confermate usiamo il condizionale — secondo, avrebbe, si ipotizza — e lo segnaliamo chiaramente."]},
-      {h:"Presunzione di innocenza",p:["Sulle vicende giudiziarie vale la presunzione di innocenza: indagato non significa colpevole. Non presentiamo come responsabili persone che sono soltanto indagate o imputate, e non le indichiamo come colpevoli nelle immagini di copertina."]},
-      {h:"Indipendenza e imparzialità",p:["Non abbiamo appartenenze politiche. Sui temi divisivi presentiamo le posizioni in campo senza sposarne nessuna: il nostro compito è dare gli elementi, non dire da che parte stare."]},
-      {h:"Rispetto delle persone",p:["Massima cautela quando ci sono vittime, minori o situazioni personali delicate. In questi casi rinunciamo a toni sensazionalistici e a qualsiasi dettaglio non necessario."]},
-      {h:"Fonti e citazioni",p:["Attribuiamo le informazioni alle loro fonti e riportiamo solo dichiarazioni verificate quando citiamo persone pubbliche."]}
-    ]
-  },
-  "rettifiche":{ title:"Rettifiche e correzioni · Iattualità", desc:"Come Iattualità corregge gli errori in modo trasparente e come segnalarne uno.", h1:"Rettifiche e correzioni",
-    intro:"Sbagliare è possibile; lasciare un errore online, no. Quando un contenuto contiene un'imprecisione, la correggiamo in modo trasparente.",
-    blocks:[
-      {h:"Come segnalare un errore",p:["Se noti un dato sbagliato o impreciso, scrivici indicando il contenuto e, se possibile, la fonte corretta. Valutiamo ogni segnalazione con attenzione."]},
-      {h:"Come correggiamo",p:["Se la segnalazione è fondata aggiorniamo il contenuto e, quando l'errore è sostanziale, lo indichiamo apertamente invece di modificare in silenzio. Se un video già pubblicato contiene un'imprecisione, aggiungiamo una nota di rettifica nei commenti o nella descrizione."]},
-      {h:"Tempi",p:["Interveniamo il prima possibile dopo aver verificato la segnalazione."]}
-    ]
-  },
-  "trasparenza-ia":{ title:"Trasparenza sull'IA · Iattualità", desc:"Iattualità usa un avatar e una voce generati con l'intelligenza artificiale, ma le decisioni editoriali restano umane. L'IA è il volto, non il cervello.", h1:"Trasparenza sull'intelligenza artificiale",
-    intro:"Usiamo l'intelligenza artificiale come strumento di produzione. Le decisioni, però, restano umane. Come diciamo noi: l'IA è il volto, non il cervello.",
-    blocks:[
-      {h:"Cosa fa l'IA",p:["Il presentatore che vedi nei nostri video è un avatar generato con strumenti di IA, con voce sintetizzata. Serve a dare un volto e una voce riconoscibili ai contenuti."]},
-      {h:"Cosa resta umano",p:["La scelta delle notizie, la verifica dei fatti, la scrittura dei testi e la responsabilità editoriale sono di Lorenzo, direttore di Iattualità. Nessun contenuto viene pubblicato senza un controllo umano."]},
-      {h:"Perché lo diciamo",p:["Crediamo che chi ci segue abbia diritto di sapere come è fatto ciò che guarda. La tecnologia cambia la forma, non il patto con il pubblico: informazione verificata con i dati e senza appartenenze."]}
-    ]
-  },
-  "privacy":{ title:"Privacy policy · Iattualità", desc:"Come Iattualità tratta i dati personali di chi si iscrive alla newsletter, scrive dai contatti o naviga il sito. Informativa ai sensi del GDPR.", h1:"Privacy policy",
-    intro:"Questa pagina spiega quali dati personali raccogliamo, perché, per quanto tempo li conserviamo e quali diritti hai. La aggiorniamo quando cambiano gli strumenti che usiamo.",
-    blocks:[
-      {h:"Contitolari del trattamento",p:["Iattualità è gestita da André Renzuto Iodice e Nicola Ferrone, che determinano insieme finalità e modalità del trattamento e ne sono pertanto contitolari ai sensi dell'art. 26 del Regolamento (UE) 2016/679. Puoi rivolgere a entrambi qualsiasi richiesta relativa ai tuoi dati scrivendo a redazione@iattualita.it, punto di contatto unico per gli interessati.","Recapito di riferimento: redazione@iattualita.it."]},
-      {h:"Quali dati raccogliamo",p:["Newsletter: quando ti iscrivi raccogliamo il tuo indirizzo email e la data di iscrizione e di conferma. Non chiediamo altri dati.","Contatti: se ci scrivi tramite il modulo di contatto, raccogliamo i dati che inserisci (nome, email, oggetto, messaggio) per poterti rispondere.","Navigazione: raccogliamo statistiche di visita in forma aggregata e anonima, senza cookie e senza identificarti."]},
-      {h:"Perché li usiamo e con quale base giuridica",p:["Newsletter: per inviarti i nostri aggiornamenti. La base giuridica è il tuo consenso, che presti confermando l'iscrizione con il doppio opt-in e che puoi revocare in ogni momento.","Contatti: per rispondere alla tua richiesta. La base giuridica è il riscontro alla tua richiesta e il nostro legittimo interesse a gestire le comunicazioni.","Statistiche: per capire quali contenuti funzionano, in forma anonima. La base giuridica è il legittimo interesse a migliorare il sito, senza profilazione."]},
-      {h:"Newsletter e doppio consenso",p:["Usiamo il doppio opt-in: dopo l'iscrizione ti inviamo un'email di conferma, e sei iscritto solo se clicchi il link. Ogni email contiene un link di disiscrizione immediato. Per l'invio ci appoggiamo a Brevo (Sendinblue), che tratta il tuo indirizzo come responsabile per nostro conto."]},
-      {h:"Statistiche senza cookie",p:["Per le statistiche di visita usiamo Umami, uno strumento che non installa cookie di profilazione e non raccoglie dati che permettano di identificarti. Per questo il sito non mostra un banner cookie di profilazione: non ne usiamo."]},
-      {h:"Con chi condividiamo i dati",p:["Non vendiamo e non cediamo i tuoi dati a terzi per finalità commerciali. Ci avvaliamo di alcuni fornitori che trattano i dati per nostro conto, come responsabili: Brevo per l'invio della newsletter, Netlify per l'hosting del sito, Supabase per l'archiviazione degli iscritti. Alcuni di questi fornitori possono trattare i dati anche fuori dall'Unione Europea; in tal caso il trasferimento avviene con le garanzie previste dalla normativa (ad esempio le clausole contrattuali standard)."]},
-      {h:"Per quanto tempo li conserviamo",p:["Conserviamo il tuo indirizzo email finché resti iscritto alla newsletter. Se ti disiscrivi, l'indirizzo viene marcato come disiscritto e non riceverai più comunicazioni. I messaggi inviati dai contatti sono conservati per il tempo necessario a gestire la richiesta."]},
-      {h:"I tuoi diritti",p:["Puoi chiedere in ogni momento di accedere ai tuoi dati, correggerli, cancellarli, limitarne il trattamento o opporti, oltre a revocare il consenso alla newsletter. Per esercitare questi diritti scrivi a redazione@iattualita.it: la disiscrizione è comunque possibile con un clic dal link presente in ogni email.","Se ritieni che il trattamento violi la normativa, hai diritto di presentare reclamo all'autorità di controllo competente (in Italia, il Garante per la protezione dei dati personali)."]},
-      {h:"Modifiche a questa informativa",p:["Possiamo aggiornare questa pagina se cambiano gli strumenti o le finalità del trattamento. La versione pubblicata su questa pagina è sempre quella in vigore."]}
-    ]
-  }
-};
 
 function StaticPage({page,info,onPage}){
   const d=STATIC_PAGES[page];
@@ -907,6 +901,7 @@ function StaticPage({page,info,onPage}){
 
 function Newsletter(){
   const [email,setEmail]=useState("");
+  const [trap,setTrap]=useState("");
   const [state,setState]=useState("idle"); // idle | busy | done | already | error
   const [msg,setMsg]=useState("");
   const valid=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
@@ -914,7 +909,7 @@ function Newsletter(){
     if(!valid){ setState("error"); setMsg("Controlla l'indirizzo email."); return; }
     setState("busy"); setMsg("");
     try{
-      const r=await apiSubscribe(email.trim().toLowerCase());
+      const r=await apiSubscribe(email.trim().toLowerCase(),trap);
       if(r==="already_confirmed"){ setState("already"); setMsg("Questo indirizzo è già iscritto e confermato."); }
       else { setState("done"); setMsg("Ci siamo quasi: ti abbiamo inviato una mail, apri il link per confermare l'iscrizione. Se non la trovi, guarda in Promozioni o Spam."); }
     }catch(e){ setState("error"); setMsg(e.message||"Iscrizione non riuscita."); }
@@ -928,7 +923,8 @@ function Newsletter(){
       ? <div style={{display:"flex",alignItems:"center",gap:10,color:"#fff",fontSize:15,background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.18)",borderRadius:11,padding:"13px 15px",maxWidth:560}}><Ic n="mail" s={18} c={C.amber}/><span>{msg}</span></div>
       : <div style={{maxWidth:560}}>
           <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
-            <input type="email" value={email} onChange={e=>{setEmail(e.target.value); if(state==="error")setState("idle");}} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="La tua email" style={inNL}/>
+            <input type="email" value={email} onChange={e=>{setEmail(e.target.value); if(state==="error")setState("idle");}} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="La tua email" style={inNL} aria-label="Il tuo indirizzo email" autoComplete="email"/>
+            <Honeypot value={trap} onChange={setTrap}/>
             <button onClick={submit} disabled={state==="busy"} style={{background:C.amber,color:C.navy,border:"none",borderRadius:11,padding:"12px 20px",fontWeight:800,fontSize:15,cursor:state==="busy"?"default":"pointer",whiteSpace:"nowrap"}}>{state==="busy"?"Invio…":"Iscriviti"}</button>
           </div>
           {state==="error"&&<div style={{color:"#FFD2CE",fontSize:13.5,marginTop:8}}>{msg}</div>}
@@ -968,8 +964,11 @@ function SiteFooter({info,admin,onEdit,onPage,onSendNewsletter}){
       <div style={{borderTop:"1px solid rgba(255,255,255,.12)",marginTop:26,paddingTop:18,display:"flex",flexWrap:"wrap",gap:"6px 18px",justifyContent:"center"}}>
         <a href={seriePath("Podcast")} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>Podcast</a>
         <a href="/newsletter" onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage("newsletter"); }} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>Newsletter</a>
-        {Object.keys(STATIC_PAGES).map(k=>(
-          <a key={k} href={"/"+k} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage(k); }} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>{STATIC_PAGES[k].h1}</a>
+        {/* Contatti e Social in fondo alla lista: sono veri <a href>, quindi
+            danno al crawler un collegamento da seguire verso due pagine che
+            altrimenti si raggiungono solo dal menu. */}
+        {[...Object.keys(STATIC_PAGES).map(k=>[k,STATIC_PAGES[k].h1]),["contatti","Contatti"],["social","Seguici"]].map(([k,label])=>(
+          <a key={k} href={"/"+k} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage(k); }} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>{label}</a>
         ))}
       </div>
       <div style={{marginTop:14,textAlign:"center",color:"rgba(255,255,255,.55)",fontSize:12.5}}>Iattualità · L'informazione intelligente e in tempo reale · versione 9</div>
@@ -986,7 +985,7 @@ function InfoModal({initial,onClose,onSave}){
     window.addEventListener("keydown",h); return ()=>window.removeEventListener("keydown",h); });
   return (<div style={{position:"fixed",inset:0,background:"rgba(14,17,23,.55)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
     <div style={{width:"100%",maxWidth:560,background:C.card,borderRadius:"18px 18px 0 0",maxHeight:"92vh",overflowY:"auto"}}>
-      <div style={{position:"sticky",top:0,background:C.card,padding:"16px 18px",borderBottom:"1px solid "+C.line,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>Social e contatti</strong><button onClick={tryClose} style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
+      <div style={{position:"sticky",top:0,background:C.card,padding:"16px 18px",borderBottom:"1px solid "+C.line,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>Social e contatti</strong><button onClick={tryClose} aria-label="Chiudi" style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
       <div style={{padding:18,display:"flex",flexDirection:"column",gap:14}}>
         <div style={{fontSize:12.5,fontWeight:800,color:C.gray,letterSpacing:.5,textTransform:"uppercase"}}>Chi siamo</div>
         <textarea style={{...inStyle,minHeight:90,resize:"vertical"}} value={f.about||""} onChange={e=>set("about",e.target.value)} placeholder="Iattualità è una testata digitale indipendente…"/>
@@ -1013,7 +1012,7 @@ function LoginModal({onClose,onLogin}){
   const submit=async()=>{ setErr(""); setBusy(true); try{ await onLogin(email.trim(),pw); }catch(e){ setErr(e.message||"Accesso non riuscito."); } setBusy(false); };
   return (<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(14,17,23,.55)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
     <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:380,background:C.card,borderRadius:16,padding:20}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>Accesso redazione</strong><button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>Accesso redazione</strong><button onClick={onClose} aria-label="Chiudi" style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
       <p style={{color:C.navySoft,fontSize:14,marginTop:0}}>Entra con l'email e la password della redazione.</p>
       <input value={email} onChange={e=>{setEmail(e.target.value);setErr("");}} placeholder="Email" style={{...inStyle,marginBottom:10}}/>
       <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="Password" style={{...inStyle,marginBottom:10}}/>

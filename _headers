@@ -4,6 +4,30 @@
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: SAMEORIGIN
   Permissions-Policy: geolocation=(), microphone=(), camera=(), interest-cohort=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  #
+  # Content-Security-Policy: elenca le uniche origini da cui il browser puo'
+  # caricare qualcosa. Conta soprattutto per il corpo degli articoli: il
+  # prerender lo prende dal database e lo inietta nella pagina. Quel
+  # contenuto passa gia' dalla sanificazione per allowlist di safeBody();
+  # la CSP e' la seconda rete, per il caso in cui la prima sbagli: anche se
+  # un tag pericoloso passasse, lo script non partirebbe.
+  #
+  # Ogni voce corrisponde a qualcosa che il sito usa davvero:
+  #   script  'self' = React (ora in vendor/) e app.js, cloud.umami.is =
+  #           statistiche, l'hash = lo script inline che fissa il viewport
+  #   style   'unsafe-inline' e' inevitabile: React e il prerender scrivono
+  #           gli stili dentro l'attributo style di ogni elemento
+  #   img     supabase = le copertine, img.youtube = le anteprime dei video,
+  #           data: = le immagini incorporate
+  #   connect supabase = articoli e iscrizioni, umami = invio statistiche
+  #   frame   solo gli embed YouTube
+  #   form-action 'self' impedisce che un modulo iniettato spedisca altrove
+  #   object-src 'none' chiude plugin e <embed>
+  #
+  # Se un giorno aggiungi un servizio esterno e "non funziona", la console
+  # del browser dice esattamente quale riga lo sta bloccando.
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://cloud.umami.is 'sha256-3sgerl2LYMr70k+UBpH5ueGZWg1sxL6wqOdJnINkSmI='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://wzkshpgakvasqwrrgkgd.supabase.co https://img.youtube.com; connect-src 'self' https://wzkshpgakvasqwrrgkgd.supabase.co https://cloud.umami.is https://gateway.umami.is; frame-src https://www.youtube.com https://www.youtube-nocookie.com; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'self'
 
 # app.js non ha un hash nel nome: cache breve lato browser,
 # ma la CDN puo' tenerlo piu' a lungo e rivalidare in background.
@@ -19,3 +43,8 @@
   Cache-Control: public, max-age=2592000
 /og-default.jpg
   Cache-Control: public, max-age=2592000
+
+# React: il nome contiene la versione solo in package.json, ma il contenuto
+# cambia solo quando cambi quella. Una settimana di cache e' prudente.
+/vendor/*
+  Cache-Control: public, max-age=604800, stale-while-revalidate=2592000

@@ -14,6 +14,8 @@
 // differenza, il crawler riceve il testo gia' pronto. Stesso contenuto,
 // nessun cloaking.
 
+import { slugify, SERIE_ALIAS, SOCIALS, STATIC_PAGES as PAGES } from "../../shared/site-pages.js";
+
 const SUPABASE_URL = "https://wzkshpgakvasqwrrgkgd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_I3s4phA5Be9qnV4pLbWQMQ_8-IGUE-b";
 const SITE = "https://iattualita.it";
@@ -53,17 +55,6 @@ const esc = (s) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-// Identica alla slugify() di index.html e sitemap.js
-const slugify = (s) =>
-  (s || "")
-    .toString()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60) || "articolo";
-
 const stripTags = (html) =>
   String(html ?? "")
     .replace(/<[^>]*>/g, " ")
@@ -80,14 +71,106 @@ function clip(text, max = 155) {
   return (sp > 60 ? cut.slice(0, sp) : cut).replace(/[,;:.\-\s]+$/, "") + "…";
 }
 
-// Rimuove cio' che non deve finire nell'HTML servito ai crawler
+// ---------- sanificazione del corpo degli articoli ----------
+//
+// Il corpo arriva dal database e viene iniettato tale e quale nella pagina:
+// e' l'unico punto in cui un contenuto memorizzato diventa HTML per ogni
+// visitatore, quindi merita di essere trattato con sospetto anche se a
+// scriverlo e' la redazione.
+//
+// Prima si elencava cio' che era VIETATO (<script>, <iframe>, gli attributi
+// on*, "javascript:"). E' un approccio che perde: <img/onerror=...> sfugge
+// perche' la barra non e' uno spazio, e "javascript:" si scrive anche
+// &#106;avascript: — il browser decodifica, l'espressione regolare no.
+//
+// Ora si elenca cio' che e' PERMESSO. Ogni tag viene riscritto da zero
+// tenendo solo gli attributi in lista: un gestore di eventi non passa piu'
+// per costruzione, comunque lo si mascheri, perche' non e' in elenco.
+//
+// La lista viene dai 131 articoli davvero pubblicati: p, span, br, li, h3,
+// div, ul, h2, b, a, blockquote, font, hr, piu' quelli che potrebbero
+// servire in futuro. Nessun articolo esistente perde formattazione.
+const ATTR_COMUNI = ["style", "dir", "class", "id", "title", "lang", "role"];
+const TAG_AMMESSI = {
+  p: [], br: [], span: [], div: [], hr: [],
+  h2: [], h3: [], h4: [], h5: [], h6: [],
+  ul: [], ol: [], li: [],
+  b: [], strong: [], i: [], em: [], u: [], s: [], sub: [], sup: [], small: [], mark: [],
+  blockquote: [], code: [], pre: [], figure: [], figcaption: [],
+  table: [], thead: [], tbody: [], tfoot: [], tr: [], th: [], td: [],
+  a: ["href", "target", "rel"],
+  img: ["src", "alt", "width", "height", "loading"],
+  font: ["color", "size"]
+};
+// Elementi il cui CONTENUTO va buttato, non solo il tag: lasciare il testo
+// di uno <script> dentro la pagina non e' pericoloso, ma e' spazzatura che
+// il crawler leggerebbe come parte dell'articolo.
+const TAG_CON_CONTENUTO_DA_BUTTARE = "script|style|iframe|object|embed|svg|math|form|template|noscript|title";
+
+// Un indirizzo e' accettabile solo se punta al web, alla posta o al sito
+// stesso. Prima di deciderlo si decodificano le entita' e si tolgono spazi e
+// caratteri di controllo, che sono il modo classico di nascondere
+// "javascript:" a un controllo fatto sulla stringa grezza.
+function urlSicuro(u) {
+  const pulito = String(u)
+    .replace(/&#x([0-9a-f]+);?/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&#(\d+);?/g, (_, d) => String.fromCharCode(Number(d)))
+    .replace(/[\s\u0000-\u001F\u007F]/g, "")
+    .toLowerCase();
+  return /^(https?:\/\/|mailto:|tel:|\/|#)/.test(pulito);
+}
+
+// Nel valore di style restano pericolosi solo due costrutti storici, e
+// url() che punti altrove. Il resto e' formattazione.
+function styleSicuro(v) {
+  const s = String(v);
+  if (/expression\s*\(|javascript\s*:|@import|behavior\s*:/i.test(s)) return null;
+  const urls = s.match(/url\s*\(([^)]*)\)/gi) || [];
+  for (const u of urls) {
+    if (!urlSicuro(u.replace(/^url\s*\(\s*['"]?|['"]?\s*\)$/gi, ""))) return null;
+  }
+  return s;
+}
+
 function safeBody(html) {
-  return String(html ?? "")
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
-    .replace(/<(style|link|meta|object|embed)[\s\S]*?>/gi, "")
-    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/javascript:/gi, "");
+  let s = String(html ?? "");
+
+  // 1. Via gli elementi vietati, contenuto compreso.
+  s = s.replace(new RegExp("<(" + TAG_CON_CONTENUTO_DA_BUTTARE + ")\\b[\\s\\S]*?</\\1\\s*>", "gi"), "");
+  // 2. E le loro versioni lasciate aperte, piu' quelle senza chiusura.
+  s = s.replace(new RegExp("</?(" + TAG_CON_CONTENUTO_DA_BUTTARE + "|base|link|meta)\\b[^>]*>", "gi"), "");
+  // 3. I commenti HTML: possono nascondere markup e confondere il parser.
+  s = s.replace(/<!--[\s\S]*?-->/g, "");
+
+  // 4. Ogni tag rimasto viene ricostruito da zero.
+  s = s.replace(/<(\/?)\s*([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g, (_tutto, chiusura, nome, attrs) => {
+    const tag = nome.toLowerCase();
+    if (!Object.prototype.hasOwnProperty.call(TAG_AMMESSI, tag)) return "";
+    if (chiusura) return "</" + tag + ">";
+
+    const ammessi = ATTR_COMUNI.concat(TAG_AMMESSI[tag]);
+    let out = "<" + tag;
+    const re = /([a-zA-Z][a-zA-Z0-9-]*)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+))/g;
+    let m;
+    while ((m = re.exec(attrs)) !== null) {
+      const an = m[1].toLowerCase();
+      // aria-* passa: serve agli screen reader e non puo' eseguire nulla.
+      if (!ammessi.includes(an) && !an.startsWith("aria-")) continue;
+      let av = m[3] !== undefined ? m[3] : m[4] !== undefined ? m[4] : m[5] || "";
+      if ((an === "href" || an === "src") && !urlSicuro(av)) continue;
+      if (an === "style") {
+        const pulito = styleSicuro(av);
+        if (pulito === null) continue;
+        av = pulito;
+      }
+      out += " " + an + '="' + av.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + '"';
+    }
+    // I link esterni non devono poter manipolare la pagina che li ha aperti.
+    if (tag === "a" && / target="/.test(out) && !/ rel="/.test(out)) out += ' rel="noopener noreferrer"';
+    return out + ">";
+  });
+
+  return s;
 }
 
 // Data in formato ISO 8601 con orario: Google News vuole il timestamp
@@ -119,65 +202,8 @@ async function sb(path) {
   return res.json();
 }
 
-// ---------- pagine istituzionali ----------
-// ATTENZIONE: questo blocco e' la copia dei testi di STATIC_PAGES dentro app.jsx.
-// Se modifichi una pagina li', riportala anche qui, altrimenti il crawler legge
-// la versione vecchia. Sono gli unici testi duplicati nel repo.
-const PAGES = {
-  "chi-siamo":{ title:"Chi siamo · Iattualità", desc:"Iattualità è un progetto di informazione indipendente: attualità, geopolitica, inchieste ed economia verificate con i dati, senza appartenenze politiche.", h1:"Chi siamo",
-    intro:"Iattualità è un progetto di informazione indipendente. Raccontiamo attualità, geopolitica, inchieste ed economia con un metodo semplice: verificare con i dati e lasciare il giudizio a chi legge.",
-    blocks:[
-      {h:"La nostra missione",p:["Viviamo in un'epoca di informazione veloce e spesso urlata. Noi proviamo a fare il contrario: controllare prima di pubblicare, distinguere i fatti dalle opinioni e restare fuori dagli schieramenti. Mostriamo ciò che è documentato; le conclusioni le trai tu."]},
-      {h:"Chi c'è dietro",p:["La direzione e la responsabilità editoriale di Iattualità sono di Lorenzo, che coordina le scelte editoriali, la verifica delle fonti e la produzione dei contenuti. Dietro ogni pubblicazione c'è una persona reale che se ne assume la responsabilità."]},
-      {h:"Come lavoriamo",p:["Seguiamo regole precise su verifica, imparzialità e rispetto delle persone: le trovi nella pagina Standard editoriali. Quando commettiamo un errore lo correggiamo in modo trasparente, come spiegato nella pagina Rettifiche."]},
-      {h:"Il presentatore in IA",p:["Il volto e la voce dei nostri video sono generati con strumenti di intelligenza artificiale, ma le decisioni editoriali restano umane. Lo raccontiamo per intero nella pagina Trasparenza sull'IA: l'IA è il volto, non il cervello."]}
-    ]
-  },
-  "standard-editoriali":{ title:"Standard editoriali · Iattualità", desc:"Le regole che Iattualità segue prima di pubblicare: verifica con i dati, separazione tra fatti e opinioni, presunzione di innocenza, imparzialità.", h1:"Standard editoriali",
-    intro:"Le regole che seguiamo prima di pubblicare qualsiasi cosa. Sono ciò che rende l'informazione di Iattualità verificata e senza appartenenze.",
-    blocks:[
-      {h:"Verifica con i dati",p:["Nessun contenuto esce senza un controllo delle fonti. Diamo la precedenza a fonti primarie e ufficiali e, quando possibile, incrociamo più fonti indipendenti."]},
-      {h:"Fatti e opinioni separati",p:["Distinguiamo ciò che è documentato da ciò che è interpretazione. Sulle notizie non ancora confermate usiamo il condizionale — secondo, avrebbe, si ipotizza — e lo segnaliamo chiaramente."]},
-      {h:"Presunzione di innocenza",p:["Sulle vicende giudiziarie vale la presunzione di innocenza: indagato non significa colpevole. Non presentiamo come responsabili persone che sono soltanto indagate o imputate, e non le indichiamo come colpevoli nelle immagini di copertina."]},
-      {h:"Indipendenza e imparzialità",p:["Non abbiamo appartenenze politiche. Sui temi divisivi presentiamo le posizioni in campo senza sposarne nessuna: il nostro compito è dare gli elementi, non dire da che parte stare."]},
-      {h:"Rispetto delle persone",p:["Massima cautela quando ci sono vittime, minori o situazioni personali delicate. In questi casi rinunciamo a toni sensazionalistici e a qualsiasi dettaglio non necessario."]},
-      {h:"Fonti e citazioni",p:["Attribuiamo le informazioni alle loro fonti e riportiamo solo dichiarazioni verificate quando citiamo persone pubbliche."]}
-    ]
-  },
-  "rettifiche":{ title:"Rettifiche e correzioni · Iattualità", desc:"Come Iattualità corregge gli errori in modo trasparente e come segnalarne uno.", h1:"Rettifiche e correzioni",
-    intro:"Sbagliare è possibile; lasciare un errore online, no. Quando un contenuto contiene un'imprecisione, la correggiamo in modo trasparente.",
-    blocks:[
-      {h:"Come segnalare un errore",p:["Se noti un dato sbagliato o impreciso, scrivici indicando il contenuto e, se possibile, la fonte corretta. Valutiamo ogni segnalazione con attenzione."]},
-      {h:"Come correggiamo",p:["Se la segnalazione è fondata aggiorniamo il contenuto e, quando l'errore è sostanziale, lo indichiamo apertamente invece di modificare in silenzio. Se un video già pubblicato contiene un'imprecisione, aggiungiamo una nota di rettifica nei commenti o nella descrizione."]},
-      {h:"Tempi",p:["Interveniamo il prima possibile dopo aver verificato la segnalazione."]}
-    ]
-  },
-  "trasparenza-ia":{ title:"Trasparenza sull'IA · Iattualità", desc:"Iattualità usa un avatar e una voce generati con l'intelligenza artificiale, ma le decisioni editoriali restano umane. L'IA è il volto, non il cervello.", h1:"Trasparenza sull'intelligenza artificiale",
-    intro:"Usiamo l'intelligenza artificiale come strumento di produzione. Le decisioni, però, restano umane. Come diciamo noi: l'IA è il volto, non il cervello.",
-    blocks:[
-      {h:"Cosa fa l'IA",p:["Il presentatore che vedi nei nostri video è un avatar generato con strumenti di IA, con voce sintetizzata. Serve a dare un volto e una voce riconoscibili ai contenuti."]},
-      {h:"Cosa resta umano",p:["La scelta delle notizie, la verifica dei fatti, la scrittura dei testi e la responsabilità editoriale sono di Lorenzo, direttore di Iattualità. Nessun contenuto viene pubblicato senza un controllo umano."]},
-      {h:"Perché lo diciamo",p:["Crediamo che chi ci segue abbia diritto di sapere come è fatto ciò che guarda. La tecnologia cambia la forma, non il patto con il pubblico: informazione verificata con i dati e senza appartenenze."]}
-    ]
-  },
-  "privacy":{ title:"Privacy policy · Iattualità", desc:"Come Iattualità tratta i dati personali di chi si iscrive alla newsletter, scrive dai contatti o naviga il sito. Informativa ai sensi del GDPR.", h1:"Privacy policy",
-    intro:"Questa pagina spiega quali dati personali raccogliamo, perché, per quanto tempo li conserviamo e quali diritti hai. La aggiorniamo quando cambiano gli strumenti che usiamo.",
-    blocks:[
-      {h:"Contitolari del trattamento",p:["Iattualità è gestita da André Renzuto Iodice e Nicola Ferrone, che determinano insieme finalità e modalità del trattamento e ne sono pertanto contitolari ai sensi dell'art. 26 del Regolamento (UE) 2016/679. Puoi rivolgere a entrambi qualsiasi richiesta relativa ai tuoi dati scrivendo a redazione@iattualita.it, punto di contatto unico per gli interessati.","Recapito di riferimento: redazione@iattualita.it."]},
-      {h:"Quali dati raccogliamo",p:["Newsletter: quando ti iscrivi raccogliamo il tuo indirizzo email e la data di iscrizione e di conferma. Non chiediamo altri dati.","Contatti: se ci scrivi tramite il modulo di contatto, raccogliamo i dati che inserisci (nome, email, oggetto, messaggio) per poterti rispondere.","Navigazione: raccogliamo statistiche di visita in forma aggregata e anonima, senza cookie e senza identificarti."]},
-      {h:"Perché li usiamo e con quale base giuridica",p:["Newsletter: per inviarti i nostri aggiornamenti. La base giuridica è il tuo consenso, che presti confermando l'iscrizione con il doppio opt-in e che puoi revocare in ogni momento.","Contatti: per rispondere alla tua richiesta. La base giuridica è il riscontro alla tua richiesta e il nostro legittimo interesse a gestire le comunicazioni.","Statistiche: per capire quali contenuti funzionano, in forma anonima. La base giuridica è il legittimo interesse a migliorare il sito, senza profilazione."]},
-      {h:"Newsletter e doppio consenso",p:["Usiamo il doppio opt-in: dopo l'iscrizione ti inviamo un'email di conferma, e sei iscritto solo se clicchi il link. Ogni email contiene un link di disiscrizione immediato. Per l'invio ci appoggiamo a Brevo (Sendinblue), che tratta il tuo indirizzo come responsabile per nostro conto."]},
-      {h:"Statistiche senza cookie",p:["Per le statistiche di visita usiamo Umami, uno strumento che non installa cookie di profilazione e non raccoglie dati che permettano di identificarti. Per questo il sito non mostra un banner cookie di profilazione: non ne usiamo."]},
-      {h:"Con chi condividiamo i dati",p:["Non vendiamo e non cediamo i tuoi dati a terzi per finalità commerciali. Ci avvaliamo di alcuni fornitori che trattano i dati per nostro conto, come responsabili: Brevo per l'invio della newsletter, Netlify per l'hosting del sito, Supabase per l'archiviazione degli iscritti. Alcuni di questi fornitori possono trattare i dati anche fuori dall'Unione Europea; in tal caso il trasferimento avviene con le garanzie previste dalla normativa (ad esempio le clausole contrattuali standard)."]},
-      {h:"Per quanto tempo li conserviamo",p:["Conserviamo il tuo indirizzo email finché resti iscritto alla newsletter. Se ti disiscrivi, l'indirizzo viene marcato come disiscritto e non riceverai più comunicazioni. I messaggi inviati dai contatti sono conservati per il tempo necessario a gestire la richiesta."]},
-      {h:"I tuoi diritti",p:["Puoi chiedere in ogni momento di accedere ai tuoi dati, correggerli, cancellarli, limitarne il trattamento o opporti, oltre a revocare il consenso alla newsletter. Per esercitare questi diritti scrivi a redazione@iattualita.it: la disiscrizione è comunque possibile con un clic dal link presente in ogni email.","Se ritieni che il trattamento violi la normativa, hai diritto di presentare reclamo all'autorità di controllo competente (in Italia, il Garante per la protezione dei dati personali)."]},
-      {h:"Modifiche a questa informativa",p:["Possiamo aggiornare questa pagina se cambiano gli strumenti o le finalità del trattamento. La versione pubblicata su questa pagina è sempre quella in vigore."]}
-    ]
-  }
-};
 
-// Deve restare identica a SERIE_ALIAS dentro app.jsx e sitemap.js.
-const SERIE_ALIAS = { Podcast: "/podcast" };
+
 const ALIAS_TO_SERIE = Object.fromEntries(
   Object.entries(SERIE_ALIAS).map(([s, p]) => [p.replace(/^\//, ""), s])
 );
@@ -531,6 +557,78 @@ export default async function handler(request, context) {
     return new Response(html, {
       status: 200,
       headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=0, s-maxage=3600" },
+    });
+  }
+
+  // ---- CONTATTI E SOCIAL ----
+  // Per una testata la pagina contatti e' un segnale di affidabilita': dice a
+  // chi legge (e a Google News) che dietro il sito c'e' qualcuno di
+  // raggiungibile. Finora nessuna delle due aveva un indirizzo proprio.
+  if (segRaw === "contatti" || segRaw === "social") {
+    let info = {};
+    try {
+      const rows = await sb("site_info?id=eq.1&select=*");
+      info = rows[0] || {};
+    } catch {
+      /* senza recapiti la pagina esce comunque, solo piu' scarna */
+    }
+    const social = SOCIALS.filter((s) => info[s.k]);
+    const socialHtml = social.length
+      ? `<p style="margin-top:18px">${social
+          .map(
+            (s) =>
+              `<a href="${esc(info[s.k])}" rel="noopener" style="color:#2C5AA0;font-weight:700;margin-right:14px">${esc(s.n)}</a>`
+          )
+          .join("")}</p>`
+      : "";
+
+    const isContatti = segRaw === "contatti";
+    const u = SITE + "/" + segRaw;
+    const t = isContatti ? "Contatti · Iattualità" : "Seguici · Iattualità";
+    const d = isContatti
+      ? "Come contattare la redazione di Iattualità: segnalazioni, collaborazioni, rettifiche e richieste."
+      : "Tutti i canali di Iattualità in un posto solo: TikTok, Instagram, Facebook, YouTube, Threads.";
+
+    const recapiti = isContatti
+      ? (info.email ? `<p><strong>Email:</strong> <a href="mailto:${esc(info.email)}" style="color:#2C5AA0">${esc(info.email)}</a></p>` : "") +
+        (info.phone ? `<p><strong>Telefono:</strong> ${esc(info.phone)}</p>` : "")
+      : "";
+
+    const ldObj = isContatti
+      ? {
+          "@context": "https://schema.org",
+          "@type": "ContactPage",
+          name: "Contatti",
+          description: d,
+          url: u,
+          isPartOf: { "@type": "WebSite", name: "Iattualità", url: SITE },
+          mainEntity: {
+            "@type": "NewsMediaOrganization",
+            name: "Iattualità",
+            url: SITE,
+            email: info.email || undefined,
+            telephone: info.phone || undefined,
+            sameAs: social.map((s) => info[s.k])
+          }
+        }
+      : webPageLd("Seguici", d, u);
+
+    const blk = "<!--OG_START-->\n" + pageOgBlock(t, d, u, ldObj) + "\n<!--OG_END-->";
+    html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => blk);
+    html = inject(`${WRAP_OPEN}
+<p style="font-size:12px;color:#7A8499;margin:0 0 10px"><a href="/" style="color:#2C5AA0">Iattualità</a></p>
+<h1 ${H1}>${isContatti ? "Contatti" : "Seguici"}</h1>
+<p style="font-size:19px;font-weight:700;color:#16243F">${esc(
+      isContatti
+        ? "Segnalazioni, collaborazioni o richieste: scrivici. Leggiamo tutto."
+        : "Tutti i nostri canali in un posto solo. Resta aggiornato dove preferisci."
+    )}</p>
+${recapiti}
+${socialHtml}
+</div>`);
+    return new Response(html, {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=0, s-maxage=3600" }
     });
   }
 
