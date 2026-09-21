@@ -57,9 +57,17 @@
 
 <div id="root"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<!-- React arriva da qui e non piu' da cdnjs: il sito non deve dipendere da
+     un dominio terzo per partire, e quel dominio non deve vedere chi legge.
+     I file sono gli stessi (hash identico), copiati da npm dentro vendor/
+     durante la build, alla versione fissata in package.json.
 
+     defer su tutti e tre: senza, i due script di React fermavano l'analisi
+     dell'HTML e quindi il primo disegno della pagina. Con defer l'ordine
+     resta garantito — React, ReactDOM, poi app.js — ma il browser puo'
+     intanto finire di costruire la pagina. -->
+<script defer src="/vendor/react.production.min.js"></script>
+<script defer src="/vendor/react-dom.production.min.js"></script>
 <script defer src="/app.js"></script>
 
 </body>
