@@ -180,6 +180,35 @@ const nxml = await (await newsSitemap()).text();
 check("news-sitemap: l'articolo di ieri c'e', con lo stesso slug",
   nxml.includes("/articolo/42/titolo-dell-articolo") && nxml.includes("<news:publication_date>"));
 
+// ---- l'elenco dei file statici serviti ----
+// Tutto cio' che non e' elencato in excludedPath passa dal prerender e
+// diventa 404. E' la rete che tiene fuori node_modules, i sorgenti e le
+// migrazioni finche' Netlify non rispetta la cartella dist/.
+const { config } = await import(path.join(REPO, "netlify/edge-functions/prerender.js"));
+const esclusi = config.excludedPath;
+for (const necessario of ["/app.js", "/vendor/*", "/robots.txt", "/llms.txt", "/*.xml", "/.netlify/*", "/favicon.ico", "/og-default.jpg"]) {
+  check("resta servito: " + necessario, esclusi.includes(necessario));
+}
+for (const pericoloso of ["/*.js", "/*.json", "/*.txt"]) {
+  check("non piu' aperto per estensione: " + pericoloso, !esclusi.includes(pericoloso));
+}
+// Ogni file che la build mette in dist/ deve essere raggiungibile: se uno
+// manca dall'elenco, il sito lo servirebbe come 404 senza che nessuno se ne
+// accorga finche' non si rompe qualcosa in pagina.
+function fileIn(dir, base = "") {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((v) =>
+    v.isDirectory() ? fileIn(path.join(dir, v.name), base + v.name + "/") : [base + v.name]
+  );
+}
+const inDist = fileIn(path.join(REPO, "dist"));
+const coperto = (f) =>
+  f === "_headers" ||            // lo consuma Netlify, non viene servito
+  f === "index.html" ||          // e' la pagina, la serve il prerender
+  esclusi.some((e) => (e.endsWith("/*") ? ("/" + f).startsWith(e.slice(0, -1)) : e === "/" + f));
+const scoperti = inDist.filter((f) => !coperto(f));
+check("tutti i " + inDist.length + " file di dist/ sono raggiungibili", scoperti.length === 0, "dimenticati: " + scoperti.join(", "));
+
 const falliti = results.filter((x) => !x).length;
 console.log("\n" + results.length + " controlli, " + falliti + " falliti");
 process.exit(falliti ? 1 : 0);
