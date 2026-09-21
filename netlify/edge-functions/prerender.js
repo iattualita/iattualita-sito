@@ -795,22 +795,35 @@ ${socialHtml}
 // il rewrite di netlify.toml li trasforma tutti in una home con stato 200.
 // excludedPath tiene la funzione fuori dalle risorse statiche, che non devono
 // nemmeno farla partire.
+// L'elenco e' volutamente NOMINATIVO e non per estensione.
+//
+// Prima diceva "salta tutti i .js, tutti i .json, tutti i .txt". Il risultato
+// era che qualunque file con quelle estensioni presente nella cartella
+// pubblicata veniva servito: verificato sul sito dal vivo che
+// /node_modules/esbuild/package.json, /package-lock.json e
+// /shared/site-pages.js fossero scaricabili da chiunque.
+//
+// La cartella pubblicata dovrebbe essere dist/, che contiene solo i file
+// qui sotto, ma Netlify continua a pubblicare la radice del repository
+// malgrado netlify.toml: /dist/app.js risponde ancora 200. Finche' quella
+// impostazione non viene rispettata, l'elenco nominativo e' cio' che tiene
+// chiuso il sito: tutto quello che non e' elencato passa dal prerender, che
+// non lo riconosce come pagina e risponde 404.
+//
+// Se aggiungi un file statico al sito, aggiungilo anche qui, altrimenti
+// risultera' inesistente.
 export const config = {
   path: "/*",
   excludedPath: [
-    "/*.js",
-    "/*.css",
-    "/*.png",
-    "/*.jpg",
-    "/*.jpeg",
-    "/*.webp",
-    "/*.gif",
-    "/*.svg",
-    "/*.ico",
-    "/*.xml",
-    "/*.txt",
-    "/*.json",
-    "/*.mp3",
-    "/.netlify/*",
+    "/app.js",
+    "/vendor/*",
+    "/favicon.ico",
+    "/favicon-192.png",
+    "/apple-touch-icon.png",
+    "/og-default.jpg",
+    "/robots.txt",
+    "/llms.txt",
+    "/*.xml",        // sitemap.xml, news-sitemap.xml, rss.xml: edge function proprie
+    "/.netlify/*",   // Image CDN e funzioni serverless
   ],
 };
