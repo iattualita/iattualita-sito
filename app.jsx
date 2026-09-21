@@ -169,7 +169,10 @@ function Ic({n,s=18,c="currentColor",fill="none"}){
     tk:'<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
     th:'<circle cx="12" cy="12" r="9.5"/><path d="M16.2 9.2c-.7-2-2.2-3.1-4.2-3.1-3.1 0-4.7 2.6-4.7 6.1s1.6 6 4.7 6c2.1 0 3.5-1.2 3.5-3.1 0-1.9-1.4-3.1-3.3-3.1-1.3 0-2.1.6-2.1 1.6s.8 1.5 1.8 1.5"/>'
   };
-  return <svg width={s} height={s} viewBox="0 0 24 24" fill={fill} stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{__html:P[n]||""}} />;
+  // aria-hidden: l'icona e' decorativa, il nome del comando lo porta
+  // l'aria-label del bottone che la contiene. Senza, lo screen reader
+  // annuncia un elemento grafico senza nome in mezzo alla frase.
+  return <svg width={s} height={s} viewBox="0 0 24 24" fill={fill} stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false" dangerouslySetInnerHTML={{__html:P[n]||""}} />;
 }
 
 function ytId(u){ if(!u)return null; const m=u.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/); return m?m[1]:null; }
@@ -312,13 +315,17 @@ function App(){
 
   return (
     <div style={{fontFamily:"Barlow, sans-serif",background:C.cream,minHeight:"100vh",color:C.navy}}>
+      {/* Prima voce raggiunta col tab: permette di saltare intestazione e
+          menu invece di attraversarli a ogni pagina. Invisibile col mouse,
+          compare solo quando riceve il focus (stile in index.html). */}
+      <a href="#contenuto" className="salta-al-contenuto">Salta al contenuto</a>
       <header style={{background:C.card,borderBottom:"1px solid "+C.line,position:"sticky",top:0,zIndex:20}}>
         <div style={{maxWidth:980,margin:"0 auto",padding:"12px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <Logo info={info} admin={admin} token={token} onSaveLogo={saveLogo} onHome={()=>go("home","top")} />
           <div style={{flex:1}}/>
           {admin&&<button onClick={()=>{setEditing(null);setShowForm(true);}} style={{display:"flex",alignItems:"center",background:C.blue,color:"#fff",border:"none",borderRadius:10,padding:"9px 12px",fontWeight:700,fontSize:14,cursor:"pointer",flexShrink:0}}><Ic n="plus" s={17} c="#fff"/><span className="btn-label" style={{marginLeft:6}}>Aggiungi</span></button>}
-          {(adminGate||admin)&&<button onClick={()=> admin? logout() : setShowLogin(true)} title={admin?"Esci":"Accesso redazione"} style={{display:"flex",alignItems:"center",justifyContent:"center",background:admin?C.navy:C.cream,color:admin?"#fff":C.gray,border:"1px solid "+(admin?C.navy:C.line),borderRadius:10,width:40,height:40,cursor:"pointer",flexShrink:0}}><Ic n={admin?"unlock":"lock"} s={16} c={admin?"#fff":C.gray}/></button>}
-          <button onClick={()=>setMenuOpen(o=>!o)} title="Menu" style={{display:"flex",alignItems:"center",justifyContent:"center",background:C.cream,color:C.navy,border:"1px solid "+C.line,borderRadius:10,width:40,height:40,cursor:"pointer",flexShrink:0}}><Ic n={menuOpen?"x":"menu"} s={19} c={C.navy}/></button>
+          {(adminGate||admin)&&<button onClick={()=> admin? logout() : setShowLogin(true)} aria-label={admin?"Esci dalla redazione":"Accesso redazione"} title={admin?"Esci":"Accesso redazione"} style={{display:"flex",alignItems:"center",justifyContent:"center",background:admin?C.navy:C.cream,color:admin?"#fff":C.gray,border:"1px solid "+(admin?C.navy:C.line),borderRadius:10,width:40,height:40,cursor:"pointer",flexShrink:0}}><Ic n={admin?"unlock":"lock"} s={16} c={admin?"#fff":C.gray}/></button>}
+          <button onClick={()=>setMenuOpen(o=>!o)} aria-label={menuOpen?"Chiudi il menu":"Apri il menu"} aria-expanded={menuOpen} title="Menu" style={{display:"flex",alignItems:"center",justifyContent:"center",background:C.cream,color:C.navy,border:"1px solid "+C.line,borderRadius:10,width:40,height:40,cursor:"pointer",flexShrink:0}}><Ic n={menuOpen?"x":"menu"} s={19} c={C.navy}/></button>
           {menuOpen&&<nav style={{flexBasis:"100%",display:"flex",flexDirection:"column",gap:2,paddingTop:6,marginTop:6,borderTop:"1px solid "+C.line}}>
             <button onClick={()=>go("home","top")} style={menuItem}>News</button>
             <button onClick={()=>openSerie("Podcast")} style={menuItem}>Podcast</button>
@@ -334,6 +341,10 @@ function App(){
         </div>
       </header>
 
+      {/* Bersaglio del collegamento "Salta al contenuto". tabIndex -1 lo rende
+          raggiungibile dal focus via programma senza inserirlo nel giro del
+          tab: chi salta qui riprende a tabulare dal contenuto, non da capo. */}
+      <div id="contenuto" tabIndex={-1} style={{outline:"none"}}>
       {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="newsletter" ? <NewsletterPage/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
       <main id="top" style={{maxWidth:980,margin:"0 auto",padding:"16px"}}>
         {view==="archivio"&&<div style={{marginBottom:14}}><div style={{fontFamily:"Anton",fontSize:26,color:C.navy}}>Archivio</div><div style={{fontSize:14,color:C.gray}}>Tutti gli articoli di Iattualità. Cerca o filtra per argomento.</div></div>}
@@ -348,7 +359,7 @@ function App(){
         </div>}
         <div style={{display:"flex",alignItems:"center",gap:8,background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"10px 14px",marginBottom:14}}>
           <Ic n="search" s={18} c={C.gray}/>
-          <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cerca tra le news…" style={{border:"none",outline:"none",flex:1,fontSize:15,fontFamily:"Barlow",background:"transparent",color:C.navy,minWidth:0}}/>
+          <input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cerca tra le news…" aria-label="Cerca tra le news" style={{border:"none",outline:"none",flex:1,fontSize:15,fontFamily:"Barlow",background:"transparent",color:C.navy,minWidth:0}}/>
           {query&&<span onClick={()=>setQuery("")} style={{cursor:"pointer",display:"flex"}}><Ic n="x" s={17} c={C.gray}/></span>}
         </div>
         {view!=="serie"&&<div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:6,marginBottom:16}}>
@@ -382,6 +393,7 @@ function App(){
             })()}
       </main>
       )}
+      </div>
 
       <SiteFooter info={info} admin={admin} onEdit={()=>setShowInfo(true)} onPage={openPage} onSendNewsletter={sendNewsletter}/>
 
@@ -546,7 +558,7 @@ function VideoModal({item,onClose}){
   const yt=ytId(item.video);
   return (<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(14,17,23,.8)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
     <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:760,background:C.card,borderRadius:16,overflow:"hidden"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:"1px solid "+C.line}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:18,fontWeight:400}}>{item.title}</strong><button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:"1px solid "+C.line}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:18,fontWeight:400}}>{item.title}</strong><button onClick={onClose} aria-label="Chiudi" style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
       {yt? <div style={{aspectRatio:"16/9",background:"#000"}}><iframe src={"https://www.youtube.com/embed/"+yt} style={{width:"100%",height:"100%",border:"none"}} allowFullScreen/></div>
         : <div style={{padding:32,textAlign:"center"}}><p style={{color:C.navySoft,marginBottom:16}}>I video di {platform(item.video)} si aprono nell'app originale.</p><a href={item.video} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:8,background:C.blue,color:"#fff",padding:"11px 20px",borderRadius:10,textDecoration:"none",fontWeight:700}}>Guarda su {platform(item.video)} <Ic n="ext" s={16} c="#fff"/></a></div>}
     </div>
@@ -696,7 +708,7 @@ function NewsForm({initial,token,onClose,onSave}){
   };
   return (<div style={{position:"fixed",inset:0,background:"rgba(14,17,23,.55)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
     <div style={{width:"100%",maxWidth:560,background:C.card,borderRadius:"18px 18px 0 0",maxHeight:"92vh",overflowY:"auto"}}>
-      <div style={{position:"sticky",top:0,background:C.card,padding:"16px 18px",borderBottom:"1px solid "+C.line,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>{initial?"Modifica news":"Nuova news"}</strong><button onClick={tryClose} style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
+      <div style={{position:"sticky",top:0,background:C.card,padding:"16px 18px",borderBottom:"1px solid "+C.line,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>{initial?"Modifica news":"Nuova news"}</strong><button onClick={tryClose} aria-label="Chiudi" style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
       <div style={{padding:18,display:"flex",flexDirection:"column",gap:14}}>
         <div><label style={labStyle}>Titolo *</label><input style={inStyle} value={f.title} onChange={e=>set("title",e.target.value)} placeholder="Es. Caro auto, l'Italia in cima alle classifiche"/></div>
         <div><label style={labStyle}>Sottotitolo</label><input style={inStyle} value={f.subtitle||""} onChange={e=>set("subtitle",e.target.value)} placeholder="Una riga che appare sotto il titolo in home"/></div>
@@ -780,11 +792,11 @@ function ContactPage({info}){
         {sent? <div style={{textAlign:"center",padding:"24px 8px"}}><div style={{fontFamily:"Anton",fontSize:22,color:C.navy,marginBottom:8}}>Messaggio inviato</div><p style={{color:C.navySoft,margin:0}}>Grazie, ti risponderemo appena possibile.</p></div>
         : <div style={{display:"flex",flexDirection:"column",gap:14}}>
             <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-              <div style={{flex:"1 1 200px"}}><label style={labStyle}>Nome *</label><input style={inStyle} value={f.nome} onChange={e=>set("nome",e.target.value)} placeholder="Come ti chiami"/></div>
-              <div style={{flex:"1 1 200px"}}><label style={labStyle}>Email *</label><input style={inStyle} value={f.email} onChange={e=>set("email",e.target.value)} placeholder="La tua email"/></div>
+              <div style={{flex:"1 1 200px"}}><label style={labStyle}>Nome *</label><input style={inStyle} value={f.nome} onChange={e=>set("nome",e.target.value)} placeholder="Come ti chiami" aria-label="Nome (obbligatorio)" autoComplete="name" required/></div>
+              <div style={{flex:"1 1 200px"}}><label style={labStyle}>Email *</label><input type="email" style={inStyle} value={f.email} onChange={e=>set("email",e.target.value)} placeholder="La tua email" aria-label="Email (obbligatoria)" autoComplete="email" required/></div>
             </div>
-            <div><label style={labStyle}>Oggetto</label><input style={inStyle} value={f.oggetto} onChange={e=>set("oggetto",e.target.value)} placeholder="Di cosa si tratta"/></div>
-            <div><label style={labStyle}>Messaggio *</label><textarea style={{...inStyle,minHeight:120,resize:"vertical"}} value={f.messaggio} onChange={e=>set("messaggio",e.target.value)} placeholder="Scrivi qui…"/></div>
+            <div><label style={labStyle}>Oggetto</label><input style={inStyle} value={f.oggetto} onChange={e=>set("oggetto",e.target.value)} placeholder="Di cosa si tratta" aria-label="Oggetto"/></div>
+            <div><label style={labStyle}>Messaggio *</label><textarea style={{...inStyle,minHeight:120,resize:"vertical"}} value={f.messaggio} onChange={e=>set("messaggio",e.target.value)} placeholder="Scrivi qui…" aria-label="Messaggio (obbligatorio)" required/></div>
             {err&&<div style={{color:C.red,fontSize:13.5}}>{err}</div>}
             <button disabled={!valid||busy} onClick={submit} style={{background:valid&&!busy?C.blue:C.line,color:"#fff",border:"none",borderRadius:12,padding:13,fontWeight:700,fontSize:16,cursor:valid&&!busy?"pointer":"not-allowed"}}>{busy?"Invio…":"Invia messaggio"}</button>
           </div>}
@@ -840,7 +852,7 @@ function NewsletterPage(){
           : <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <div>
                 <label style={labStyle}>Email</label>
-                <input type="email" value={email} onChange={e=>{setEmail(e.target.value); if(state==="error")setState("idle");}} onKeyDown={e=>e.key==="Enter"&&submit()} style={inStyle} placeholder="nome@esempio.it"/>
+                <input type="email" value={email} onChange={e=>{setEmail(e.target.value); if(state==="error")setState("idle");}} onKeyDown={e=>e.key==="Enter"&&submit()} style={inStyle} placeholder="nome@esempio.it" aria-label="Il tuo indirizzo email" autoComplete="email"/>
                 <Honeypot value={trap} onChange={setTrap}/>
               </div>
               <label style={{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer"}}>
@@ -911,7 +923,7 @@ function Newsletter(){
       ? <div style={{display:"flex",alignItems:"center",gap:10,color:"#fff",fontSize:15,background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.18)",borderRadius:11,padding:"13px 15px",maxWidth:560}}><Ic n="mail" s={18} c={C.amber}/><span>{msg}</span></div>
       : <div style={{maxWidth:560}}>
           <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
-            <input type="email" value={email} onChange={e=>{setEmail(e.target.value); if(state==="error")setState("idle");}} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="La tua email" style={inNL}/>
+            <input type="email" value={email} onChange={e=>{setEmail(e.target.value); if(state==="error")setState("idle");}} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="La tua email" style={inNL} aria-label="Il tuo indirizzo email" autoComplete="email"/>
             <Honeypot value={trap} onChange={setTrap}/>
             <button onClick={submit} disabled={state==="busy"} style={{background:C.amber,color:C.navy,border:"none",borderRadius:11,padding:"12px 20px",fontWeight:800,fontSize:15,cursor:state==="busy"?"default":"pointer",whiteSpace:"nowrap"}}>{state==="busy"?"Invio…":"Iscriviti"}</button>
           </div>
@@ -973,7 +985,7 @@ function InfoModal({initial,onClose,onSave}){
     window.addEventListener("keydown",h); return ()=>window.removeEventListener("keydown",h); });
   return (<div style={{position:"fixed",inset:0,background:"rgba(14,17,23,.55)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
     <div style={{width:"100%",maxWidth:560,background:C.card,borderRadius:"18px 18px 0 0",maxHeight:"92vh",overflowY:"auto"}}>
-      <div style={{position:"sticky",top:0,background:C.card,padding:"16px 18px",borderBottom:"1px solid "+C.line,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>Social e contatti</strong><button onClick={tryClose} style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
+      <div style={{position:"sticky",top:0,background:C.card,padding:"16px 18px",borderBottom:"1px solid "+C.line,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>Social e contatti</strong><button onClick={tryClose} aria-label="Chiudi" style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
       <div style={{padding:18,display:"flex",flexDirection:"column",gap:14}}>
         <div style={{fontSize:12.5,fontWeight:800,color:C.gray,letterSpacing:.5,textTransform:"uppercase"}}>Chi siamo</div>
         <textarea style={{...inStyle,minHeight:90,resize:"vertical"}} value={f.about||""} onChange={e=>set("about",e.target.value)} placeholder="Iattualità è una testata digitale indipendente…"/>
@@ -1000,7 +1012,7 @@ function LoginModal({onClose,onLogin}){
   const submit=async()=>{ setErr(""); setBusy(true); try{ await onLogin(email.trim(),pw); }catch(e){ setErr(e.message||"Accesso non riuscito."); } setBusy(false); };
   return (<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(14,17,23,.55)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
     <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:380,background:C.card,borderRadius:16,padding:20}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>Accesso redazione</strong><button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>Accesso redazione</strong><button onClick={onClose} aria-label="Chiudi" style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
       <p style={{color:C.navySoft,fontSize:14,marginTop:0}}>Entra con l'email e la password della redazione.</p>
       <input value={email} onChange={e=>{setEmail(e.target.value);setErr("");}} placeholder="Email" style={{...inStyle,marginBottom:10}}/>
       <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="Password" style={{...inStyle,marginBottom:10}}/>
