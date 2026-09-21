@@ -110,19 +110,37 @@ function htmlToText(html){
     .replace(/[ \t]+/g," ").replace(/\n{3,}/g,"\n\n").trim();
 }
 // sender opzionale: { name, email }. Se assente usa il mittente newsletter.
-async function brevoSend(toEmail, subject, html, text, sender){
+//
+// unsubUrl opzionale: se presente, il messaggio parte con gli header
+// List-Unsubscribe e List-Unsubscribe-Post. Dal 2024 Gmail e Yahoo li
+// pretendono da chi invia in massa, e chi non li manda si vede peggiorare
+// il recapito. In pratica fanno comparire "Annulla iscrizione" accanto al
+// mittente: il lettore che non vuole piu' le email usa quello invece del
+// pulsante "Spam", che invece danneggia la reputazione del dominio.
+//
+// List-Unsubscribe-Post dichiara che l'annullamento funziona in un clic
+// (RFC 8058): il gestore di posta manda una POST a quell'indirizzo, e
+// unsubscribe.js la gestisce senza chiedere conferma.
+async function brevoSend(toEmail, subject, html, text, sender, unsubUrl){
   const from = sender && sender.email ? sender : { name: SENDER_NAME, email: SENDER_EMAIL };
+  const payload = {
+    sender:{ name: from.name, email: from.email },
+    replyTo:{ email: from.email, name: from.name },
+    to:[{ email: toEmail }],
+    subject,
+    htmlContent: html,
+    textContent: text || htmlToText(html)
+  };
+  if(unsubUrl){
+    payload.headers = {
+      "List-Unsubscribe": "<" + unsubUrl + ">",
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"
+    };
+  }
   const r = await fetch("https://api.brevo.com/v3/smtp/email", {
     method:"POST",
     headers:{ "api-key": BREVO_API_KEY, "Content-Type":"application/json", accept:"application/json" },
-    body: JSON.stringify({
-      sender:{ name: from.name, email: from.email },
-      replyTo:{ email: from.email, name: from.name },
-      to:[{ email: toEmail }],
-      subject,
-      htmlContent: html,
-      textContent: text || htmlToText(html)
-    })
+    body: JSON.stringify(payload)
   });
   if(!r.ok) throw new Error("brevo " + r.status + " " + (await r.text()));
   return true;
@@ -143,15 +161,33 @@ function confirmEmailHtml(token){
 }
 
 // --- Pagine HTML mostrate dopo il click (conferma / disiscrizione) ---
-function page(title, body){
+//
+// action opzionale: { url, label }. Se c'e', la pagina mostra un pulsante che
+// manda una POST a quell'indirizzo invece del solito "Torna al sito".
+//
+// Serve perche' i filtri antivirus aziendali e i precaricatori dei client di
+// posta aprono da soli i link contenuti nelle email, con una GET. Se fosse la
+// GET a fare il lavoro, quei programmi confermerebbero iscrizioni che nessuno
+// ha voluto (svuotando di senso il doppio consenso su cui poggia la privacy
+// policy) e disiscriverebbero lettori che non hanno cliccato niente. Nessuno
+// di quei programmi invia POST, quindi spostare l'azione sulla POST li taglia
+// fuori chiedendo al lettore un clic in piu'.
+function page(title, body, action){
+  const btn = action
+    ? `<form method="post" action="${action.url}" style="margin:26px 0 0">
+         <button type="submit" style="background:#16243F;color:#fff;border:none;font-family:inherit;font-weight:700;font-size:16px;padding:12px 22px;border-radius:11px;cursor:pointer">${action.label}</button>
+       </form>
+       <a href="${SITE_URL}" style="display:inline-block;margin-top:16px;color:#2C5AA0;font-size:14px">Torna al sito</a>`
+    : `<a href="${SITE_URL}" style="display:inline-block;margin-top:26px;background:#16243F;color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:11px">Torna al sito</a>`;
   return `<!doctype html><html lang="it"><head><meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} · Iattualità</title>
+  <meta name="robots" content="noindex">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:wght@400;600;700&display=swap"></head>
   <body style="margin:0;background:#F4F2EC;font-family:Barlow,Arial,sans-serif;color:#16243F">
     <div style="max-width:520px;margin:0 auto;padding:60px 20px;text-align:center">
       <div style="font-family:Anton;font-size:26px;color:#16243F;margin-bottom:14px">${title}</div>
       <div style="font-size:16px;line-height:1.6;color:#2A3A57">${body}</div>
-      <a href="${SITE_URL}" style="display:inline-block;margin-top:26px;background:#16243F;color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:11px">Torna al sito</a>
+      ${btn}
     </div>
   </body></html>`;
 }
@@ -164,9 +200,15 @@ function slugify(x){ return (x||"").toString().toLowerCase().normalize("NFD").re
 const articleUrl = (a) => SITE_URL + "/articolo/" + a.id + "/" + slugify(a.title);
 
 async function sbConfirmedSubscribers(){
-  const r = await fetch(REST + "/subscribers?status=eq.confirmed&select=email,token", { headers: sbHeaders() });
+  const r = await fetch(REST + "/subscribers?status=eq.confirmed&select=id,email,token,last_digest_at", { headers: sbHeaders() });
   if(!r.ok) throw await sbError("db select", r);
   return r.json();
+}
+// Segna che a questo iscritto il digest corrente e' partito. Va scritto
+// subito dopo l'invio, non in fondo al giro: e' cio' che rende l'invio
+// ripartibile se la funzione viene interrotta a meta'.
+async function sbMarkDigestSent(id){
+  await sbPatch(id, { last_digest_at: new Date().toISOString() });
 }
 async function sbLastSend(){
   const r = await fetch(REST + "/newsletter_log?select=sent_at&order=sent_at.desc&limit=1", { headers: sbHeaders() });
@@ -222,24 +264,84 @@ function digestHtml(articles, unsubUrl){
     + '</td></tr></table></td></tr></table></body></html>';
 }
 
-// Cuore dell'invio. dry=true: conta senza spedire.
+// Quanti iscritti serve al massimo in una sola chiamata. Una funzione
+// serverless sincrona ha una manciata di secondi: 25 invii a 4 alla volta
+// stanno larghi, e chi resta viene servito dalla chiamata successiva.
+const BATCH = 25;
+const CONCURRENCY = 4;
+
+// Esegue task a piccoli gruppi invece che tutti insieme: l'API di Brevo ha
+// un tetto di richieste al secondo, e saturarlo farebbe fallire gli invii.
+async function inPool(items, size, fn){
+  for(let i = 0; i < items.length; i += size){
+    await Promise.all(items.slice(i, i + size).map(fn));
+  }
+}
+
+// Cuore dell'invio.
+//
+//  dry=true  -> conta soltanto, non spedisce niente.
+//  dry=false -> spedisce al massimo BATCH iscritti e dice quanti ne restano.
+//
+// L'invio e' RIPARTIBILE. Il registro newsletter_log viene scritto solo
+// quando l'ultimo iscritto e' stato servito, quindi finche' il giro non e'
+// completo la data di partenza non si sposta; nel frattempo ogni iscritto
+// servito viene marcato con last_digest_at, e chi e' gia' marcato viene
+// saltato. Cosi' un'interruzione a meta' (timeout, errore, chiusura del
+// browser) non produce mai un doppio invio: basta richiamare la funzione e
+// riprende da dove si era fermata.
 async function runDigest(opts){
   const dry = !!(opts && opts.dry);
+  const limit = (opts && opts.limit) || BATCH;
+
   const last = await sbLastSend();
   const since = last || new Date(Date.now() - 7*24*3600*1000).toISOString();
   const articles = await sbNewsSince(since);
   const subs = await sbConfirmedSubscribers();
-  if(dry) return { dry:true, since, articles: articles.length, recipients: subs.length };
-  if(articles.length === 0) return { sent:false, reason:"nessun articolo nuovo", since, recipients: subs.length };
-  if(subs.length === 0)     return { sent:false, reason:"nessun iscritto confermato", since, articles: articles.length };
-  let ok = 0, failed = 0;
-  for(const s of subs){
-    const unsub = FN + "/unsubscribe?token=" + s.token;
-    try{ await brevoSend(s.email, "Iattualità — gli articoli della settimana", digestHtml(articles, unsub)); ok++; }
-    catch(e){ failed++; }
+
+  // Chi non ha ancora ricevuto QUESTO digest. Il confronto passa da getTime()
+  // e non dalle stringhe: Supabase puo' restituire "+00:00" o "Z" a seconda
+  // della colonna, e due formati diversi si ordinerebbero a caso.
+  const sinceMs = new Date(since).getTime();
+  const pending = subs.filter(s => {
+    if(!s.last_digest_at) return true;
+    const t = new Date(s.last_digest_at).getTime();
+    return isNaN(t) || t <= sinceMs;
+  });
+
+  if(dry) return { dry:true, since, articles: articles.length, recipients: subs.length, remaining: pending.length };
+  if(articles.length === 0) return { sent:false, done:true, reason:"nessun articolo nuovo", since, recipients: subs.length };
+  if(subs.length === 0)     return { sent:false, done:true, reason:"nessun iscritto confermato", since, articles: articles.length };
+
+  // Tutti gia' serviti ma il registro non e' stato scritto: e' l'ultimo
+  // frammento di un invio interrotto proprio sul finale. Si chiude e basta.
+  if(pending.length === 0){
+    await sbLogSend(articles.map(a=>a.id), subs.length);
+    return { sent:true, done:true, since, articles: articles.length, recipients: subs.length, delivered:0, failed:0, remaining:0 };
   }
-  await sbLogSend(articles.map(a=>a.id), ok);
-  return { sent:true, since, articles: articles.length, recipients: subs.length, delivered: ok, failed };
+
+  const batch = pending.slice(0, limit);
+  const html = digestHtml(articles, "{{UNSUB}}");
+  let ok = 0, failed = 0;
+
+  await inPool(batch, CONCURRENCY, async (s) => {
+    const unsub = FN + "/unsubscribe?token=" + s.token;
+    try{
+      await brevoSend(s.email, "Iattualità — gli articoli della settimana", html.split("{{UNSUB}}").join(unsub), null, null, unsub);
+      await sbMarkDigestSent(s.id);
+      ok++;
+    }catch(e){
+      // Non marchiamo: chi fallisce resta in coda e ci riprova al giro dopo.
+      failed++;
+      console.warn("digest, invio fallito per un iscritto:", e && e.message);
+    }
+  });
+
+  const remaining = pending.length - ok;
+  const done = remaining === 0;
+  if(done) await sbLogSend(articles.map(a=>a.id), subs.length);
+
+  return { sent:true, done, since, articles: articles.length, recipients: subs.length, delivered: ok, failed, remaining };
 }
 
 module.exports = {

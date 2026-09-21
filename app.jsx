@@ -246,11 +246,28 @@ function App(){
       if(!r.ok) throw new Error(d.message||"Errore anteprima");
       if(d.articles===0){ alert("Nessun articolo nuovo dall'ultimo invio: la newsletter non partirebbe vuota."); return; }
       if(d.recipients===0){ alert("Nessun iscritto confermato al momento."); return; }
-      if(!window.confirm("Newsletter pronta:\n\n• "+d.articles+" articoli (dal "+new Date(d.since).toLocaleDateString("it-IT")+")\n• "+d.recipients+" iscritti\n\nInviare adesso?")) return;
-      r=await call(false); d=await r.json();
-      if(!r.ok) throw new Error(d.message||"Errore invio");
-      if(d.sent) note("Newsletter inviata a "+d.delivered+" iscritti"+(d.failed?" ("+d.failed+" falliti)":"")+".");
-      else alert("Invio non eseguito: "+(d.reason||"?"));
+      const daFare=(d.remaining!=null)?d.remaining:d.recipients;
+      if(daFare===0){ alert("Questa newsletter è già stata inviata a tutti gli iscritti."); return; }
+      if(!window.confirm("Newsletter pronta:\n\n• "+d.articles+" articoli (dal "+new Date(d.since).toLocaleDateString("it-IT")+")\n• "+daFare+" iscritti da servire\n\nInviare adesso?")) return;
+      // L'invio parte a blocchi: una funzione serverless ha pochi secondi, e
+      // provare a servire tutta la lista in una volta la farebbe scadere a
+      // meta' strada. Richiamiamo finche' non dice di aver finito; chi ha
+      // gia' ricevuto viene saltato dal server, quindi nessuno riceve due
+      // volte nemmeno se questo giro si interrompe.
+      let inviate=0, fallite=0, giri=0;
+      for(;;){
+        r=await call(false); d=await r.json();
+        if(!r.ok) throw new Error(d.message||"Errore invio");
+        if(!d.sent){ alert("Invio non eseguito: "+(d.reason||"?")); return; }
+        inviate+=d.delivered||0; fallite+=d.failed||0;
+        if(d.done) break;
+        // Nessun invio riuscito in tutto il blocco: e' un guasto (chiave
+        // Brevo, quota, rete), non un rallentamento. Inutile insistere.
+        if(!d.delivered) throw new Error("Nessun invio riuscito su "+d.failed+" tentativi: controlla la chiave Brevo e la quota. Gli iscritti già serviti non riceveranno doppioni.");
+        if(++giri>200) throw new Error("Invio fermato per sicurezza dopo "+inviate+" iscritti. Ripremi il pulsante per completare: chi ha già ricevuto viene saltato.");
+        note("Invio in corso… "+inviate+" serviti, "+d.remaining+" da fare.");
+      }
+      note("Newsletter inviata a "+inviate+" iscritti"+(fallite?" ("+fallite+" falliti)":"")+".");
     }catch(e){ const m=String(e.message||e); if(/JWT|Sessione scaduta/i.test(m)) setShowLogin(true); alert("Newsletter:\n\n"+m); }
   };
   const doLogin=async(email,password)=>{ const d=await apiLogin(email,password); setToken(setSession(d)); setShowLogin(false); note("Bentornato in redazione."); };
