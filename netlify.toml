@@ -4,7 +4,11 @@
 # Il comando e' lo stesso di "npm run build" in locale, stessi flag.
 [build]
   command = "npm run build"
-  publish = "."
+  # dist/ e non ".": pubblicando la radice finivano online anche
+  # node_modules (esbuild e React erano scaricabili), package-lock.json,
+  # i test, le migrazioni SQL e il sorgente app.jsx. scripts/prepara-dist.mjs
+  # ci copia dentro solo cio' che il sito serve davvero.
+  publish = "dist"
   functions = "netlify/functions"
   edge_functions = "netlify/edge-functions"
 
