@@ -176,6 +176,16 @@ const PAGES = {
   }
 };
 
+// Deve restare identica a SOCIALS dentro app.jsx: sono le colonne di
+// site_info che contengono un indirizzo di canale social.
+const SOCIALS = [
+  { k: "tiktok", n: "TikTok" },
+  { k: "instagram", n: "Instagram" },
+  { k: "facebook", n: "Facebook" },
+  { k: "youtube", n: "YouTube" },
+  { k: "threads", n: "Threads" }
+];
+
 // Deve restare identica a SERIE_ALIAS dentro app.jsx e sitemap.js.
 const SERIE_ALIAS = { Podcast: "/podcast" };
 const ALIAS_TO_SERIE = Object.fromEntries(
@@ -531,6 +541,78 @@ export default async function handler(request, context) {
     return new Response(html, {
       status: 200,
       headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=0, s-maxage=3600" },
+    });
+  }
+
+  // ---- CONTATTI E SOCIAL ----
+  // Per una testata la pagina contatti e' un segnale di affidabilita': dice a
+  // chi legge (e a Google News) che dietro il sito c'e' qualcuno di
+  // raggiungibile. Finora nessuna delle due aveva un indirizzo proprio.
+  if (segRaw === "contatti" || segRaw === "social") {
+    let info = {};
+    try {
+      const rows = await sb("site_info?id=eq.1&select=*");
+      info = rows[0] || {};
+    } catch {
+      /* senza recapiti la pagina esce comunque, solo piu' scarna */
+    }
+    const social = SOCIALS.filter((s) => info[s.k]);
+    const socialHtml = social.length
+      ? `<p style="margin-top:18px">${social
+          .map(
+            (s) =>
+              `<a href="${esc(info[s.k])}" rel="noopener" style="color:#2C5AA0;font-weight:700;margin-right:14px">${esc(s.n)}</a>`
+          )
+          .join("")}</p>`
+      : "";
+
+    const isContatti = segRaw === "contatti";
+    const u = SITE + "/" + segRaw;
+    const t = isContatti ? "Contatti · Iattualità" : "Seguici · Iattualità";
+    const d = isContatti
+      ? "Come contattare la redazione di Iattualità: segnalazioni, collaborazioni, rettifiche e richieste."
+      : "Tutti i canali di Iattualità in un posto solo: TikTok, Instagram, Facebook, YouTube, Threads.";
+
+    const recapiti = isContatti
+      ? (info.email ? `<p><strong>Email:</strong> <a href="mailto:${esc(info.email)}" style="color:#2C5AA0">${esc(info.email)}</a></p>` : "") +
+        (info.phone ? `<p><strong>Telefono:</strong> ${esc(info.phone)}</p>` : "")
+      : "";
+
+    const ldObj = isContatti
+      ? {
+          "@context": "https://schema.org",
+          "@type": "ContactPage",
+          name: "Contatti",
+          description: d,
+          url: u,
+          isPartOf: { "@type": "WebSite", name: "Iattualità", url: SITE },
+          mainEntity: {
+            "@type": "NewsMediaOrganization",
+            name: "Iattualità",
+            url: SITE,
+            email: info.email || undefined,
+            telephone: info.phone || undefined,
+            sameAs: social.map((s) => info[s.k])
+          }
+        }
+      : webPageLd("Seguici", d, u);
+
+    const blk = "<!--OG_START-->\n" + pageOgBlock(t, d, u, ldObj) + "\n<!--OG_END-->";
+    html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => blk);
+    html = inject(`${WRAP_OPEN}
+<p style="font-size:12px;color:#7A8499;margin:0 0 10px"><a href="/" style="color:#2C5AA0">Iattualità</a></p>
+<h1 ${H1}>${isContatti ? "Contatti" : "Seguici"}</h1>
+<p style="font-size:19px;font-weight:700;color:#16243F">${esc(
+      isContatti
+        ? "Segnalazioni, collaborazioni o richieste: scrivici. Leggiamo tutto."
+        : "Tutti i nostri canali in un posto solo. Resta aggiornato dove preferisci."
+    )}</p>
+${recapiti}
+${socialHtml}
+</div>`);
+    return new Response(html, {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=0, s-maxage=3600" }
     });
   }
 

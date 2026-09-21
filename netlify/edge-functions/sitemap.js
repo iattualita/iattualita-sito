@@ -67,6 +67,10 @@ export default async function handler() {
   }
   urls.push({ loc: SITE + "/archivio", changefreq: "daily", priority: "0.6" });
   urls.push({ loc: SITE + "/newsletter", changefreq: "monthly", priority: "0.5" });
+  // Contatti conta piu' delle altre: per una testata e' la prova di essere
+  // raggiungibile, ed e' tra i segnali che Google News guarda.
+  urls.push({ loc: SITE + "/contatti", changefreq: "monthly", priority: "0.6" });
+  urls.push({ loc: SITE + "/social", changefreq: "monthly", priority: "0.4" });
 
   // Pagine argomento — dedotte dalle categorie realmente presenti in archivio
   const cats = [...new Set(news.map((n) => n.category).filter(Boolean))].sort((a, b) =>

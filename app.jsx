@@ -193,7 +193,7 @@ function seriePath(s){ return SERIE_ALIAS[s] || ("/serie/"+slugify(s)); }
 function serieFullUrl(s){ return window.location.origin+seriePath(s); }
 function serieFromSlug(slug){ return SERIES.find(s=>slugify(s)===slug)||null; }
 function serieFromAlias(seg){ return Object.keys(SERIE_ALIAS).find(s=>SERIE_ALIAS[s]==="/"+seg)||null; }
-function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } if(p.indexOf("/serie/")===0){ const s=serieFromSlug(decodeURIComponent(p.slice("/serie/".length).split("/")[0])); if(s) return {name:"serie",serie:s}; } const seg=p.replace(/^\/+|\/+$/g,""); const alias=seg?serieFromAlias(seg):null; if(alias){ return {name:"serie",serie:alias}; } if(seg==="archivio"){ return {name:"archivio"}; } if(seg==="newsletter"){ return {name:"page",page:"newsletter"}; } if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
+function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } if(p.indexOf("/serie/")===0){ const s=serieFromSlug(decodeURIComponent(p.slice("/serie/".length).split("/")[0])); if(s) return {name:"serie",serie:s}; } const seg=p.replace(/^\/+|\/+$/g,""); const alias=seg?serieFromAlias(seg):null; if(alias){ return {name:"serie",serie:alias}; } if(seg==="archivio"){ return {name:"archivio"}; } if(seg==="newsletter"||seg==="contatti"||seg==="social"){ return {name:"page",page:seg}; } if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
 function copyToClipboard(url,onOk,onFail){ (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(onOk).catch(()=>{ try{ window.prompt("Copia il link:",url); }catch(e){} if(onFail)onFail(); }); }
 
 // ====== TESTO FORMATTATO (rich text) ======
@@ -325,8 +325,11 @@ function App(){
             <button onClick={()=>openSerie("Podcast")} style={menuItem}>Podcast</button>
             <button onClick={openArchive} style={menuItem}>Archivio</button>
             <button onClick={()=>openPage("chi-siamo")} style={menuItem}>Chi siamo</button>
-            <button onClick={()=>go("social")} style={menuItem}>Social</button>
-            <button onClick={()=>go("contatti")} style={menuItem}>Contatti</button>
+            {/* openPage e non go: go riporta l'URL a "/", e queste due pagine
+                resterebbero senza indirizzo proprio — non linkabili, non
+                condivisibili, invisibili a Google, e perse a ogni ricarica. */}
+            <button onClick={()=>openPage("social")} style={menuItem}>Social</button>
+            <button onClick={()=>openPage("contatti")} style={menuItem}>Contatti</button>
             <button onClick={()=>openPage("newsletter")} style={menuItem}>Newsletter</button>
           </nav>}
         </div>
@@ -1002,8 +1005,11 @@ function SiteFooter({info,admin,onEdit,onPage,onSendNewsletter}){
       <div style={{borderTop:"1px solid rgba(255,255,255,.12)",marginTop:26,paddingTop:18,display:"flex",flexWrap:"wrap",gap:"6px 18px",justifyContent:"center"}}>
         <a href={seriePath("Podcast")} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>Podcast</a>
         <a href="/newsletter" onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage("newsletter"); }} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>Newsletter</a>
-        {Object.keys(STATIC_PAGES).map(k=>(
-          <a key={k} href={"/"+k} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage(k); }} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>{STATIC_PAGES[k].h1}</a>
+        {/* Contatti e Social in fondo alla lista: sono veri <a href>, quindi
+            danno al crawler un collegamento da seguire verso due pagine che
+            altrimenti si raggiungono solo dal menu. */}
+        {[...Object.keys(STATIC_PAGES).map(k=>[k,STATIC_PAGES[k].h1]),["contatti","Contatti"],["social","Seguici"]].map(([k,label])=>(
+          <a key={k} href={"/"+k} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage(k); }} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>{label}</a>
         ))}
       </div>
       <div style={{marginTop:14,textAlign:"center",color:"rgba(255,255,255,.55)",fontSize:12.5}}>Iattualità · L'informazione intelligente e in tempo reale · versione 9</div>
