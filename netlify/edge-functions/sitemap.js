@@ -2,28 +2,11 @@
 // Sitemap dinamica: le categorie vengono lette dal database, non da una lista fissa.
 // Aggiungendo una nuova categoria alle news, la sitemap si aggiorna da sola.
 
+import { seriePath, slugify, STATIC_PAGES } from "../../shared/site-pages.js";
+
 const SUPABASE_URL = "https://wzkshpgakvasqwrrgkgd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_I3s4phA5Be9qnV4pLbWQMQ_8-IGUE-b";
 const SITE = "https://iattualita.it";
-
-// Deve restare identica alla slugify() dentro index.html
-function slugify(s) {
-  return (s || "")
-    .toString()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60) || "articolo";
-}
-
-// Deve restare identica a SERIE_ALIAS dentro app.jsx: se cambia lì, cambia qui.
-// Le serie senza alias vivono su /serie/<slug>.
-const SERIE_ALIAS = { Podcast: "/podcast" };
-function seriePath(s) {
-  return SERIE_ALIAS[s] || "/serie/" + slugify(s);
-}
 
 function esc(s) {
   return String(s)
@@ -61,8 +44,9 @@ export default async function handler() {
   // Pagine istituzionali. Sono quelle da cui Google News valuta la testata:
   // chi firma, con quali regole, come si correggono gli errori, come si usa
   // l'IA. Devono stare in sitemap anche se non cambiano quasi mai.
-  // Se aggiungi una voce a STATIC_PAGES in app.jsx, aggiungila anche qui.
-  for (const p of ["chi-siamo", "standard-editoriali", "rettifiche", "trasparenza-ia", "privacy"]) {
+  // La lista arriva da shared/site-pages.js: aggiungerne una la fa comparire
+  // qui da sola, senza doversene ricordare.
+  for (const p of Object.keys(STATIC_PAGES)) {
     urls.push({ loc: SITE + "/" + p, changefreq: "monthly", priority: "0.5" });
   }
   urls.push({ loc: SITE + "/archivio", changefreq: "daily", priority: "0.6" });
