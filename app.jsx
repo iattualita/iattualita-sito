@@ -154,7 +154,7 @@ async function apiSaveSpecial(token,f){
   const r=await authed(token,t=> f.id
     ? fetch(API+"/newsletter_specials?id=eq."+f.id,{method:"PATCH",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(row)})
     : fetch(API+"/newsletter_specials",{method:"POST",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(row)}));
-  if(!r.ok){ const m=await r.text(); if(/newsletter_specials/.test(m)&&/does not exist|not find|42P01|PGRST205/.test(m)) throw new Error("Manca la tabella degli invii speciali: esegui supabase/migrations/003_invii_speciali.sql nel SQL Editor di Supabase."); throw new Error(m); }
+  if(!r.ok){ const m=await r.text(); if(/does not exist|not find|42P01|PGRST205|schema cache/i.test(m)) throw new Error("Supabase non vede ancora la tabella degli invii speciali. Se hai già eseguito 003_invii_speciali.sql, esegui anche: notify pgrst, 'reload schema';  — poi ricarica la pagina. Dettaglio: "+m.slice(0,200)); throw new Error(m); }
   return (await r.json())[0];
 }
 async function apiDeleteSpecial(token,id){ const r=await authed(token,t=>fetch(API+"/newsletter_specials?id=eq."+id,{method:"DELETE",headers:hdr(t)})); if(!r.ok)throw new Error(await r.text()); }
@@ -1114,7 +1114,9 @@ function SpecialForm({token,onClose,note,onSessionDead}){
   const inviato=f.status==="sent";
   const fail=(e)=>{ const m=String((e&&e.message)||e); if(/JWT|Sessione scaduta/i.test(m)&&onSessionDead) onSessionDead(); setMsg({t:m,ok:false}); };
 
-  const loadList=async()=>{ try{ setList(await apiListSpecials(token)); }catch(e){ setList([]); const m=String(e.message||e); if(/newsletter_specials/.test(m)) setMsg({t:"Manca la tabella degli invii speciali: esegui supabase/migrations/003_invii_speciali.sql nel SQL Editor di Supabase.",ok:false}); } };
+  // Il messaggio "manca la tabella" solo quando e' davvero quello il problema;
+  // per tutto il resto (permessi, sessione, rete) si mostra l'errore vero.
+  const loadList=async()=>{ try{ setList(await apiListSpecials(token)); }catch(e){ setList([]); const m=String(e.message||e); if(/PGRST205|42P01|does not exist|schema cache/i.test(m)) setMsg({t:"Supabase non vede ancora la tabella degli invii speciali. Se hai già eseguito 003_invii_speciali.sql, esegui anche: notify pgrst, 'reload schema';  — poi ricarica la pagina. Dettaglio: "+m.slice(0,200),ok:false}); else fail(e); } };
   useEffect(()=>{ loadList(); },[]);
 
   const tryClose=()=>{ if(busy==="video"||busy==="send"){ alert("Aspetta che finisca: "+(busy==="video"?"il video si sta caricando.":"l'invio è in corso.")); return; } if(dirty && !window.confirm("Hai modifiche non salvate.\n\nVuoi chiudere e perderle?")) return; onClose(); };
