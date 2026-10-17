@@ -66,6 +66,20 @@ create table if not exists public.newsletter_special_deliveries (
 alter table public.newsletter_special_deliveries enable row level security;
 
 -- ---------------------------------------------------------------------------
+-- Permessi sulle tabelle
+--
+-- La RLS dice QUALI righe si vedono; i GRANT dicono se il ruolo puo'
+-- toccare la tabella. Su questo progetto le tabelle nuove non ricevono
+-- i permessi in automatico: senza queste righe la redazione riceve
+-- "permission denied for table newsletter_specials" (42501).
+-- ---------------------------------------------------------------------------
+grant select, insert, update, delete on public.newsletter_specials           to authenticated, service_role;
+grant select, insert, update, delete on public.newsletter_special_deliveries to service_role;
+
+-- Fa rileggere a Supabase l'elenco delle tabelle, cosi' le vede subito.
+notify pgrst, 'reload schema';
+
+-- ---------------------------------------------------------------------------
 -- 3. Bucket privato per i video
 --
 -- Privato vuol dire che non esiste un indirizzo pubblico del file. Il video
