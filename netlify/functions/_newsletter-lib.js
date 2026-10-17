@@ -252,15 +252,20 @@ async function sbLogSend(articleIds, recipients){
   if(!r.ok) throw await sbError("db insert", r);
 }
 
-// Verifica che chi preme il bottone sia la redazione (token Supabase valido)
-async function verifyRedazione(bearer){
-  if(!bearer) return false;
+// Chi sta chiamando, se e' la redazione (token Supabase valido); altrimenti
+// null. Serve anche a sapere a quale indirizzo mandare un invio di prova.
+async function redazioneUser(bearer){
+  if(!bearer) return null;
   try{
     const r = await fetch(SUPABASE_URL + "/auth/v1/user", { headers:{ apikey: SERVICE_ROLE, Authorization: "Bearer " + bearer } });
-    if(!r.ok) return false;
+    if(!r.ok) return null;
     const u = await r.json();
-    return !!(u && u.id);
-  }catch(e){ return false; }
+    return (u && u.id) ? u : null;
+  }catch(e){ return null; }
+}
+// Verifica che chi preme il bottone sia la redazione (token Supabase valido)
+async function verifyRedazione(bearer){
+  return !!(await redazioneUser(bearer));
 }
 
 function digestHtml(articles, unsubUrl){
@@ -381,7 +386,10 @@ module.exports = {
   sbSelectByEmail, sbSelectByToken, sbInsert, sbPatch,
   brevoSend, newToken, confirmEmailHtml, page, html, json, validEmail,
   rateHit, clientIp,
-  runDigest, verifyRedazione,
+  runDigest, verifyRedazione, redazioneUser,
+  // usati anche dagli invii speciali (_speciali-lib.js)
+  sbHeaders, sbError, inPool, htmlToText, BATCH, CONCURRENCY,
+  SUPABASE_URL, REST, FN,
   confirmSender: { name: CONFIRM_SENDER_NAME, email: CONFIRM_SENDER_EMAIL },
   SITE_URL, config: { SERVICE_ROLE, BREVO_API_KEY }
 };

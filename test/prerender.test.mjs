@@ -16,7 +16,9 @@ const ARTICOLO = {
   body: "<p>Corpo con un $& e un apostrofo d'esempio.</p><script>alert(1)</script>",
   category: "Geopolitica",
   author_name: "Lorenzo",
-  date: "2026-09-20",
+  // Ieri, calcolato: con una data fissa il controllo della news-sitemap
+  // (finestra di due giorni) iniziava a fallire da solo dopo 48 ore.
+  date: new Date(Date.now() - 864e5).toISOString().slice(0, 10),
   image: "https://wzkshpgakvasqwrrgkgd.supabase.co/x/cover.png"
 };
 

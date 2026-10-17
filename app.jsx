@@ -139,6 +139,96 @@ async function shrinkImage(file,folder,maxSide,quality){
 }
 async function apiUpload(token,file,folder){ file=await shrinkImage(file,folder); const ext=(file.name.split(".").pop()||"bin"); const path=folder+"/"+(crypto.randomUUID?crypto.randomUUID():Date.now())+"."+ext; const r=await authed(token,t=>fetch(SUPABASE_URL+"/storage/v1/object/media/"+path,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+t,"x-upsert":"true","Content-Type":file.type||"application/octet-stream"},body:file})); if(!r.ok)throw new Error(await r.text()); return SUPABASE_URL+"/storage/v1/object/public/media/"+path; }
 
+// ====== INVII SPECIALI: email solo per gli iscritti, fuori dal digest ======
+// Il video non va nell'email (troppo pesante, i gestori di posta lo
+// rifiutano): sta nel bucket privato "riservati" e si guarda dalla pagina
+// riservata, che controlla l'iscrizione. Qui la redazione lo carica e il
+// browser ne ricava la copertina: quella pulita fa da locandina al video,
+// quella con il tasto play disegnato sopra va nell'email.
+const VIDEO_MAX_MB=50;   // tetto per file del piano gratuito di Supabase
+const SPECIAL_COLS="id,subject,intro,video_path,cover_url,email_image_url,article_title,article_body,status,sent_at,recipients,updated_at,created_at";
+async function apiListSpecials(token){ const r=await authed(token,t=>fetch(API+"/newsletter_specials?select=id,subject,status,sent_at,recipients,updated_at&order=updated_at.desc&limit=15",{headers:hdr(t)})); if(!r.ok)throw new Error(await r.text()); return r.json(); }
+async function apiGetSpecial(token,id){ const r=await authed(token,t=>fetch(API+"/newsletter_specials?id=eq."+id+"&select="+SPECIAL_COLS,{headers:hdr(t)})); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]||null; }
+async function apiSaveSpecial(token,f){
+  const row={subject:f.subject||"",intro:f.intro||"",video_path:f.video_path||null,cover_url:f.cover_url||null,email_image_url:f.email_image_url||null,article_title:f.article_title||null,article_body:f.article_body||null,updated_at:new Date().toISOString()};
+  const r=await authed(token,t=> f.id
+    ? fetch(API+"/newsletter_specials?id=eq."+f.id,{method:"PATCH",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(row)})
+    : fetch(API+"/newsletter_specials",{method:"POST",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(row)}));
+  if(!r.ok){ const m=await r.text(); if(/newsletter_specials/.test(m)&&/does not exist|not find|42P01|PGRST205/.test(m)) throw new Error("Manca la tabella degli invii speciali: esegui supabase/migrations/003_invii_speciali.sql nel SQL Editor di Supabase."); throw new Error(m); }
+  return (await r.json())[0];
+}
+async function apiDeleteSpecial(token,id){ const r=await authed(token,t=>fetch(API+"/newsletter_specials?id=eq."+id,{method:"DELETE",headers:hdr(t)})); if(!r.ok)throw new Error(await r.text()); }
+async function apiDeleteVideo(token,path){ if(!path)return; try{ await authed(token,t=>fetch(SUPABASE_URL+"/storage/v1/object/riservati/"+path,{method:"DELETE",headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+t}})); }catch(e){} }
+async function callSpecial(token,id,mode){
+  const r=await authed(token,t=>fetch("/.netlify/functions/send-special",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+t},body:JSON.stringify({id,mode})}));
+  let d={}; try{ d=await r.json(); }catch(e){}
+  if(!r.ok) throw new Error(d.message||("Errore "+r.status));
+  return d;
+}
+// Caricamento con barra di avanzamento: fetch non la offre, XMLHttpRequest si'.
+// Il token si rinnova prima di partire, perche' un video puo' metterci minuti.
+async function freshToken(token){ if(SESSION){ if(Date.now()>SESSION.expires_at-5*60000) return await refreshSession(); return SESSION.access_token; } return token; }
+async function apiUploadVideo(token,file,onProgress){
+  const t=await freshToken(token);
+  const ext=((file.name||"").split(".").pop()||"mp4").toLowerCase().replace(/[^a-z0-9]/g,"")||"mp4";
+  const path="speciali/"+(crypto.randomUUID?crypto.randomUUID():Date.now())+"."+ext;
+  await new Promise((ok,ko)=>{
+    const x=new XMLHttpRequest();
+    x.open("POST",SUPABASE_URL+"/storage/v1/object/riservati/"+path);
+    x.setRequestHeader("apikey",SUPABASE_KEY);
+    x.setRequestHeader("Authorization","Bearer "+t);
+    x.setRequestHeader("Content-Type",file.type||"video/mp4");
+    x.upload.onprogress=e=>{ if(e.lengthComputable&&onProgress) onProgress(Math.round(e.loaded/e.total*100)); };
+    x.onload=()=>{ if(x.status>=200&&x.status<300) return ok();
+      let m=x.responseText||("Errore "+x.status);
+      if(/Bucket not found/i.test(m)) m="Manca lo spazio per i video: esegui supabase/migrations/003_invii_speciali.sql nel SQL Editor di Supabase.";
+      else if(x.status===413||/maximum allowed size|too large|exceeded/i.test(m)) m="Il video supera il limite di "+VIDEO_MAX_MB+" MB. Esportalo da CapCut in 720p.";
+      ko(new Error(m)); };
+    x.onerror=()=>ko(new Error("Connessione interrotta durante il caricamento. Riprova."));
+    x.send(file);
+  });
+  return path;
+}
+// Disegna il tasto play al centro: nell'email un'immagine statica e' l'unico
+// modo affidabile di far capire che toccandola parte un video.
+function drawPlay(ctx,w,h){
+  const r=Math.round(Math.min(w,h)*0.12), cx=w/2, cy=h/2;
+  ctx.save();
+  ctx.shadowColor="rgba(0,0,0,.35)"; ctx.shadowBlur=r*0.35;
+  ctx.fillStyle="rgba(22,36,63,.82)"; ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+  ctx.shadowBlur=0; ctx.lineWidth=Math.max(3,r*0.07); ctx.strokeStyle="#ffffff"; ctx.stroke();
+  ctx.fillStyle="#ffffff"; ctx.beginPath();
+  ctx.moveTo(cx-r*0.32,cy-r*0.45); ctx.lineTo(cx+r*0.5,cy); ctx.lineTo(cx-r*0.32,cy+r*0.45); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+const canvasToFile=(cv,name)=>new Promise((ok,ko)=>cv.toBlob(b=>b?ok(new File([b],name,{type:"image/jpeg"})):ko(new Error("immagine non generata")),"image/jpeg",0.86));
+// Da una sorgente (fotogramma del video o immagine) ricava le due copertine.
+// Nell'email un video verticale verrebbe lunghissimo: si taglia a 4:5.
+async function coversFrom(src,sw,sh){
+  const scale=Math.min(1,1280/Math.max(sw,sh));
+  const c1=document.createElement("canvas"); c1.width=Math.round(sw*scale); c1.height=Math.round(sh*scale);
+  c1.getContext("2d").drawImage(src,0,0,c1.width,c1.height);
+  let cw=sw, ch=sh, cy=0;
+  if(sw/sh<0.8){ ch=Math.round(sw/0.8); cy=Math.round((sh-ch)*0.4); }
+  const s2=Math.min(1,1072/cw);
+  const c2=document.createElement("canvas"); c2.width=Math.round(cw*s2); c2.height=Math.round(ch*s2);
+  const x2=c2.getContext("2d"); x2.drawImage(src,0,cy,cw,ch,0,0,c2.width,c2.height); drawPlay(x2,c2.width,c2.height);
+  return { clean: await canvasToFile(c1,"copertina.jpg"), play: await canvasToFile(c2,"email.jpg") };
+}
+function coversFromVideo(file){
+  return new Promise((ok,ko)=>{
+    const url=URL.createObjectURL(file); const v=document.createElement("video");
+    let fatto=false; const fine=(err,val)=>{ if(fatto)return; fatto=true; clearTimeout(tm); URL.revokeObjectURL(url); err?ko(err):ok(val); };
+    const tm=setTimeout(()=>fine(new Error("tempo scaduto")),20000);
+    v.muted=true; v.playsInline=true; v.preload="auto";
+    v.onerror=()=>fine(new Error("il browser non legge questo formato"));
+    v.onloadedmetadata=()=>{ try{ v.currentTime=Math.min(1.5,(v.duration||3)/3); }catch(e){ fine(e); } };
+    v.onseeked=()=>{ if(!v.videoWidth) return fine(new Error("video senza immagine")); coversFrom(v,v.videoWidth,v.videoHeight).then(r=>fine(null,r),fine); };
+    v.src=url;
+  });
+}
+async function coversFromImage(file){ const b=await createImageBitmap(file); try{ return await coversFrom(b,b.width,b.height); } finally { if(b.close) b.close(); } }
+
 function Ic({n,s=18,c="currentColor",fill="none"}){
   const P={
     search:'<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
@@ -220,6 +310,7 @@ function App(){
   const [video,setVideo]=useState(null);
   const [showLogin,setShowLogin]=useState(false);
   const [showInfo,setShowInfo]=useState(false);
+  const [showSpecial,setShowSpecial]=useState(false);
   const [toast,setToast]=useState("");
   const [view,setView]=useState("home");
   const [menuOpen,setMenuOpen]=useState(false);
@@ -395,9 +486,10 @@ function App(){
       )}
       </div>
 
-      <SiteFooter info={info} admin={admin} onEdit={()=>setShowInfo(true)} onPage={openPage} onSendNewsletter={sendNewsletter}/>
+      <SiteFooter info={info} admin={admin} onEdit={()=>setShowInfo(true)} onPage={openPage} onSendNewsletter={sendNewsletter} onSpecial={()=>setShowSpecial(true)}/>
 
       {showForm&&admin&&<NewsForm initial={editing} token={token} onClose={()=>{setShowForm(false);setEditing(null);}} onSave={saveItem}/>}
+      {showSpecial&&admin&&<SpecialForm token={token} note={note} onClose={()=>setShowSpecial(false)} onSessionDead={()=>setShowLogin(true)}/>}
       {showInfo&&admin&&<InfoModal initial={info} onClose={()=>setShowInfo(false)} onSave={saveInfo}/>}
       {video&&<VideoModal item={video} onClose={()=>setVideo(null)}/>}
       {showLogin&&<LoginModal onClose={()=>setShowLogin(false)} onLogin={doLogin}/>}
@@ -1007,13 +1099,188 @@ function Newsletter(){
   </div>);
 }
 
-function SiteFooter({info,admin,onEdit,onPage,onSendNewsletter}){
+// ====== INVIO SPECIALE (redazione) ======
+const VUOTO_SPECIALE={id:null,subject:"",intro:"",video_path:null,cover_url:null,email_image_url:null,article_title:"",article_body:"",status:"draft"};
+const STATO_SPECIALE={draft:["Bozza",C.gray],sending:["Invio a metà",C.amber],sent:["Inviato",C.blueDeep]};
+function SpecialForm({token,onClose,note,onSessionDead}){
+  const [f,setF]=useState(VUOTO_SPECIALE);
+  const [list,setList]=useState(null);
+  const [dirty,setDirty]=useState(false);
+  const [busy,setBusy]=useState("");          // azione in corso: "" | save | test | send | video | cover
+  const [prog,setProg]=useState(0);
+  const [msg,setMsg]=useState(null);           // {t:testo, ok:bool}
+  const [coverErr,setCoverErr]=useState("");
+  const set=(k,v)=>{ setDirty(true); setF(s=>({...s,[k]:v})); };
+  const inviato=f.status==="sent";
+  const fail=(e)=>{ const m=String((e&&e.message)||e); if(/JWT|Sessione scaduta/i.test(m)&&onSessionDead) onSessionDead(); setMsg({t:m,ok:false}); };
+
+  const loadList=async()=>{ try{ setList(await apiListSpecials(token)); }catch(e){ setList([]); const m=String(e.message||e); if(/newsletter_specials/.test(m)) setMsg({t:"Manca la tabella degli invii speciali: esegui supabase/migrations/003_invii_speciali.sql nel SQL Editor di Supabase.",ok:false}); } };
+  useEffect(()=>{ loadList(); },[]);
+
+  const tryClose=()=>{ if(busy==="video"||busy==="send"){ alert("Aspetta che finisca: "+(busy==="video"?"il video si sta caricando.":"l'invio è in corso.")); return; } if(dirty && !window.confirm("Hai modifiche non salvate.\n\nVuoi chiudere e perderle?")) return; onClose(); };
+  useEffect(()=>{ const h=(e)=>{ if(e.key==="Escape"){ e.preventDefault(); tryClose(); } }; window.addEventListener("keydown",h); return ()=>window.removeEventListener("keydown",h); });
+  useEffect(()=>{ const h=(e)=>{ if(dirty||busy){ e.preventDefault(); e.returnValue=""; } }; window.addEventListener("beforeunload",h); return ()=>window.removeEventListener("beforeunload",h); },[dirty,busy]);
+
+  const apri=async(id)=>{ if(dirty && !window.confirm("Hai modifiche non salvate. Aprire un altro invio e perderle?")) return; setMsg(null); try{ const sp=await apiGetSpecial(token,id); if(sp){ setF({...VUOTO_SPECIALE,...sp,article_title:sp.article_title||"",article_body:sp.article_body||""}); setDirty(false); setCoverErr(""); } }catch(e){ fail(e); } };
+  const nuovo=()=>{ if(dirty && !window.confirm("Hai modifiche non salvate. Iniziare un nuovo invio e perderle?")) return; setF(VUOTO_SPECIALE); setDirty(false); setMsg(null); setCoverErr(""); };
+
+  const salva=async()=>{ const row=await apiSaveSpecial(token,f); setF(s=>({...s,...row,article_title:row.article_title||"",article_body:row.article_body||""})); setDirty(false); loadList(); return row; };
+  const doSave=async()=>{ setBusy("save"); setMsg(null); try{ await salva(); setMsg({t:"Bozza salvata.",ok:true}); }catch(e){ fail(e); } setBusy(""); };
+
+  const upVideo=async(e)=>{
+    const file=e.target.files&&e.target.files[0]; e.target.value=""; if(!file) return;
+    const mb=file.size/1048576;
+    if(mb>VIDEO_MAX_MB){ alert("Il video pesa "+mb.toFixed(0)+" MB: il limite è "+VIDEO_MAX_MB+" MB.\n\nEsportalo da CapCut in 720p (o abbassa la qualità): un minuto in 720p sta intorno ai 15-25 MB."); return; }
+    setBusy("video"); setProg(0); setMsg(null); setCoverErr("");
+    const vecchio=f.video_path;
+    try{
+      const path=await apiUploadVideo(token,file,setProg);
+      set("video_path",path);
+      if(vecchio && vecchio!==path && !inviato) apiDeleteVideo(token,vecchio);
+      try{
+        const cv=await coversFromVideo(file);
+        const [clean,play]=await Promise.all([apiUpload(token,cv.clean,"speciali"),apiUpload(token,cv.play,"speciali")]);
+        set("cover_url",clean); set("email_image_url",play);
+      }catch(err){ set("cover_url",null); set("email_image_url",null); setCoverErr("Il video è caricato, ma non sono riuscito a ricavarne la copertina ("+(err.message||err)+"). Caricane una qui sotto: senza, nell'email resta solo il pulsante."); }
+      setMsg({t:"Video caricato. Ricordati di salvare.",ok:true});
+    }catch(err){ fail(err); }
+    setBusy(""); setProg(0);
+  };
+  const upCover=async(e)=>{
+    const file=e.target.files&&e.target.files[0]; e.target.value=""; if(!file) return;
+    setBusy("cover"); setMsg(null);
+    try{ const cv=await coversFromImage(file); const [clean,play]=await Promise.all([apiUpload(token,cv.clean,"speciali"),apiUpload(token,cv.play,"speciali")]); set("cover_url",clean); set("email_image_url",play); setCoverErr(""); }
+    catch(err){ fail(err); }
+    setBusy("");
+  };
+  const togliVideo=()=>{ if(!window.confirm("Togliere il video da questo invio?")) return; if(!inviato) apiDeleteVideo(token,f.video_path); set("video_path",null); set("cover_url",null); set("email_image_url",null); setCoverErr(""); };
+
+  const prova=async()=>{ setBusy("test"); setMsg(null); try{ const row=await salva(); const d=await callSpecial(token,row.id,"test"); setMsg({t:"Prova inviata a "+d.to+". Controlla la posta (anche Promozioni).",ok:true}); }catch(e){ fail(e); } setBusy(""); };
+
+  const invia=async()=>{
+    setBusy("send"); setMsg(null);
+    try{
+      const row=await salva();
+      let d=await callSpecial(token,row.id,"dry");
+      if(d.problems&&d.problems.length){ setMsg({t:d.problems.join(" "),ok:false}); setBusy(""); return; }
+      if(d.status==="sent"){ setMsg({t:"Questo invio è già stato spedito.",ok:false}); setBusy(""); return; }
+      if(d.recipients===0){ setMsg({t:"Nessun iscritto confermato al momento.",ok:false}); setBusy(""); return; }
+      const cosa=[row.intro&&row.intro.trim()?"messaggio":null,row.video_path?"video":null,(row.article_title||"").trim()?"articolo riservato":null].filter(Boolean).join(", ");
+      const domanda=d.already
+        ? "L'invio si era fermato a metà.\n\nRiprendere e mandarlo ai "+d.remaining+" iscritti che mancano? Chi l'ha già ricevuto viene saltato."
+        : "Oggetto: "+row.subject+"\nContenuto: "+cosa+"\n\nInviare adesso a "+d.remaining+" iscritti?\n\nDopo l'invio non si può più modificare.";
+      if(!window.confirm(domanda)){ setBusy(""); return; }
+      let inviate=0, fallite=0, giri=0;
+      for(;;){
+        d=await callSpecial(token,row.id,"send");
+        if(!d.sent){ if(d.done&&d.reason) setMsg({t:d.reason,ok:false}); else setMsg({t:"Invio non eseguito: "+(d.reason||"?"),ok:false}); break; }
+        inviate+=d.delivered||0; fallite+=d.failed||0;
+        if(d.done){ setMsg({t:"Inviato a "+inviate+" iscritti"+(fallite?" ("+fallite+" non riusciti al primo tentativo)":"")+".",ok:true}); note&&note("Invio speciale spedito."); break; }
+        // Nessun invio riuscito in tutto il blocco: e' un guasto (chiave
+        // Brevo, quota), non lentezza. Chi ha gia' ricevuto resta registrato.
+        if(!d.delivered) throw new Error("Nessun invio riuscito su "+d.failed+" tentativi: controlla la chiave e la quota di Brevo. Chi ha già ricevuto non riceverà doppioni quando riprovi.");
+        if(++giri>400) throw new Error("Invio fermato per sicurezza dopo "+inviate+" iscritti. Ripremi il pulsante per completare: chi ha già ricevuto viene saltato.");
+        setMsg({t:"Invio in corso… "+inviate+" serviti, "+d.remaining+" da fare. Non chiudere la pagina.",ok:true});
+      }
+      const agg=await apiGetSpecial(token,row.id); if(agg) setF(s=>({...s,...agg,article_title:agg.article_title||"",article_body:agg.article_body||""}));
+      loadList();
+    }catch(e){ fail(e); }
+    setBusy("");
+  };
+
+  const elimina=async()=>{ if(!f.id||inviato) return; if(!window.confirm("Eliminare questa bozza?"+(f.video_path?" Anche il video caricato verrà cancellato.":""))) return; try{ await apiDeleteSpecial(token,f.id); apiDeleteVideo(token,f.video_path); setF(VUOTO_SPECIALE); setDirty(false); setMsg({t:"Bozza eliminata.",ok:true}); loadList(); }catch(e){ fail(e); } };
+
+  const occupato=!!busy;
+  const btn=(bg,fg)=>({background:bg,color:fg,border:"none",borderRadius:11,padding:"12px 14px",fontWeight:700,fontSize:15,cursor:occupato?"default":"pointer",opacity:occupato?.6:1,flex:"1 1 150px"});
+  const help={fontSize:12,color:C.gray,marginTop:5,lineHeight:1.45};
+  return (<div style={{position:"fixed",inset:0,background:"rgba(14,17,23,.55)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+    <div role="dialog" aria-label="Invio speciale agli iscritti" style={{width:"100%",maxWidth:600,background:C.card,borderRadius:"18px 18px 0 0",maxHeight:"94vh",overflowY:"auto"}}>
+      <div style={{position:"sticky",top:0,background:C.card,padding:"16px 18px",borderBottom:"1px solid "+C.line,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}>
+        <div><strong style={{fontFamily:"Anton",color:C.navy,fontSize:20,fontWeight:400}}>Invio speciale</strong><div style={{fontSize:12.5,color:C.gray}}>Solo per gli iscritti alla newsletter · non compare sul sito</div></div>
+        <button onClick={tryClose} aria-label="Chiudi" style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button>
+      </div>
+      <div style={{padding:18,display:"flex",flexDirection:"column",gap:16}}>
+
+        <div style={{background:C.cream,border:"1px solid "+C.line,borderRadius:12,padding:"10px 12px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <span style={{fontSize:13,fontWeight:700,color:C.navy}}>Bozze e invii</span>
+            <button onClick={nuovo} disabled={occupato} style={{display:"flex",alignItems:"center",gap:4,background:"none",border:"1px solid "+C.line,borderRadius:8,padding:"4px 9px",fontSize:12.5,fontWeight:700,color:C.navy,cursor:"pointer"}}><Ic n="plus" s={13} c={C.navy}/> Nuovo</button>
+          </div>
+          {list===null? <div style={{fontSize:13,color:C.gray}}>Caricamento…</div>
+            : list.length===0? <div style={{fontSize:13,color:C.gray}}>Ancora nessuno. Quello che scrivi qui sotto diventa il primo.</div>
+            : <div style={{display:"flex",flexDirection:"column",gap:2,maxHeight:150,overflowY:"auto"}}>{list.map(x=>{ const st=STATO_SPECIALE[x.status]||STATO_SPECIALE.draft; return (
+                <button key={x.id} onClick={()=>apri(x.id)} disabled={occupato} style={{display:"flex",alignItems:"center",gap:8,textAlign:"left",background:x.id===f.id?"#fff":"none",border:"none",borderRadius:8,padding:"6px 6px",cursor:"pointer",fontFamily:"Barlow"}}>
+                  <span style={{fontSize:10.5,fontWeight:700,color:"#fff",background:st[1],borderRadius:5,padding:"2px 6px",whiteSpace:"nowrap"}}>{st[0]}</span>
+                  <span style={{flex:1,fontSize:13.5,color:C.navy,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.subject||"(senza oggetto)"}</span>
+                  <span style={{fontSize:11.5,color:C.gray,whiteSpace:"nowrap"}}>{x.status==="sent"?(fmtDate(x.sent_at)+" · "+(x.recipients||0)):fmtDate(x.updated_at)}</span>
+                </button>); })}</div>}
+        </div>
+
+        {inviato&&<div style={{background:"#EAF1FB",border:"1px solid #C9DAF2",borderRadius:12,padding:"10px 12px",fontSize:13.5,color:C.navy}}>Inviato il <b>{fmtDate(f.sent_at)}</b> a <b>{f.recipients||0}</b> iscritti. Un invio spedito non si modifica: per mandare altro premi <b>Nuovo</b>.</div>}
+
+        <div><label style={labStyle} htmlFor="sp-ogg">Oggetto dell'email *</label>
+          <input id="sp-ogg" style={inStyle} value={f.subject} disabled={inviato} onChange={e=>set("subject",e.target.value)} placeholder="Es. Il video che non trovate sui social"/>
+          <div style={help}>È la riga che l'iscritto vede nella casella di posta. Corta e concreta.</div>
+        </div>
+
+        <div><label style={labStyle} htmlFor="sp-msg">Messaggio agli iscritti</label>
+          <textarea id="sp-msg" rows={6} style={{...inStyle,resize:"vertical",lineHeight:1.5}} value={f.intro} disabled={inviato} onChange={e=>set("intro",e.target.value)} placeholder={"Ciao,\n\nquesta settimana vi mandiamo…"}/>
+          <div style={help}>Testo semplice: una riga vuota separa i paragrafi, gli indirizzi web diventano link da soli.</div>
+        </div>
+
+        <div><label style={labStyle}>Video (opzionale)</label>
+          {busy==="video"? <div>
+              <div style={{height:10,background:C.line,borderRadius:6,overflow:"hidden"}}><div style={{width:prog+"%",height:"100%",background:C.blue,transition:"width .2s"}}/></div>
+              <div style={{...help,color:C.navy}}>Caricamento {prog}%… non chiudere la pagina.</div>
+            </div>
+          : f.video_path? <div>
+              {f.email_image_url? <img src={f.email_image_url} alt="Copertina del video come appare nell'email" style={{width:"100%",maxHeight:340,objectFit:"contain",background:C.navy,borderRadius:12,display:"block"}}/>
+                : <div style={{background:C.navy,color:"#fff",borderRadius:12,padding:"28px 14px",textAlign:"center",fontSize:14}}>▶ Video caricato, senza copertina</div>}
+              {coverErr&&<div style={{...help,color:C.red}}>{coverErr}</div>}
+              {!inviato&&<div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+                <label style={{display:"flex",alignItems:"center",gap:6,background:C.navySoft,color:"#fff",borderRadius:10,padding:"8px 12px",fontSize:13,fontWeight:700,cursor:"pointer"}}><Ic n="image" s={14} c="#fff"/>{busy==="cover"?"…":"Cambia copertina"}<input type="file" accept="image/*" onChange={upCover} style={{display:"none"}} disabled={occupato}/></label>
+                <label style={{display:"flex",alignItems:"center",gap:6,background:C.cream,color:C.navy,border:"1px solid "+C.line,borderRadius:10,padding:"8px 12px",fontSize:13,fontWeight:700,cursor:"pointer"}}><Ic n="play" s={13} c={C.navy}/>Sostituisci video<input type="file" accept="video/mp4,video/quicktime,video/webm" onChange={upVideo} style={{display:"none"}} disabled={occupato}/></label>
+                <button onClick={togliVideo} disabled={occupato} style={{display:"flex",alignItems:"center",gap:6,background:"none",color:C.red,border:"1px solid "+C.line,borderRadius:10,padding:"8px 12px",fontSize:13,fontWeight:700,cursor:"pointer"}}><Ic n="trash" s={14} c={C.red}/>Togli</button>
+              </div>}
+            </div>
+          : <div>
+              <label style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:inviato?C.line:C.navy,color:"#fff",borderRadius:12,padding:"14px",fontSize:14.5,fontWeight:700,cursor:inviato?"default":"pointer"}}><Ic n="play" s={16} c="#fff"/> Carica un video dal computer<input type="file" accept="video/mp4,video/quicktime,video/webm" onChange={upVideo} style={{display:"none"}} disabled={occupato||inviato}/></label>
+              <div style={help}>MP4 fino a {VIDEO_MAX_MB} MB (l'export di CapCut va bene). Il video non è pubblico: lo vede solo chi apre il link dall'email ed è iscritto. La copertina si ricava da sola.</div>
+            </div>}
+        </div>
+
+        <div><label style={labStyle} htmlFor="sp-art">Articolo riservato (opzionale)</label>
+          <input id="sp-art" style={inStyle} value={f.article_title} disabled={inviato} onChange={e=>set("article_title",e.target.value)} placeholder="Titolo dell'articolo"/>
+          {(f.article_title||"").trim()||f.article_body? (inviato
+              ? <div style={{marginTop:8,border:"1px solid "+C.line,borderRadius:10,padding:"10px 12px",fontSize:15,lineHeight:1.6,maxHeight:260,overflowY:"auto"}} dangerouslySetInnerHTML={{__html:sanitizeHtml(f.article_body||"")}}/>
+              : <div style={{marginTop:8}}><RichEditor key={f.id||"nuovo"} value={f.article_body||""} onChange={html=>set("article_body",html)}/></div>)
+            : null}
+          <div style={help}>Non viene pubblicato sul sito: nell'email compare titolo e inizio, il resto si legge dalla pagina riservata.</div>
+        </div>
+
+        {msg&&<div role="status" style={{background:msg.ok?"#EAF6EE":"#FDECEA",border:"1px solid "+(msg.ok?"#BFE3CB":"#F5C2BD"),color:msg.ok?"#1B5E37":"#8A1C14",borderRadius:10,padding:"10px 12px",fontSize:13.5,lineHeight:1.45}}>{msg.t}</div>}
+
+        {!inviato? <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={doSave} disabled={occupato} style={btn(C.cream,C.navy)}>{busy==="save"?"Salvo…":"Salva bozza"}</button>
+            <button onClick={prova} disabled={occupato} style={btn(C.navySoft,"#fff")}>{busy==="test"?"Invio prova…":"Mandami una prova"}</button>
+            <button onClick={invia} disabled={occupato} style={{...btn(C.amber,C.navy),flexBasis:"100%"}}><span style={{display:"inline-flex",alignItems:"center",gap:7}}><Ic n="mail" s={16} c={C.navy}/>{busy==="send"?"Invio in corso…":(f.status==="sending"?"Riprendi l'invio":"Invia agli iscritti")}</span></button>
+            {f.id&&f.status==="draft"&&<button onClick={elimina} disabled={occupato} style={{background:"none",border:"none",color:C.red,fontSize:13,fontWeight:600,cursor:"pointer",marginLeft:"auto"}}>Elimina bozza</button>}
+          </div>
+        : <button onClick={nuovo} style={{...btn(C.navy,"#fff"),flex:"none"}}>Nuovo invio speciale</button>}
+        {!inviato&&<div style={{...help,marginTop:-6}}>La prova arriva al tuo indirizzo di redazione con il link di anteprima. Agli iscritti arriva un link personale: chi si disiscrive perde l'accesso.</div>}
+      </div>
+    </div>
+  </div>);
+}
+
+function SiteFooter({info,admin,onEdit,onPage,onSendNewsletter,onSpecial}){
   const hasSocial=SOCIALS.some(s=>info[s.k]);
   const hasContact=info.email||info.phone;
   return (<footer style={{background:C.navy,color:"#fff",marginTop:28}}>
     <div style={{maxWidth:980,margin:"0 auto",padding:"32px 16px 24px"}}>
       {admin&&<div style={{display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap",marginBottom:8}}>
         <button onClick={onSendNewsletter} style={{display:"flex",alignItems:"center",gap:6,background:C.amber,color:C.navy,border:"none",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:700,cursor:"pointer"}}><Ic n="mail" s={14} c={C.navy}/> Invia newsletter</button>
+        <button onClick={onSpecial} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",color:C.navy,border:"none",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:700,cursor:"pointer"}}><Ic n="play" s={13} c={C.navy}/> Invio speciale</button>
         <button onClick={onEdit} style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,.12)",color:"#fff",border:"1px solid rgba(255,255,255,.25)",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}><Ic n="set" s={14} c="#fff"/> Modifica social e contatti</button>
       </div>}
       {(info.about||admin)&&<div id="chisiamo" style={{marginBottom:28,paddingBottom:24,borderBottom:"1px solid rgba(255,255,255,.12)"}}>
