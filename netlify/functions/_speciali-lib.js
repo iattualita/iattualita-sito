@@ -179,17 +179,14 @@ function specialHtml(sp, links) {
     ? "Questa &egrave; una <b>prova</b>: la vedi solo tu. Il link qui sopra funziona per la redazione; gli iscritti ricevono ciascuno il proprio."
     : "Ricevi questa email perch&eacute; ti sei iscritto su iattualita.it. I link qui sopra sono personali: se li inoltri, chi li apre usa il tuo accesso.";
 
-  return '<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' + esc(sp.subject) + '</title></head><body style="margin:0;background:#F4F2EC">'
+  return '<!doctype html><html lang="it">' + L.emailHead(sp.subject) + '<body style="margin:0;background:#F4F2EC">'
     + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4F2EC"><tr><td align="center" style="padding:26px 12px">'
     + '<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%">'
-    + '<tr><td style="padding:0 12px 18px;font-family:Arial,Helvetica,sans-serif">'
-    + '<div style="font-size:26px;font-weight:bold;color:#16243F">Iattualit&agrave;</div>'
-    + '<div style="font-size:13px;color:#2A3A57">Solo per gli iscritti alla newsletter</div>'
-    + "</td></tr>"
+    + L.emailHeader("Solo per gli iscritti alla newsletter")
     + '<tr><td style="padding:0 12px;font-family:Arial,Helvetica,sans-serif">' + parts.join("") + "</td></tr>"
     + '<tr><td style="padding:14px 12px;border-top:1px solid #E3DFD6;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#7A8499;line-height:1.5">'
     + nota + "<br>"
-    + '<a href="' + esc(links.unsub) + '" style="color:#7A8499">Disiscriviti</a> quando vuoi &middot; Iattualit&agrave; &middot; verificato con i dati'
+    + '<a href="' + esc(links.unsub) + '" style="color:#7A8499">Disiscriviti</a> quando vuoi &middot; IAttualit&agrave; &middot; verificato con i dati'
     + "</td></tr></table></td></tr></table></body></html>";
 }
 

@@ -23,6 +23,8 @@ const DA_PUBBLICARE = [
   "favicon-192.png",
   "apple-touch-icon.png",
   "og-default.jpg",
+  "email-logo.png",    // logo della pagina riservata
+  "email-testata.png", // testata delle email: logo + marchio IAttualità
   "vendor" // cartella intera: React e ReactDOM
 ];
 
