@@ -9,16 +9,9 @@ import { fileURLToPath } from "node:url";
 
 const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-// safeBody non e' esportata: la si estrae dal file insieme a cio' che usa,
-// cosi' il test esercita esattamente il codice che gira in produzione.
-const src = fs.readFileSync(path.join(REPO, "netlify/edge-functions/prerender.js"), "utf8");
-const da = src.indexOf("const ATTR_COMUNI");
-const a = src.indexOf("// Data in formato ISO 8601");
-const modulo = src.slice(da, a) + "\nexport { safeBody };";
-const tmp = path.join(REPO, "node_modules", ".sanitize-test.mjs");
-fs.writeFileSync(tmp, modulo);
-const { safeBody } = await import(tmp);
-fs.unlinkSync(tmp);
+// safeBody vive in shared/safe-body.js: la importa il prerender e la
+// importa la pagina riservata. Il test esercita lo stesso modulo.
+const { safeBody } = await import(path.join(REPO, "shared/safe-body.js"));
 
 const results = [];
 function bloccato(nome, payload) {
