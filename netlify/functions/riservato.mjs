@@ -26,7 +26,7 @@ const HEADERS = {
   "X-Robots-Tag": "noindex, nofollow",
   "Referrer-Policy": "no-referrer",
   "Content-Security-Policy":
-    "default-src 'none'; img-src " + SUPA + " data:; media-src " + SUPA + "; " +
+"default-src 'none'; img-src " + SUPA + " " + L.SITE_URL + " data:; media-src " + SUPA + "; " +
     "style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; " +
     "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 };
@@ -37,12 +37,16 @@ function shell(title, inner) {
   return `<!doctype html><html lang="it"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>${esc(title)} · Iattualità</title>
+<title>${esc(title)} · IAttualità</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:wght@400;600;700&display=swap">
 <style>
   body{margin:0;background:#F4F2EC;font-family:Barlow,Arial,sans-serif;color:#16243F}
   .wrap{max-width:720px;margin:0 auto;padding:28px 16px 56px}
-  .brand{display:block;font-family:Anton,Arial,sans-serif;font-size:22px;color:#16243F;text-decoration:none}
+  .brand{display:flex;align-items:center;gap:12px;text-decoration:none}
+  .brand img{width:48px;height:48px;border-radius:50%;display:block}
+  .marchio{font-family:Anton,Impact,Arial,sans-serif;font-size:30px;line-height:1;color:#16243F;letter-spacing:.3px}
+  .marchio b{font-weight:400;color:${L.BLU_IA}}
+  .motto{font-size:11.5px;color:#7A8499;margin-top:4px}
   .tag{display:inline-block;background:#E8A33D;color:#16243F;font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:4px 10px;border-radius:6px;margin:18px 0 12px}
   h1{font-family:Anton,Arial,sans-serif;font-weight:400;font-size:clamp(28px,6vw,40px);line-height:1.1;margin:0 0 16px}
   h2{font-family:Anton,Arial,sans-serif;font-weight:400;font-size:clamp(24px,5vw,32px);line-height:1.15;margin:0 0 14px}
@@ -58,7 +62,7 @@ function shell(title, inner) {
   .piede a{color:#2C5AA0}
 </style></head>
 <body><div class="wrap">
-<a class="brand" href="${L.SITE_URL}">Iattualità</a>
+<a class="brand" href="${L.SITE_URL}"><img src="${L.LOGO_URL}" alt=""><span><span class="marchio"><b>IA</b>ttualità</span><span class="motto" style="display:block">L'informazione intelligente e in tempo reale</span></span></a>
 ${inner}
 </div></body></html>`;
 }
@@ -89,7 +93,7 @@ export default async (req) => {
     } else {
       const sub = t ? await L.sbSelectByToken(t) : null;
       if (!sub)
-        return blocco(403, "Contenuto riservato agli iscritti", "Questo contenuto è riservato agli iscritti alla newsletter di Iattualità.", ISCRIVITI);
+        return blocco(403, "Contenuto riservato agli iscritti", "Questo contenuto è riservato agli iscritti alla newsletter di IAttualità.", ISCRIVITI);
       if (sub.status !== "confirmed")
         return blocco(403, "Contenuto riservato agli iscritti",
           sub.status === "unsubscribed"

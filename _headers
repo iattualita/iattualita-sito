@@ -46,6 +46,10 @@
   Cache-Control: public, max-age=2592000
 /og-default.jpg
   Cache-Control: public, max-age=2592000
+/email-logo.png
+  Cache-Control: public, max-age=2592000
+/email-testata.png
+  Cache-Control: public, max-age=2592000
 
 # React: il nome contiene la versione solo in package.json, ma il contenuto
 # cambia solo quando cambi quella. Una settimana di cache e' prudente.

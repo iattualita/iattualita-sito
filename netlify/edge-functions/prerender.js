@@ -723,6 +723,8 @@ export const config = {
     "/favicon-192.png",
     "/apple-touch-icon.png",
     "/og-default.jpg",
+    "/email-logo.png",
+    "/email-testata.png",
     "/robots.txt",
     "/llms.txt",
     "/*.xml",        // sitemap.xml, news-sitemap.xml, rss.xml: edge function proprie

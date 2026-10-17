@@ -195,6 +195,31 @@ const html = (statusCode, htmlBody) => ({ statusCode, headers:{ "Content-Type":"
 const json = (statusCode, obj) => ({ statusCode, headers:{ "Content-Type":"application/json" }, body: JSON.stringify(obj) });
 const validEmail = (e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
 
+// ================== INTESTAZIONE COMUNE DELLE EMAIL ==================
+// Logo rotondo e marchio come in testata sul sito: "IA" in azzurro,
+// "ttualita'" in blu scuro, in Anton.
+//
+// La testata e' UN'IMMAGINE (email-testata.png, servita dal sito) e non
+// testo: Gmail e quasi tutte le app di posta non caricano i font web, e il
+// marchio uscirebbe in un carattere di sistema qualsiasi. Come immagine e'
+// identico ovunque. Se le immagini sono bloccate resta il testo alternativo.
+// email-logo.png (solo il cerchio) lo usa la pagina riservata.
+const TESTATA_URL = process.env.EMAIL_HEADER_URL || (SITE_URL + "/email-testata.png");
+const LOGO_URL = process.env.EMAIL_LOGO_URL || (SITE_URL + "/email-logo.png");
+const BLU_IA = "#1B9CD9";
+function emailHead(title){
+  return '<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+    + '<title>' + String(title||"IAttualità").replace(/[<>&"]/g, "") + '</title></head>';
+}
+function emailHeader(sottotitolo){
+  return '<tr><td style="padding:0 12px 20px;font-family:Arial,Helvetica,sans-serif">'
+    + '<a href="' + SITE_URL + '" style="text-decoration:none;color:#16243F;font-size:24px;font-weight:bold">'
+    + '<img src="' + TESTATA_URL + '" width="325" height="70" alt="IAttualit&agrave; &middot; L\'informazione intelligente e in tempo reale" style="display:block;width:325px;max-width:100%;height:auto;border:0">'
+    + '</a>'
+    + (sottotitolo ? '<div style="font-size:13px;font-weight:bold;color:#2A3A57;padding-top:14px">' + sottotitolo + '</div>' : '')
+    + '</td></tr>';
+}
+
 // ================== DIGEST SETTIMANALE ==================
 function slugify(x){ return (x||"").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60)||"articolo"; }
 const articleUrl = (a) => SITE_URL + "/articolo/" + a.id + "/" + slugify(a.title);
@@ -280,17 +305,14 @@ function digestHtml(articles, unsubUrl){
       + '<a href="'+articleUrl(a)+'" style="display:inline-block;margin-top:10px;font-size:13px;font-weight:bold;color:#2C5AA0;text-decoration:none">Leggi l\'articolo &rarr;</a>'
       + '</td>';
   }).map(td => '<tr>'+td+'</tr>').join("");
-  return '<!doctype html><html lang="it"><body style="margin:0;background:#F4F2EC">'
+  return '<!doctype html><html lang="it">' + emailHead("Gli articoli della settimana") + '<body style="margin:0;background:#F4F2EC">'
     + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4F2EC"><tr><td align="center" style="padding:26px 12px">'
     + '<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%">'
-    + '<tr><td style="padding:0 12px 18px;font-family:Arial,Helvetica,sans-serif">'
-    + '<div style="font-size:26px;font-weight:bold;color:#16243F">Iattualit&agrave;</div>'
-    + '<div style="font-size:13px;color:#2A3A57">Gli articoli della settimana &middot; non tifiamo per nessuno, verifichiamo</div>'
-    + '</td></tr>'
+    + emailHeader("Gli articoli della settimana &middot; non tifiamo per nessuno, verifichiamo")
     + '<tr><td style="padding:0 12px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-family:Arial,Helvetica,sans-serif">' + rows + '</table></td></tr>'
     + '<tr><td style="padding:14px 12px;border-top:1px solid #E3DFD6;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#7A8499;line-height:1.5">'
     + 'Ricevi questa email perch&eacute; ti sei iscritto su iattualita.it.<br>'
-    + '<a href="'+unsubUrl+'" style="color:#7A8499">Disiscriviti</a> quando vuoi &middot; Iattualit&agrave; &middot; L\'informazione intelligente e in tempo reale'
+    + '<a href="'+unsubUrl+'" style="color:#7A8499">Disiscriviti</a> quando vuoi &middot; IAttualit&agrave; &middot; verificato con i dati'
     + '</td></tr></table></td></tr></table></body></html>';
 }
 
@@ -389,7 +411,7 @@ module.exports = {
   runDigest, verifyRedazione, redazioneUser,
   // usati anche dagli invii speciali (_speciali-lib.js)
   sbHeaders, sbError, inPool, htmlToText, BATCH, CONCURRENCY,
-  SUPABASE_URL, REST, FN,
+  SUPABASE_URL, REST, FN, emailHead, emailHeader, LOGO_URL, TESTATA_URL, BLU_IA,
   confirmSender: { name: CONFIRM_SENDER_NAME, email: CONFIRM_SENDER_EMAIL },
   SITE_URL, config: { SERVICE_ROLE, BREVO_API_KEY }
 };
