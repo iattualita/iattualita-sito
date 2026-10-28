@@ -10,8 +10,14 @@ exports.handler = async (event) => {
 
   const auth = (event.headers && (event.headers.authorization || event.headers.Authorization)) || "";
   const bearer = auth.replace(/^Bearer\s+/i, "");
-  if (!(await L.verifyRedazione(bearer)))
+  const user = await L.redazioneUser(bearer);
+  if (!user)
     return L.json(401, { error: "auth", message: "JWT non valido o scaduto: rifai l'accesso in redazione." });
+  // Il giornalista fa solo gli invii speciali: la newsletter settimanale la
+  // mandano i soci. Il ruolo sta in app_metadata, che l'utente non puo'
+  // cambiare da se' (vedi supabase/migrations/004_ruolo_giornalista.sql).
+  if (L.isGiornalista(user))
+    return L.json(403, { error: "ruolo", message: "La newsletter settimanale la inviano i soci." });
 
   let dry = true;
   try { dry = JSON.parse(event.body || "{}").dry !== false; } catch (e) {}
