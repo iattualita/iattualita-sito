@@ -79,6 +79,15 @@ async function authed(token,run){
   }
   return r;
 }
+// Ruolo della redazione, letto dal token. Lo scrive solo chi ha la dashboard
+// Supabase (app_metadata.ruolo, che l'utente non puo' modificare da se').
+// "giornalista": scrive articoli nuovi, corregge solo i suoi, fa gli invii
+// speciali. Niente cancellazioni, newsletter settimanale, logo, social e
+// contatti. Qui serve solo a nascondere i pulsanti: il blocco vero sta nelle
+// policy del database (004_ruolo_giornalista.sql) e in send-digest.
+function tokenClaims(t){ try{ const b=t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"); return JSON.parse(decodeURIComponent(escape(atob(b+"===".slice((b.length+3)%4))))); }catch(e){ return {}; } }
+function tokenRuolo(t){ const c=t?tokenClaims(t):{}; return (c.app_metadata&&c.app_metadata.ruolo)||""; }
+async function apiMyNewsIds(token,uid){ try{ const r=await authed(token,t=>fetch(API+"/news?select=id&created_by=eq."+encodeURIComponent(uid),{headers:hdr(t)})); return r.ok?(await r.json()).map(x=>x.id):[]; }catch(e){ return []; } }
 // La lista NON scarica il campo body. Con select=* ogni visitatore si portava
 // a casa il testo integrale di TUTTO l'archivio per mostrare qualche card, e il
 // peso cresceva a ogni articolo pubblicato. Il body arriva solo quando serve.
@@ -320,6 +329,11 @@ function App(){
 
   const adminGate=(window.location.search+window.location.hash).toLowerCase().includes("admin");
   const admin=!!token;
+  const giornalista=admin&&tokenRuolo(token)==="giornalista";
+  const pieno=admin&&!giornalista;   // tu e il socio: tutti i poteri
+  const [mieIds,setMieIds]=useState([]);
+  useEffect(()=>{ if(!giornalista){ setMieIds([]); return; } const uid=tokenClaims(token).sub; if(uid) apiMyNewsIds(token,uid).then(setMieIds); },[token,giornalista,news]);
+  const puoModificare=(item)=>pieno||(giornalista&&mieIds.indexOf(item.id)>=0);
   const note=(m)=>{ setToast(m); setTimeout(()=>setToast(""),3000); };
 
   useEffect(()=>{ (async()=>{ const [n,i]=await Promise.all([apiGetNews(),apiGetInfo()]); setNews(n); if(i)setInfo({...DEFAULT_INFO,...i,logo_cfg:i.logo_cfg||DEFAULT_INFO.logo_cfg}); setLoading(false); })(); },[]);
@@ -412,7 +426,7 @@ function App(){
       <a href="#contenuto" className="salta-al-contenuto">Salta al contenuto</a>
       <header style={{background:C.card,borderBottom:"1px solid "+C.line,position:"sticky",top:0,zIndex:20}}>
         <div style={{maxWidth:980,margin:"0 auto",padding:"12px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <Logo info={info} admin={admin} token={token} onSaveLogo={saveLogo} onHome={()=>go("home","top")} />
+          <Logo info={info} admin={pieno} token={token} onSaveLogo={saveLogo} onHome={()=>go("home","top")} />
           <div style={{flex:1}}/>
           {admin&&<button onClick={()=>{setEditing(null);setShowForm(true);}} style={{display:"flex",alignItems:"center",background:C.blue,color:"#fff",border:"none",borderRadius:10,padding:"9px 12px",fontWeight:700,fontSize:14,cursor:"pointer",flexShrink:0}}><Ic n="plus" s={17} c="#fff"/><span className="btn-label" style={{marginLeft:6}}>Aggiungi</span></button>}
           {(adminGate||admin)&&<button onClick={()=> admin? logout() : setShowLogin(true)} aria-label={admin?"Esci dalla redazione":"Accesso redazione"} title={admin?"Esci":"Accesso redazione"} style={{display:"flex",alignItems:"center",justifyContent:"center",background:admin?C.navy:C.cream,color:admin?"#fff":C.gray,border:"1px solid "+(admin?C.navy:C.line),borderRadius:10,width:40,height:40,cursor:"pointer",flexShrink:0}}><Ic n={admin?"unlock":"lock"} s={16} c={admin?"#fff":C.gray}/></button>}
@@ -467,9 +481,9 @@ function App(){
               if(isVetrina){
                 const vetrina = rest.slice(0, HOME_VETRINA);
                 return <React.Fragment>
-                  {featured&&<Card item={featured} big admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={openEditor} onDelete={removeItem}/>}
+                  {featured&&<Card item={featured} big admin={admin} canEdit={puoModificare} canDelete={pieno} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={openEditor} onDelete={removeItem}/>}
                   <div style={{display:"flex",flexWrap:"wrap",gap:14,marginTop:16}}>
-                    {vetrina.map(n=><div key={n.id} style={{flex:"1 1 270px",minWidth:0,display:"flex",flexDirection:"column"}}><Card item={n} admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={openEditor} onDelete={removeItem}/></div>)}
+                    {vetrina.map(n=><div key={n.id} style={{flex:"1 1 270px",minWidth:0,display:"flex",flexDirection:"column"}}><Card item={n} admin={admin} canEdit={puoModificare} canDelete={pieno} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={openEditor} onDelete={removeItem}/></div>)}
                   </div>
                   {rest.length>HOME_VETRINA&&<a href="/archivio" onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0) return; e.preventDefault(); openArchive(); }} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:22,background:C.navy,color:"#fff",borderRadius:12,padding:"14px 18px",fontSize:15,fontWeight:700,textDecoration:"none",fontFamily:"Barlow"}}>Vedi tutti gli articoli nell'archivio <Ic n="enter" s={16} c="#fff"/></a>}
                 </React.Fragment>;
@@ -477,7 +491,7 @@ function App(){
               const list = filtered.slice(0, shown);
               return <React.Fragment>
                 <div style={{display:"flex",flexWrap:"wrap",gap:14,marginTop:16}}>
-                  {list.map(n=><div key={n.id} style={{flex:"1 1 270px",minWidth:0,display:"flex",flexDirection:"column"}}><Card item={n} admin={admin} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={openEditor} onDelete={removeItem}/></div>)}
+                  {list.map(n=><div key={n.id} style={{flex:"1 1 270px",minWidth:0,display:"flex",flexDirection:"column"}}><Card item={n} admin={admin} canEdit={puoModificare} canDelete={pieno} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={openEditor} onDelete={removeItem}/></div>)}
                 </div>
                 {filtered.length>shown&&<div style={{display:"flex",justifyContent:"center",marginTop:22}}><button onClick={()=>setShown(s=>s+LIST_STEP)} style={{background:C.card,color:C.navy,border:"1px solid "+C.line,borderRadius:12,padding:"12px 24px",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"Barlow"}}>Mostra altri ({filtered.length-shown})</button></div>}
               </React.Fragment>;
@@ -486,11 +500,11 @@ function App(){
       )}
       </div>
 
-      <SiteFooter info={info} admin={admin} onEdit={()=>setShowInfo(true)} onPage={openPage} onSendNewsletter={sendNewsletter} onSpecial={()=>setShowSpecial(true)}/>
+      <SiteFooter info={info} admin={admin} pieno={pieno} onEdit={()=>setShowInfo(true)} onPage={openPage} onSendNewsletter={sendNewsletter} onSpecial={()=>setShowSpecial(true)}/>
 
       {showForm&&admin&&<NewsForm initial={editing} token={token} onClose={()=>{setShowForm(false);setEditing(null);}} onSave={saveItem}/>}
       {showSpecial&&admin&&<SpecialForm token={token} note={note} onClose={()=>setShowSpecial(false)} onSessionDead={()=>setShowLogin(true)}/>}
-      {showInfo&&admin&&<InfoModal initial={info} onClose={()=>setShowInfo(false)} onSave={saveInfo}/>}
+      {showInfo&&pieno&&<InfoModal initial={info} onClose={()=>setShowInfo(false)} onSave={saveInfo}/>}
       {video&&<VideoModal item={video} onClose={()=>setVideo(null)}/>}
       {showLogin&&<LoginModal onClose={()=>setShowLogin(false)} onLogin={doLogin}/>}
 
@@ -531,7 +545,7 @@ function Logo({info,admin,token,onSaveLogo,onHome}){
 function Pill({c}){ return <span style={{background:catColor(c),color:"#fff",fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:6,textTransform:"uppercase",letterSpacing:.5}}>{c}</span>; }
 function PillLink({c,onTopic}){ if(!c)return null; return <a href={topicPath(c)} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0) return; e.preventDefault(); onTopic&&onTopic(c); }} style={{textDecoration:"none",display:"inline-flex"}}><Pill c={c}/></a>; }
 
-function Card({item,big,admin,onOpen,onPlay,onEdit,onDelete,onCopy}){
+function Card({item,big,admin,canEdit,canDelete,onOpen,onPlay,onEdit,onDelete,onCopy}){
   const yt=ytId(item.video);
   // alt = titolo (ricerca immagini e accessibilita'); la card in evidenza carica
   // subito perche' e' l'LCP, le altre solo quando entrano nello schermo.
@@ -545,8 +559,8 @@ function Card({item,big,admin,onOpen,onPlay,onEdit,onDelete,onCopy}){
   const titleLink=(txt,style)=><a href={articlePath(item)} onClick={nav} style={{...style,textDecoration:"none"}}>{txt}</a>;
   const actions=admin&&(<div style={{display:"flex",gap:6}}>
     <button onClick={e=>{e.stopPropagation();onCopy&&onCopy(item);}} title="Copia link articolo" style={{background:"rgba(255,255,255,.92)",border:"1px solid "+C.line,borderRadius:8,padding:6,cursor:"pointer",display:"flex"}}><Ic n="link" s={14} c={C.navySoft}/></button>
-    <button onClick={e=>{e.stopPropagation();onEdit(item);}} style={{background:"rgba(255,255,255,.92)",border:"1px solid "+C.line,borderRadius:8,padding:6,cursor:"pointer",display:"flex"}}><Ic n="edit" s={14} c={C.navySoft}/></button>
-    <button onClick={e=>{e.stopPropagation(); if(confirm("Eliminare questa news?"))onDelete(item.id);}} style={{background:"rgba(255,255,255,.92)",border:"1px solid "+C.line,borderRadius:8,padding:6,cursor:"pointer",display:"flex"}}><Ic n="trash" s={14} c={C.red}/></button>
+    {(!canEdit||canEdit(item))&&<button onClick={e=>{e.stopPropagation();onEdit(item);}} style={{background:"rgba(255,255,255,.92)",border:"1px solid "+C.line,borderRadius:8,padding:6,cursor:"pointer",display:"flex"}}><Ic n="edit" s={14} c={C.navySoft}/></button>}
+    {canDelete!==false&&<button onClick={e=>{e.stopPropagation(); if(confirm("Eliminare questa news?"))onDelete(item.id);}} style={{background:"rgba(255,255,255,.92)",border:"1px solid "+C.line,borderRadius:8,padding:6,cursor:"pointer",display:"flex"}}><Ic n="trash" s={14} c={C.red}/></button>}
   </div>);
   const playBtn=item.video&&<button onClick={e=>{e.stopPropagation();onPlay(item);}} style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%,-50%)",background:"rgba(27,156,217,.95)",border:"none",borderRadius:"50%",width:big?56:44,height:big?56:44,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}><Ic n="play" s={big?24:18} c="#fff" fill="#fff"/></button>;
   const clampStyle=(lines)=>({display:"-webkit-box",WebkitLineClamp:lines,WebkitBoxOrient:"vertical",overflow:"hidden"});
@@ -1275,15 +1289,15 @@ function SpecialForm({token,onClose,note,onSessionDead}){
   </div>);
 }
 
-function SiteFooter({info,admin,onEdit,onPage,onSendNewsletter,onSpecial}){
+function SiteFooter({info,admin,pieno,onEdit,onPage,onSendNewsletter,onSpecial}){
   const hasSocial=SOCIALS.some(s=>info[s.k]);
   const hasContact=info.email||info.phone;
   return (<footer style={{background:C.navy,color:"#fff",marginTop:28}}>
     <div style={{maxWidth:980,margin:"0 auto",padding:"32px 16px 24px"}}>
       {admin&&<div style={{display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap",marginBottom:8}}>
-        <button onClick={onSendNewsletter} style={{display:"flex",alignItems:"center",gap:6,background:C.amber,color:C.navy,border:"none",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:700,cursor:"pointer"}}><Ic n="mail" s={14} c={C.navy}/> Invia newsletter</button>
+        {pieno&&<button onClick={onSendNewsletter} style={{display:"flex",alignItems:"center",gap:6,background:C.amber,color:C.navy,border:"none",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:700,cursor:"pointer"}}><Ic n="mail" s={14} c={C.navy}/> Invia newsletter</button>}
         <button onClick={onSpecial} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",color:C.navy,border:"none",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:700,cursor:"pointer"}}><Ic n="play" s={13} c={C.navy}/> Invio speciale</button>
-        <button onClick={onEdit} style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,.12)",color:"#fff",border:"1px solid rgba(255,255,255,.25)",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}><Ic n="set" s={14} c="#fff"/> Modifica social e contatti</button>
+        {pieno&&<button onClick={onEdit} style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,.12)",color:"#fff",border:"1px solid rgba(255,255,255,.25)",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}><Ic n="set" s={14} c="#fff"/> Modifica social e contatti</button>}
       </div>}
       {(info.about||admin)&&<div id="chisiamo" style={{marginBottom:28,paddingBottom:24,borderBottom:"1px solid rgba(255,255,255,.12)"}}>
         <h3 style={{fontFamily:"Anton",fontSize:20,margin:"0 0 12px",color:"#fff",fontWeight:400}}>Chi siamo</h3>

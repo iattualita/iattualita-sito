@@ -288,6 +288,10 @@ async function redazioneUser(bearer){
     return (u && u.id) ? u : null;
   }catch(e){ return null; }
 }
+// Ruolo "giornalista" (app_metadata, scritto solo dalla dashboard Supabase).
+function isGiornalista(u){
+  return !!(u && u.app_metadata && u.app_metadata.ruolo === "giornalista");
+}
 // Verifica che chi preme il bottone sia la redazione (token Supabase valido)
 async function verifyRedazione(bearer){
   return !!(await redazioneUser(bearer));
@@ -408,7 +412,7 @@ module.exports = {
   sbSelectByEmail, sbSelectByToken, sbInsert, sbPatch,
   brevoSend, newToken, confirmEmailHtml, page, html, json, validEmail,
   rateHit, clientIp,
-  runDigest, verifyRedazione, redazioneUser,
+  runDigest, verifyRedazione, redazioneUser, isGiornalista,
   // usati anche dagli invii speciali (_speciali-lib.js)
   sbHeaders, sbError, inPool, htmlToText, BATCH, CONCURRENCY,
   SUPABASE_URL, REST, FN, emailHead, emailHeader, LOGO_URL, TESTATA_URL, BLU_IA,
