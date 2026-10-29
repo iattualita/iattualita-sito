@@ -11,11 +11,21 @@
 //  5. In home, inietta i link ai 30 articoli piu' recenti (link crawlabili)
 //
 // React sovrascrive il contenuto di #root al mount: l'utente non vede
-// differenza, il crawler riceve il testo gia' pronto. Stesso contenuto,
-// nessun cloaking.
+// differenza, il crawler riceve il testo gia' pronto.
+//
+// ARTICOLI RISERVATI AI LETTORI REGISTRATI
+// Chi non ha fatto l'accesso vede l'anteprima e il blocco "continua a
+// leggere"; il testo integrale lo riceve solo un crawler di Google o Bing
+// VERIFICATO (user-agent + IP negli intervalli ufficiali, shared/crawler.js).
+// Le pagine lo dichiarano con isAccessibleForFree=false e la sezione
+// .paywall, come chiede Google per i contenuti riservati: cosi' non e'
+// cloaking. Il testo sta in Supabase dietro la service_role (migrazione 006):
+// questa funzione lo chiede solo per il crawler verificato.
 
 import { slugify, SERIE_ALIAS, SOCIALS, STATIC_PAGES as PAGES } from "../../shared/site-pages.js";
 import { safeBody } from "../../shared/safe-body.js";
+import { paragrafiAnteprima } from "../../shared/anteprima.js";
+import { crawlerVerificato } from "../../shared/crawler.js";
 
 const SUPABASE_URL = "https://wzkshpgakvasqwrrgkgd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_I3s4phA5Be9qnV4pLbWQMQ_8-IGUE-b";
@@ -104,6 +114,31 @@ async function sb(path) {
   return res.json();
 }
 
+// Colonne dell'articolo leggibili con la chiave pubblica. body e summary non
+// ci sono: dopo la migrazione 006 il pubblico non li puo' leggere.
+const ARTICOLO_COLS =
+  "id,title,subtitle,category,serie,date,created_at,updated_at,image,og_image,video,link,author_name,anteprima";
+
+// Il testo integrale, solo per il crawler verificato. Usa la chiave segreta
+// (variabile d'ambiente, mai nel codice). Se manca, il crawler riceve
+// l'anteprima come tutti: meglio meno SEO che il testo esposto.
+async function sbTestoIntegrale(id) {
+  const key = (globalThis.Netlify && Netlify.env.get("SUPABASE_SERVICE_ROLE_KEY")) || "";
+  if (!key) {
+    console.warn("prerender: SUPABASE_SERVICE_ROLE_KEY non disponibile alle edge function, il crawler riceve l'anteprima");
+    return null;
+  }
+  const h = { apikey: key };
+  if (key.indexOf("eyJ") === 0) h.Authorization = "Bearer " + key;
+  try {
+    const r = await fetch(SUPABASE_URL + "/rest/v1/news?id=eq." + encodeURIComponent(id) + "&select=body,summary&limit=1", { headers: h });
+    if (!r.ok) return null;
+    return (await r.json())[0] || null;
+  } catch {
+    return null;
+  }
+}
+
 
 
 const ALIAS_TO_SERIE = Object.fromEntries(
@@ -114,7 +149,7 @@ const ALIAS_TO_SERIE = Object.fromEntries(
 
 function ogBlock(a) {
   const url = SITE + "/articolo/" + a.id + "/" + slugify(a.title);
-  const desc = clip(a.subtitle || a.summary || a.body);
+  const desc = clip(a.subtitle || a.anteprima || "");
   // og_image (orizzontale 1200×630) ha la precedenza sulla cover verticale
   const hasOg = !!a.og_image;
   const img = a.og_image || a.image || OG_DEFAULT;
@@ -194,7 +229,14 @@ function newsArticleLd(a, url, img, published, modified, desc) {
     dateModified: modified || published || undefined,
     articleSection: a.category || undefined,
     inLanguage: "it-IT",
-    isAccessibleForFree: true,
+    // Il testo completo e' riservato ai lettori registrati: lo si
+    // dichiara a Google, insieme alla parte della pagina che e' riservata.
+    isAccessibleForFree: false,
+    hasPart: {
+      "@type": "WebPageElement",
+      isAccessibleForFree: false,
+      cssSelector: ".paywall",
+    },
     author: a.author_name
       ? { "@type": "Person", name: a.author_name }
       : { "@type": "Organization", name: "Iattualità", url: SITE },
@@ -212,11 +254,31 @@ function newsArticleLd(a, url, img, published, modified, desc) {
   };
 }
 
-function articleHtml(a) {
-  const body =
-    a.body && a.body.trim()
-      ? safeBody(a.body)
-      : "<p>" + esc(a.summary || "").replace(/\n/g, "<br>") + "</p>";
+// Il blocco al posto del testo, per chi non ha fatto l'accesso. React lo
+// sostituisce con il modulo vero (email e codice): qui serve solo a occupare
+// lo stesso spazio e a dire cosa c'e' dopo, anche a chi non esegue script.
+const BLOCCO_ACCESSO = `<div class="paywall" style="margin:4px 0 0;background:#FFFFFF;border:1px solid #E3DFD6;border-radius:16px;padding:20px 18px 22px">
+<p style="font-family:Anton,sans-serif;font-size:24px;line-height:1.1;color:#16243F;margin:0 0 8px">Continua a leggere</p>
+<p style="font-size:15px;line-height:1.5;color:#2A3A57;margin:0">Registrati con la tua email: ti mandiamo un codice di 6 cifre e leggi tutti gli articoli di Iattualità.</p>
+</div>`;
+
+function anteprimaHtml(a) {
+  const par = paragrafiAnteprima(a.anteprima);
+  return par.map((p) => `<p style="margin:0 0 14px">${esc(p)}</p>`).join("") + BLOCCO_ACCESSO;
+}
+
+// completo: { body, summary } solo per il crawler verificato, altrimenti null.
+function articleHtml(a, completo) {
+  const body = completo
+    ? // data-corpo-completo: app.jsx lo raccoglie prima di montare React, cosi'
+      // anche la pagina renderizzata da Google (che esegue JavaScript) mostra
+      // il testo invece del blocco. Esiste solo nella risposta al crawler.
+      `<div class="paywall" data-corpo-completo data-articolo="${esc(a.id)}">${
+        completo.body && completo.body.trim()
+          ? safeBody(completo.body)
+          : "<p>" + esc(completo.summary || "").replace(/\n/g, "<br>") + "</p>"
+      }</div>`
+    : anteprimaHtml(a);
 
   // La cover passa dalla Image CDN: e' la riga che pesava di piu' sull'egress.
   const cover = a.image
@@ -658,8 +720,7 @@ ${socialHtml}
 
   let a = null;
   try {
-    const rows = await sb("news?id=eq." + encodeURIComponent(id) + "&select=*&limit=1");
-    a = rows[0] || null;
+    a = await sbArticolo(id);
   } catch (e) {
     // Due casi diversi, che prima finivano insieme nello stesso ramo.
     //
@@ -671,7 +732,11 @@ ${socialHtml}
     // li' un 404 sarebbe una bugia a Google, che potrebbe deindicizzare un
     // articolo valido. Si serve la shell e React ritentera'.
     const stato = Number(String(e && e.message).match(/supabase (\d+)/)?.[1] || 0);
-    if (stato >= 400 && stato < 500) return notFound(res, html);
+    // Solo 400 vuol dire "id non valido". 401/403 sono permessi negati
+    // (una colonna non aperta al pubblico, vedi migrazione 006): e' un errore
+    // di configurazione nostro, e un 404 con noindex farebbe sparire da Google
+    // tutti gli articoli insieme.
+    if (stato === 400) return notFound(res, html);
     return shell(res, html);
   }
 
@@ -688,9 +753,40 @@ ${socialHtml}
 
   const block = "<!--OG_START-->\n" + ogBlock(a) + "\n<!--OG_END-->";
   html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => block);
-  html = inject(articleHtml(a));
 
-  return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=600") });
+  // Testo integrale solo al crawler verificato. Per tutti gli altri, compresi
+  // quelli che si spacciano per Googlebot, l'anteprima.
+  let completo = null;
+  if (await crawlerVerificato(request.headers.get("user-agent"), context.ip)) {
+    completo = await sbTestoIntegrale(a.id);
+  }
+  html = inject(articleHtml(a, completo));
+
+  // La versione col testo integrale non deve finire in nessuna cache
+  // condivisa, dove potrebbe essere servita a un lettore qualsiasi.
+  return new Response(html, {
+    status: 200,
+    headers: intestazioni(res, completo ? "private, no-store" : "public, max-age=0, s-maxage=600"),
+  });
+}
+
+// Legge l'articolo con le sole colonne pubbliche. Se la colonna anteprima non
+// esiste ancora (migrazione 005 non eseguita) Supabase risponde 400: invece di
+// trasformarlo in un 404 si riprova alla vecchia maniera, che funziona finche'
+// non e' stata eseguita anche la 006, e l'anteprima si ricava da summary.
+async function sbArticolo(id) {
+  try {
+    const rows = await sb("news?id=eq." + encodeURIComponent(id) + "&select=" + ARTICOLO_COLS + "&limit=1");
+    return rows[0] || null;
+  } catch (e) {
+    if (String(e && e.message) !== "supabase 400") throw e;
+    const rows = await sb("news?id=eq." + encodeURIComponent(id) + "&select=*&limit=1");
+    const a = rows[0] || null;
+    if (!a) return null;
+    const t = String(a.summary || "").trim();
+    const { body, summary, ...pubblico } = a;
+    return { ...pubblico, anteprima: t.slice(0, Math.min(600, Math.max(160, Math.floor(t.length / 3)))) };
+  }
 }
 
 // path "/*" serve per restituire un 404 vero sugli URL inesistenti: senza,

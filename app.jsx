@@ -3,6 +3,7 @@
 // prerender.js, e bastava aggiornarne uno per far vedere a Google una
 // versione diversa da quella del lettore.
 import { slugify, SERIE_ALIAS, seriePath, SOCIALS, STATIC_PAGES } from "./shared/site-pages.js";
+import { paragrafiAnteprima } from "./shared/anteprima.js";
 
 const { useState, useEffect } = React;
 
@@ -88,12 +89,28 @@ async function authed(token,run){
 function tokenClaims(t){ try{ const b=t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"); return JSON.parse(decodeURIComponent(escape(atob(b+"===".slice((b.length+3)%4))))); }catch(e){ return {}; } }
 function tokenRuolo(t){ const c=t?tokenClaims(t):{}; return (c.app_metadata&&c.app_metadata.ruolo)||""; }
 async function apiMyNewsIds(token,uid){ try{ const r=await authed(token,t=>fetch(API+"/news?select=id&created_by=eq."+encodeURIComponent(uid),{headers:hdr(t)})); return r.ok?(await r.json()).map(x=>x.id):[]; }catch(e){ return []; } }
-// La lista NON scarica il campo body. Con select=* ogni visitatore si portava
-// a casa il testo integrale di TUTTO l'archivio per mostrare qualche card, e il
-// peso cresceva a ogni articolo pubblicato. Il body arriva solo quando serve.
-const LIST_COLS = "id,title,subtitle,summary,category,serie,date,created_at,updated_at,image,og_image,video,link,featured,author_name";
-async function apiGetNews(){ try{ const r=await fetch(API+"/news?select="+LIST_COLS+"&order=date.desc.nullslast,created_at.desc",{headers:hdr()}); return r.ok?await r.json():[]; }catch(e){ return []; } }
-async function apiGetArticle(id){ try{ const r=await fetch(API+"/news?id=eq."+encodeURIComponent(id)+"&select=*&limit=1",{headers:hdr()}); const a=r.ok?await r.json():[]; return a[0]||null; }catch(e){ return null; } }
+// La lista NON scarica il testo degli articoli. Prima ogni visitatore si
+// portava a casa summary, cioe' il testo integrale di TUTTO l'archivio senza
+// formattazione. Ora il testo (body e summary) e' riservato ai lettori
+// registrati e la chiave pubblica non lo legge piu' (migrazione 006): qui si
+// chiede solo anteprima, l'inizio calcolato dal database (migrazione 005).
+//
+// Se una colonna chiesta qui non e' aperta al pubblico, Supabase risponde
+// 401/400 e il sito resta vuoto: una colonna nuova di news va aperta con
+// grant select (vedi 006_chiudi_testo_articoli.sql).
+const PUB_COLS = "id,title,subtitle,anteprima,category,serie,date,created_at,updated_at,image,og_image,video,link,featured,author_name";
+// Le stesse senza anteprima: servono solo nel passaggio fra la pubblicazione
+// del sito e l'esecuzione della 005, quando la colonna non esiste ancora.
+const PUB_COLS_PRIMA = PUB_COLS.replace(",anteprima","");
+async function pubSelect(query){
+  let r=await fetch(API+"/news?select="+PUB_COLS+query,{headers:hdr()});
+  if(r.status===400) r=await fetch(API+"/news?select="+PUB_COLS_PRIMA+query,{headers:hdr()});
+  return r.ok?await r.json():[];
+}
+async function apiGetNews(){ try{ return await pubSelect("&order=date.desc.nullslast,created_at.desc"); }catch(e){ return []; } }
+async function apiGetArticle(id){ try{ const a=await pubSelect("&id=eq."+encodeURIComponent(id)+"&limit=1"); return a[0]||null; }catch(e){ return null; } }
+// La redazione legge tutto, testo compreso, con il proprio accesso.
+async function apiGetArticleRedazione(token,id){ try{ const r=await authed(token,t=>fetch(API+"/news?id=eq."+encodeURIComponent(id)+"&select=*&limit=1",{headers:hdr(t)})); const a=r.ok?await r.json():[]; return a[0]||null; }catch(e){ return null; } }
 async function apiGetInfo(){ try{ const r=await fetch(API+"/site_info?id=eq.1&select=*",{headers:hdr()}); const a=r.ok?await r.json():[]; return a[0]||null; }catch(e){ return null; } }
 // Campo trappola per i bot: sta nel DOM ma esce dallo schermo, non prende il
 // focus col tab e gli screen reader lo ignorano. Volutamente NON display:none,
@@ -105,19 +122,54 @@ const Honeypot=({value,onChange})=>(
          tabIndex={-1} autoComplete="off" aria-hidden="true" style={hpStyle}/>
 );
 
-async function apiSubscribe(email,trap){
-  // Passa dalla funzione serverless: e' lei che invia la mail di conferma
-  // (la chiave Brevo resta lato server, mai nel browser).
-  // "website" e' il campo trappola (vedi hpStyle): per un lettore vero arriva
-  // sempre vuoto, perche' il campo e' fuori dallo schermo e non riceve il
-  // focus. Se arriva pieno, il server sa che a compilarlo e' stato un bot.
-  const r=await fetch("/.netlify/functions/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:email,website:trap||""})});
+
+// ====== ACCESSO DEI LETTORI ======
+// Registrazione con email e codice a 6 cifre: chi entra legge gli
+// articoli interi, chi no vede l'anteprima. I lettori NON sono utenti
+// Supabase (quelli sono la redazione): la sessione e' un cookie firmato dalle
+// funzioni Netlify (_lettori-lib.js), che il sito non puo' leggere.
+//
+// Il sito vede solo un secondo cookie senza segreti, iatt_lettore=1, che
+// dice "questo browser ha fatto l'accesso". Serve a non chiamare il server a
+// ogni pagina: chi non e' registrato non fa partire nessuna funzione.
+function haSessione(){ try{ return /(?:^|;\s*)iatt_lettore=1(?:;|$)/.test(document.cookie||""); }catch(e){ return false; } }
+async function postJson(url,obj){
+  const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify(obj||{})});
   let d={}; try{ d=await r.json(); }catch(e){}
-  if(!r.ok) throw new Error((d&&d.message)||"Iscrizione non riuscita. Riprova tra poco.");
-  return (d&&d.state)||"sent";   // sent | resent | already_confirmed
+  return {ok:r.ok,status:r.status,d};
 }
-async function apiAddNews(token,o){ const r=await authed(token,t=>fetch(API+"/news",{method:"POST",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(o)})); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
-async function apiUpdNews(token,id,o){ const r=await authed(token,t=>fetch(API+"/news?id=eq."+id,{method:"PATCH",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(o)})); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
+async function apiCodice(email,newsletter,trap){
+  const {ok,d}=await postJson("/.netlify/functions/accesso-codice",{email,newsletter:!!newsletter,website:trap||""});
+  if(!ok) throw new Error((d&&d.message)||"Non siamo riusciti a mandarti il codice. Riprova tra poco.");
+}
+async function apiVerifica(email,codice){
+  const {ok,d}=await postJson("/.netlify/functions/accesso-verifica",{email,codice});
+  if(!ok){ const e=new Error((d&&d.message)||"Codice non valido."); e.scaduto=d&&d.error==="scaduto"; throw e; }
+  return d;   // { ok, newsletter: null | "iscritto" | "gia_iscritto" | "errore" }
+}
+async function apiLettore(azione){ return postJson("/.netlify/functions/lettore",{azione}); }
+// Testo integrale per chi ha fatto l'accesso. 401 = sessione non piu' valida.
+async function apiCorpo(id){
+  try{
+    const r=await fetch("/.netlify/functions/articolo-completo?id="+encodeURIComponent(id),{credentials:"same-origin"});
+    if(!r.ok) return {status:r.status};
+    const d=await r.json(); return {status:200,body:d.body||""};
+  }catch(e){ return {status:0}; }
+}
+// Il prerender consegna il testo integrale solo al crawler verificato di
+// Google o Bing (shared/crawler.js), dentro .paywall[data-corpo-completo].
+// Va raccolto PRIMA che React monti e sostituisca il contenuto di #root:
+// Google esegue JavaScript, e senza questo nella pagina renderizzata
+// vedrebbe il blocco invece del testo. Per un lettore qualunque l'elemento
+// non esiste, quindi qui non c'e' niente da raccogliere.
+const CORPO_SSR=(()=>{ try{ const el=document.querySelector("#root .paywall[data-corpo-completo]"); return el?{id:el.getAttribute("data-articolo"),html:el.innerHTML}:null; }catch(e){ return null; } })();
+function traccia(evento){ try{ if(window.umami&&window.umami.track) window.umami.track(evento); }catch(e){} }
+// anteprima e' calcolata dal database (colonna generata, migrazione 005):
+// mandarla in un salvataggio fa rispondere "can only be updated to DEFAULT".
+// L'oggetto dell'editor la contiene perche' arriva dalla lettura dell'articolo.
+const senzaCalcolate=(o)=>{ const {anteprima,completo,...resto}=o||{}; return resto; };
+async function apiAddNews(token,o){ const r=await authed(token,t=>fetch(API+"/news",{method:"POST",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(senzaCalcolate(o))})); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
+async function apiUpdNews(token,id,o){ const r=await authed(token,t=>fetch(API+"/news?id=eq."+id,{method:"PATCH",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(senzaCalcolate(o))})); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
 async function apiDelNews(token,id){ const r=await authed(token,t=>fetch(API+"/news?id=eq."+id,{method:"DELETE",headers:hdr(t)})); if(!r.ok)throw new Error(await r.text()); }
 async function apiUpdInfo(token,o){ const r=await authed(token,t=>fetch(API+"/site_info?id=eq.1",{method:"PATCH",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(o)})); if(!r.ok)throw new Error(await r.text()); return (await r.json())[0]; }
 async function apiLogin(email,password){ const r=await fetch(SUPABASE_URL+"/auth/v1/token?grant_type=password",{method:"POST",headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json"},body:JSON.stringify({email,password})}); const d=await r.json(); if(!r.ok)throw new Error(d.error_description||d.msg||"Accesso non riuscito"); return d; }
@@ -325,6 +377,14 @@ function App(){
   const [menuOpen,setMenuOpen]=useState(false);
   const [articleId,setArticleId]=useState(null);
   const [full,setFull]=useState(null);
+  // Lettore registrato: true se questo browser ha fatto l'accesso. Si parte
+  // dal cookie-segnale; se il server dice che la sessione non vale piu'
+  // (account cancellato, cookie scaduto) torna false.
+  const [lettore,setLettore]=useState(haSessione);
+  // Finestra di accesso: null chiusa, "menu" aperta dal pulsante Accedi,
+  // "popup" aperta da sola in home dopo qualche secondo.
+  const [accesso,setAccesso]=useState(null);
+  const [tentativo,setTentativo]=useState(0);   // "Riprova" sul testo che non e' arrivato
   useEffect(()=>{ setShown(LIST_STEP); },[activeCat,activeSerie,query,view]);
 
   const adminGate=(window.location.search+window.location.hash).toLowerCase().includes("admin");
@@ -339,9 +399,31 @@ function App(){
   useEffect(()=>{ (async()=>{ const [n,i]=await Promise.all([apiGetNews(),apiGetInfo()]); setNews(n); if(i)setInfo({...DEFAULT_INFO,...i,logo_cfg:i.logo_cfg||DEFAULT_INFO.logo_cfg}); setLoading(false); })(); },[]);
 
   const reloadNews=async()=>setNews(await apiGetNews());
-  useEffect(()=>{ let alive=true; if(!articleId){ setFull(null); return; } (async()=>{ const a=await apiGetArticle(articleId); if(alive)setFull(a); })(); return ()=>{ alive=false; }; },[articleId]);
+  // Il testo integrale arriva da tre strade diverse, secondo chi legge:
+  //   redazione -> direttamente da Supabase con il proprio accesso
+  //   crawler   -> gia' nella pagina (CORPO_SSR), consegnato dal prerender
+  //   lettore   -> dalla funzione articolo-completo, che controlla il cookie
+  // Tutti gli altri ricevono l'articolo senza testo: ArticlePage mostra
+  // l'anteprima e il modulo di accesso. completo:true segna chi ha il testo.
+  useEffect(()=>{ let alive=true; if(!articleId){ setFull(null); return; } (async()=>{
+    let a=null;
+    if(token){ a=await apiGetArticleRedazione(token,articleId); if(a)a={...a,completo:true}; }
+    else {
+      a=await apiGetArticle(articleId);
+      if(a&&CORPO_SSR&&String(CORPO_SSR.id)===String(a.id)) a={...a,body:CORPO_SSR.html,completo:true};
+      else if(a&&lettore){
+        const c=await apiCorpo(articleId);
+        if(c.status===200) a={...a,body:c.body,completo:true};
+        else if(c.status===401){ if(alive)setLettore(false); }
+        else a={...a,erroreCorpo:true};
+      }
+    }
+    if(alive)setFull(a);
+  })(); return ()=>{ alive=false; }; },[articleId,token,lettore,tentativo]);
   // L'editor ha bisogno del testo completo, che nella lista non c'e' piu'.
-  const openEditor=async(i)=>{ const f=await apiGetArticle(i.id); setEditing(f||i); setShowForm(true); };
+  // Se il testo non arriva NON si apre l'editor con la scheda della lista:
+  // la lista non ha body, e salvando si cancellerebbe l'articolo.
+  const openEditor=async(i)=>{ const f=await apiGetArticleRedazione(token,i.id); if(!f||f.body===undefined){ alert("Non riesco a caricare il testo dell'articolo. Controlla la connessione o rifai l'accesso, poi riprova: l'editor non si apre per non salvare un articolo vuoto."); return; } setEditing(f); setShowForm(true); };
   const saveItem=async(item)=>{ try{ const {id,...rest}=item; if(id)await apiUpdNews(token,id,rest); else await apiAddNews(token,rest); await reloadNews(); setShowForm(false); setEditing(null); note("Salvato."); }catch(e){ const m=String(e.message||e); if(m.indexOf("Sessione scaduta")===0) setShowLogin(true); alert("Errore nel salvataggio:\n\n"+m); } };
   const removeItem=async(id)=>{ try{ await apiDelNews(token,id); await reloadNews(); note("Eliminato."); }catch(e){ alert("Errore:\n\n"+(e.message||e)); } };
   const saveInfo=async(next)=>{ try{ const {id,...rest}=next; const r=await apiUpdInfo(token,rest); setInfo({...DEFAULT_INFO,...r}); setShowInfo(false); note("Aggiornato."); }catch(e){ const m=String(e.message||e); if(m.indexOf("Sessione scaduta")===0) setShowLogin(true); alert("Errore salvataggio:\n\n"+m); } };
@@ -377,6 +459,45 @@ function App(){
       note("Newsletter inviata a "+inviate+" iscritti"+(fallite?" ("+fallite+" falliti)":"")+".");
     }catch(e){ const m=String(e.message||e); if(/JWT|Sessione scaduta/i.test(m)) setShowLogin(true); alert("Newsletter:\n\n"+m); }
   };
+  // Accesso del lettore riuscito (da qualunque punto: articolo, popup, menu,
+  // pagina newsletter). Cambiare "lettore" fa ripartire la lettura
+  // dell'articolo aperto, che questa volta arriva intero.
+  const entrato=(d)=>{
+    setLettore(true); setAccesso(null);
+    traccia("accesso_completato");
+    const nl=d&&d.newsletter;
+    note(nl==="iscritto"?"Fatto: sei dentro e sei iscritto alla newsletter.":nl==="gia_iscritto"?"Fatto: sei dentro. Eri già iscritto alla newsletter.":nl==="errore"?"Sei dentro. L'iscrizione alla newsletter non è riuscita: riprova dalla pagina Newsletter.":"Fatto: buona lettura.");
+  };
+  const esci=async()=>{ setMenuOpen(false); await apiLettore("esci"); setLettore(false); note("Sei uscito."); };
+  const eliminaAccount=async()=>{
+    setMenuOpen(false);
+    if(!window.confirm("Vuoi cancellare il tuo account?\n\nPer leggere di nuovo gli articoli interi dovrai registrarti un'altra volta. La newsletter, se la ricevi, resta attiva: per disiscriverti usa il link in fondo a ogni email.")) return;
+    const r=await apiLettore("elimina");
+    if(r.ok||r.status===401){ setLettore(false); note("Account cancellato."); }
+    else alert("Non siamo riusciti a cancellare l'account. Riprova tra poco o scrivici a redazione@iattualita.it.");
+  };
+
+  // Popup in home: compare da solo dopo qualche secondo, una volta per
+  // sessione, e non torna per una settimana se lo chiudi. Solo in home, mai
+  // sugli articoli: li' il modulo sta gia' dove il testo si interrompe, e un
+  // popup che copre la pagina appena arrivati da Google viene penalizzato
+  // nei risultati da mobile.
+  const POPUP_SECONDI=8, POPUP_PAUSA_GIORNI=7;
+  useEffect(()=>{
+    if(view!=="home"||lettore||admin||adminGate||accesso) return;
+    let visto=false;
+    try{ visto=sessionStorage.getItem("iatt_popup_visto")==="1"; }catch(e){}
+    try{ const t=Number(localStorage.getItem("iatt_popup_chiuso")||0); if(t&&Date.now()-t<POPUP_PAUSA_GIORNI*864e5) visto=true; }catch(e){}
+    if(visto) return;
+    const timer=setTimeout(()=>{
+      if(showForm||showLogin||showInfo||showSpecial||video) return;
+      try{ sessionStorage.setItem("iatt_popup_visto","1"); }catch(e){}
+      setAccesso("popup"); traccia("popup_mostrato");
+    },POPUP_SECONDI*1000);
+    return ()=>clearTimeout(timer);
+  },[view,lettore,admin,adminGate,accesso,showForm,showLogin,showInfo,showSpecial,video]);
+  const chiudiAccesso=()=>{ if(accesso==="popup"){ try{ localStorage.setItem("iatt_popup_chiuso",String(Date.now())); }catch(e){} traccia("popup_chiuso"); } setAccesso(null); };
+
   const doLogin=async(email,password)=>{ const d=await apiLogin(email,password); setToken(setSession(d)); setShowLogin(false); note("Bentornato in redazione."); };
   const logout=()=>{ setToken(null); note("Uscito dalla redazione."); };
 
@@ -408,7 +529,7 @@ function App(){
   const filtered=news
     .filter(n=> view!=="serie" ? true : (n.serie===activeSerie))
     .filter(n=>activeCat==="Tutte"||n.category===activeCat)
-    .filter(n=>{ if(!query.trim())return true; const q=query.toLowerCase(); return (n.title||"").toLowerCase().includes(q)||(n.subtitle||"").toLowerCase().includes(q)||(n.summary||"").toLowerCase().includes(q)||(n.category||"").toLowerCase().includes(q); });
+    .filter(n=>{ if(!query.trim())return true; const q=query.toLowerCase(); return (n.title||"").toLowerCase().includes(q)||(n.subtitle||"").toLowerCase().includes(q)||(n.anteprima||"").toLowerCase().includes(q)||(n.category||"").toLowerCase().includes(q); });
   const featured=filtered.find(n=>n.featured)||filtered[0];
   const rest=filtered.filter(n=>featured&&n.id!==featured.id);
   // La card della lista basta per titolo, cover e sottotitolo: si mostra subito.
@@ -429,6 +550,7 @@ function App(){
           <Logo info={info} admin={pieno} token={token} onSaveLogo={saveLogo} onHome={()=>go("home","top")} />
           <div style={{flex:1}}/>
           {admin&&<button onClick={()=>{setEditing(null);setShowForm(true);}} style={{display:"flex",alignItems:"center",background:C.blue,color:"#fff",border:"none",borderRadius:10,padding:"9px 12px",fontWeight:700,fontSize:14,cursor:"pointer",flexShrink:0}}><Ic n="plus" s={17} c="#fff"/><span className="btn-label" style={{marginLeft:6}}>Aggiungi</span></button>}
+          {!admin&&!lettore&&<button onClick={()=>{ setMenuOpen(false); setAccesso("menu"); traccia("accedi_cliccato"); }} style={{display:"flex",alignItems:"center",gap:6,background:C.navy,color:"#fff",border:"none",borderRadius:10,height:40,padding:"0 14px",fontWeight:700,fontSize:14,cursor:"pointer",flexShrink:0,fontFamily:"Barlow"}}><Ic n="lock" s={15} c="#fff"/>Accedi</button>}
           {(adminGate||admin)&&<button onClick={()=> admin? logout() : setShowLogin(true)} aria-label={admin?"Esci dalla redazione":"Accesso redazione"} title={admin?"Esci":"Accesso redazione"} style={{display:"flex",alignItems:"center",justifyContent:"center",background:admin?C.navy:C.cream,color:admin?"#fff":C.gray,border:"1px solid "+(admin?C.navy:C.line),borderRadius:10,width:40,height:40,cursor:"pointer",flexShrink:0}}><Ic n={admin?"unlock":"lock"} s={16} c={admin?"#fff":C.gray}/></button>}
           <button onClick={()=>setMenuOpen(o=>!o)} aria-label={menuOpen?"Chiudi il menu":"Apri il menu"} aria-expanded={menuOpen} title="Menu" style={{display:"flex",alignItems:"center",justifyContent:"center",background:C.cream,color:C.navy,border:"1px solid "+C.line,borderRadius:10,width:40,height:40,cursor:"pointer",flexShrink:0}}><Ic n={menuOpen?"x":"menu"} s={19} c={C.navy}/></button>
           {menuOpen&&<nav style={{flexBasis:"100%",display:"flex",flexDirection:"column",gap:2,paddingTop:6,marginTop:6,borderTop:"1px solid "+C.line}}>
@@ -442,6 +564,13 @@ function App(){
             <button onClick={()=>openPage("social")} style={menuItem}>Social</button>
             <button onClick={()=>openPage("contatti")} style={menuItem}>Contatti</button>
             <button onClick={()=>openPage("newsletter")} style={menuItem}>Newsletter</button>
+            {!admin&&(lettore
+              ? <React.Fragment>
+                  <div style={{borderTop:"1px solid "+C.line,margin:"6px 0 2px"}}/>
+                  <button onClick={esci} style={menuItem}>Esci</button>
+                  <button onClick={eliminaAccount} style={{...menuItem,fontSize:14,color:C.gray}}>Cancella il mio account</button>
+                </React.Fragment>
+              : <button onClick={()=>{ setMenuOpen(false); setAccesso("menu"); }} style={menuItem}>Accedi o registrati</button>)}
           </nav>}
         </div>
       </header>
@@ -450,7 +579,7 @@ function App(){
           raggiungibile dal focus via programma senza inserirlo nel giro del
           tab: chi salta qui riprende a tabulare dal contenuto, non da capo. */}
       <div id="contenuto" tabIndex={-1} style={{outline:"none"}}>
-      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="newsletter" ? <NewsletterPage/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
+      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic} lettore={lettore} onEntrato={entrato} onRiprova={()=>setTentativo(t=>t+1)} onPage={openPage}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="newsletter" ? <NewsletterPage lettore={lettore} onEntrato={entrato} onSessioneScaduta={()=>setLettore(false)} onPage={openPage}/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
       <main id="top" style={{maxWidth:980,margin:"0 auto",padding:"16px"}}>
         {view==="archivio"&&<div style={{marginBottom:14}}><div style={{fontFamily:"Anton",fontSize:26,color:C.navy}}>Archivio</div><div style={{fontSize:14,color:C.gray}}>Tutti gli articoli di Iattualità. Cerca o filtra per argomento.</div></div>}
         {view==="serie"&&activeSerie&&<div style={{marginBottom:16,background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"14px 16px"}}>
@@ -507,6 +636,7 @@ function App(){
       {showInfo&&pieno&&<InfoModal initial={info} onClose={()=>setShowInfo(false)} onSave={saveInfo}/>}
       {video&&<VideoModal item={video} onClose={()=>setVideo(null)}/>}
       {showLogin&&<LoginModal onClose={()=>setShowLogin(false)} onLogin={doLogin}/>}
+      {accesso&&!lettore&&<AccessoModal variante={accesso} onClose={chiudiAccesso} onEntrato={entrato} onPage={(k)=>{ setAccesso(null); openPage(k); }}/>}
 
       {toast&&<div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",background:C.navy,color:"#fff",padding:"11px 18px",borderRadius:10,fontSize:14,fontWeight:600,zIndex:80,maxWidth:"90vw",textAlign:"center"}}>{toast}</div>}
       <style>{`*{box-sizing:border-box}*::-webkit-scrollbar{height:6px;width:6px}*::-webkit-scrollbar-thumb{background:${C.line};border-radius:3px}html{scroll-behavior:smooth}html,body{margin:0;padding:0;width:100%;max-width:100%;overflow-x:hidden}img,iframe,video{max-width:100%}@media(max-width:560px){.tagline{display:none}.btn-label{display:none}}.article-body h2{font-family:Anton;font-weight:400;font-size:24px;color:${C.navy};margin:22px 0 8px;line-height:1.15}.article-body h3{font-family:Anton;font-weight:400;font-size:19px;color:${C.navy};margin:18px 0 6px;line-height:1.2}.article-body p{margin:0 0 14px}.article-body ul,.article-body ol{margin:0 0 14px;padding-left:22px}.article-body li{margin:4px 0}.article-body a{color:${C.blueDeep};font-weight:600}.article-body blockquote{border-left:4px solid ${C.amber};margin:16px 0;padding:8px 16px;color:${C.navy};font-style:italic;background:${C.cream};border-radius:0 8px 8px 0}.article-body hr{border:none;border-top:1px solid ${C.line};margin:22px 0}.article-body img{border-radius:12px;margin:8px 0}.article-body b,.article-body strong{color:${C.navy}}.rich-input:empty:before{content:"Scrivi qui l'articolo…";color:${C.gray}}.rich-input p{margin:0 0 12px}.rich-input h2{font-family:Anton;font-weight:400;font-size:22px;color:${C.navy};margin:14px 0 6px}.rich-input h3{font-family:Anton;font-weight:400;font-size:18px;color:${C.navy};margin:12px 0 6px}.rich-input ul,.rich-input ol{padding-left:22px}.rich-input a{color:${C.blueDeep}}.rich-input blockquote{border-left:4px solid ${C.amber};margin:12px 0;padding:6px 14px;font-style:italic;background:#fff;border-radius:0 8px 8px 0}.rich-input hr{border:none;border-top:1px solid ${C.line};margin:16px 0}`}</style>
@@ -579,7 +709,7 @@ function Card({item,big,admin,canEdit,canDelete,onOpen,onPlay,onEdit,onDelete,on
         {playBtn}
         <div style={{position:"absolute",bottom:14,left:16,right:16}}><h2 style={{fontFamily:"Anton",fontSize:"clamp(20px,5vw,30px)",margin:0,lineHeight:1.05}}>{titleLink(item.title,{color:"#F5F5F5"})}</h2></div>
       </div>
-      <div style={{padding:"14px 16px"}}>{item.subtitle? <p style={{margin:"0 0 10px",fontSize:15,color:C.navySoft,lineHeight:1.45,fontWeight:600}}>{item.subtitle}</p> : item.summary? <p style={{margin:"0 0 10px",fontSize:15,color:C.navySoft,lineHeight:1.45,...clampStyle(2)}}>{item.summary}</p> : null}{meta}</div>
+      <div style={{padding:"14px 16px"}}>{item.subtitle? <p style={{margin:"0 0 10px",fontSize:15,color:C.navySoft,lineHeight:1.45,fontWeight:600}}>{item.subtitle}</p> : item.anteprima? <p style={{margin:"0 0 10px",fontSize:15,color:C.navySoft,lineHeight:1.45,...clampStyle(2)}}>{item.anteprima}</p> : null}{meta}</div>
     </div>
   );
   return (
@@ -591,30 +721,32 @@ function Card({item,big,admin,canEdit,canDelete,onOpen,onPlay,onEdit,onDelete,on
       </div>
       <div style={{padding:"12px 14px",flex:1,display:"flex",flexDirection:"column"}}>
         <h3 style={{fontFamily:"Anton",fontSize:18,margin:"0 0 6px",lineHeight:1.1}}>{titleLink(item.title,{color:C.navy})}</h3>
-        {item.subtitle? <p style={{margin:"0 0 10px",fontSize:13.5,color:C.navySoft,lineHeight:1.4,fontWeight:600}}>{item.subtitle}</p> : item.summary? <p style={{margin:"0 0 10px",fontSize:13.5,color:C.navySoft,lineHeight:1.4,...clampStyle(3)}}>{item.summary}</p> : null}
+        {item.subtitle? <p style={{margin:"0 0 10px",fontSize:13.5,color:C.navySoft,lineHeight:1.4,fontWeight:600}}>{item.subtitle}</p> : item.anteprima? <p style={{margin:"0 0 10px",fontSize:13.5,color:C.navySoft,lineHeight:1.4,...clampStyle(3)}}>{item.anteprima}</p> : null}
         {meta}
       </div>
     </div>
   );
 }
 
-function ArticlePage({item,news,onOpen,loading,onBack,onCopy,note,onTopic}){
+function ArticlePage({item,news,onOpen,loading,onBack,onCopy,note,onTopic,lettore,onEntrato,onRiprova,onPage}){
   useEffect(()=>{ if(item){
     document.title=item.title+" · Iattualità";
     const setP=(p,v)=>{ let m=document.querySelector('meta[property="'+p+'"]'); if(!m){ m=document.createElement("meta"); m.setAttribute("property",p); document.head.appendChild(m);} m.setAttribute("content",v||""); };
     const setN=(n,v)=>{ let m=document.querySelector('meta[name="'+n+'"]'); if(!m){ m=document.createElement("meta"); m.setAttribute("name",n); document.head.appendChild(m);} m.setAttribute("content",v||""); };
-    const desc=(item.subtitle||item.summary||"").toString().slice(0,300);
+    const desc=(item.subtitle||item.anteprima||"").toString().slice(0,300);
     setP("og:title",item.title); setP("og:description",desc); setP("og:type","article"); setP("og:url",articleFullUrl(item)); if(item.image)setP("og:image",item.image);
     setN("description",desc);
     const iso=(d)=>{ try{ return d?new Date(d).toISOString():undefined; }catch(e){ return undefined; } };
-    const ld={ "@context":"https://schema.org","@type":"NewsArticle","headline":(item.title||"").slice(0,110),"description":desc,"datePublished":iso(item.date||item.created_at),"dateModified":iso(item.updated_at||item.date||item.created_at),"author":item.author_name?{"@type":"Person","name":item.author_name}:{"@type":"Organization","name":"Iattualità"},"publisher":{"@type":"Organization","name":"Iattualità","logo":{"@type":"ImageObject","url":"https://iattualita.it/favicon-192.png"}},"mainEntityOfPage":{"@type":"WebPage","@id":articleFullUrl(item)},"articleSection":item.category };
+    const ld={ "@context":"https://schema.org","@type":"NewsArticle","headline":(item.title||"").slice(0,110),"description":desc,"datePublished":iso(item.date||item.created_at),"dateModified":iso(item.updated_at||item.date||item.created_at),"author":item.author_name?{"@type":"Person","name":item.author_name}:{"@type":"Organization","name":"Iattualità"},"publisher":{"@type":"Organization","name":"Iattualità","logo":{"@type":"ImageObject","url":"https://iattualita.it/favicon-192.png"}},"mainEntityOfPage":{"@type":"WebPage","@id":articleFullUrl(item)},"articleSection":item.category,
+      // Testo riservato ai lettori registrati: stessa dichiarazione del prerender.
+      "isAccessibleForFree":false,"hasPart":{"@type":"WebPageElement","isAccessibleForFree":false,"cssSelector":".paywall"} };
     if(item.image)ld.image=[item.image];
     let s=document.getElementById("ld-article"); if(!s){ s=document.createElement("script"); s.type="application/ld+json"; s.id="ld-article"; document.head.appendChild(s); } s.textContent=JSON.stringify(ld);
   } return ()=>{ document.title="Iattualità · L'informazione intelligente e in tempo reale"; const s=document.getElementById("ld-article"); if(s)s.remove(); }; },[item]);
   const backBtn=(<button onClick={onBack} style={{display:"inline-flex",alignItems:"center",gap:6,background:"none",border:"none",color:C.blueDeep,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",marginBottom:12}}>‹ Torna alle news</button>);
   if(!item) return (<main style={{maxWidth:760,margin:"0 auto",padding:"40px 16px",textAlign:"center"}}>{loading? <ScheletroArticolo/> : <React.Fragment><div style={{fontFamily:"Anton",fontSize:22,color:C.navy,marginBottom:8}}>Articolo non trovato</div><p style={{color:C.gray,marginBottom:16,fontSize:14.5}}>Il link potrebbe non essere più valido.</p>{backBtn}</React.Fragment>}</main>);
   const yt=ytId(item.video);
-  const share=()=>{ const url=articleFullUrl(item); if(navigator.share){ navigator.share({title:item.title,text:item.subtitle||item.summary||"",url}).catch(()=>{}); } else { onCopy&&onCopy(item); } };
+  const share=()=>{ const url=articleFullUrl(item); if(navigator.share){ navigator.share({title:item.title,text:item.subtitle||"",url}).catch(()=>{}); } else { onCopy&&onCopy(item); } };
   return (
     <main style={{maxWidth:760,margin:"0 auto",padding:"18px 16px 8px"}}>
       {backBtn}
@@ -627,7 +759,9 @@ function ArticlePage({item,news,onOpen,loading,onBack,onCopy,note,onTopic}){
       <h1 style={{fontFamily:"Anton",fontSize:"clamp(26px,6vw,40px)",color:C.navy,margin:"0 0 12px",fontWeight:400,lineHeight:1.08,letterSpacing:.2}}>{item.title}</h1>
       {item.subtitle&&<p style={{fontSize:19,color:C.navy,lineHeight:1.4,margin:"0 0 16px",fontWeight:700}}>{item.subtitle}</p>}
       {(item.image||yt)&&<div style={{borderRadius:16,overflow:"hidden",marginBottom:18,background:C.navy}}>{item.image? <img src={imgCDN(item.image,900)} onError={e=>onImgErr(e,item.image)} alt={item.title} fetchpriority="high" decoding="async" style={{width:"100%",display:"block"}}/> : <img src={"https://img.youtube.com/vi/"+yt+"/hqdefault.jpg"} alt={item.title} decoding="async" style={{width:"100%",display:"block"}}/>}</div>}
-      {(item.body&&item.body.trim())? <div className="article-body" style={{fontSize:17,color:C.navySoft,lineHeight:1.7}} dangerouslySetInnerHTML={{__html:sanitizeHtml(item.body)}}/> : item.summary? <div style={{fontSize:17,color:C.navySoft,lineHeight:1.7,whiteSpace:"pre-line"}}>{item.summary}</div> : null}
+      {item.completo
+        ? ((item.body&&item.body.trim())? <div className="article-body paywall" style={{fontSize:17,color:C.navySoft,lineHeight:1.7}} dangerouslySetInnerHTML={{__html:sanitizeHtml(item.body)}}/> : item.summary? <div className="paywall" style={{fontSize:17,color:C.navySoft,lineHeight:1.7,whiteSpace:"pre-line"}}>{item.summary}</div> : null)
+        : <AnteprimaBloccata item={item} lettore={lettore} onEntrato={onEntrato} onRiprova={onRiprova} onPage={onPage}/>}
       {item.video&&yt&&<div style={{marginTop:20,aspectRatio:"16/9",background:"#000",borderRadius:14,overflow:"hidden"}}><iframe src={"https://www.youtube.com/embed/"+yt} style={{width:"100%",height:"100%",border:"none"}} allowFullScreen/></div>}
       {item.video&&!yt&&<div style={{marginTop:20}}><a href={item.video} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:8,background:C.blue,color:"#fff",padding:"11px 20px",borderRadius:10,textDecoration:"none",fontWeight:700}}>Guarda il video su {platform(item.video)} <Ic n="ext" s={16} c="#fff"/></a></div>}
       {item.link&&<div style={{marginTop:20,paddingTop:16,borderTop:"1px solid "+C.line}}><a href={item.link} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:6,color:C.blueDeep,textDecoration:"none",fontWeight:700,fontSize:14.5}}>Vedi il post originale su {platform(item.link)} <Ic n="ext" s={14} c={C.blueDeep}/></a></div>}
@@ -992,14 +1126,8 @@ function ContactPage({info}){
   );
 }
 
-function NewsletterPage(){
-  const [email,setEmail]=useState("");
-  const [trap,setTrap]=useState("");
-  const [consenso,setConsenso]=useState(false);
-  const [state,setState]=useState("idle"); // idle | busy | done | already | error
-  const [msg,setMsg]=useState("");
-  const emailOk=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
-  const valid=emailOk&&consenso;
+function NewsletterPage({lettore,onEntrato,onSessioneScaduta,onPage}){
+  const [stato,setStato]=useState("idle"); // idle | busy | iscritto | gia_iscritto | errore
   useEffect(()=>{
     document.title="Newsletter · Iattualità";
     const c=document.querySelector('link[rel="canonical"]'); if(c)c.setAttribute("href","https://iattualita.it/newsletter");
@@ -1007,42 +1135,45 @@ function NewsletterPage(){
     if(dm)dm.setAttribute("content","Iscriviti alla newsletter di Iattualità: gli articoli verificati della settimana in una sola email. Niente spam, nessuna appartenenza politica.");
     return ()=>{ document.title="Iattualità · L'informazione intelligente e in tempo reale"; const cc=document.querySelector('link[rel="canonical"]'); if(cc)cc.setAttribute("href","https://iattualita.it/"); if(dm&&prev!=null)dm.setAttribute("content",prev); };
   },[]);
-  const submit=async()=>{
-    if(!emailOk){ setState("error"); setMsg("Controlla l'indirizzo email."); return; }
-    if(!consenso){ setState("error"); setMsg("Serve il consenso per completare l'iscrizione."); return; }
-    setState("busy"); setMsg("");
-    try{
-      const r=await apiSubscribe(email.trim().toLowerCase(),trap);
-      if(r==="already_confirmed"){ setState("already"); setMsg("Questo indirizzo è già iscritto e confermato."); }
-      else { setState("done"); setMsg("Ci siamo quasi: ti abbiamo inviato una mail, apri il link al suo interno per confermare l'iscrizione. Se non la trovi, controlla anche spam e promozioni — spostarla in Posta principale aiuta a ricevere le prossime nella casella giusta."); }
-      if(window.umami&&window.umami.track)window.umami.track("newsletter_iscrizione");
-    }catch(e){ setState("error"); setMsg(e.message||"Iscrizione non riuscita. Riprova tra poco."); }
+  // Chi e' gia' dentro: si chiede al server se e' anche iscritto, per non
+  // proporre "Iscrivimi" a chi la newsletter la riceve gia'.
+  useEffect(()=>{ if(!lettore)return; let vivo=true; (async()=>{ try{
+    const r=await fetch("/.netlify/functions/lettore",{credentials:"same-origin"});
+    if(!vivo)return;
+    if(r.status===401){ onSessioneScaduta&&onSessioneScaduta(); return; }
+    const d=await r.json(); if(d&&d.newsletter==="iscritto") setStato(s=>s==="idle"?"gia_iscritto":s);
+  }catch(e){} })(); return ()=>{ vivo=false; }; },[lettore]);
+  // Chi si registra da questa pagina con la casella spuntata e' gia' iscritto:
+  // lo si mostra subito invece di riproporgli il pulsante.
+  const appenaEntrato=(d)=>{ const nl=d&&d.newsletter; if(nl==="iscritto"||nl==="gia_iscritto") setStato(nl); onEntrato&&onEntrato(d); };
+  // Chi ha gia' fatto l'accesso ha un indirizzo gia' verificato: basta un clic.
+  const iscrivimi=async()=>{
+    setStato("busy");
+    const r=await apiLettore("newsletter");
+    if(r.status===401){ onSessioneScaduta&&onSessioneScaduta(); setStato("idle"); return; }
+    if(!r.ok){ setStato("errore"); return; }
+    setStato(r.d.newsletter==="gia_iscritto"?"gia_iscritto":"iscritto");
+    traccia("newsletter_iscrizione");
   };
-  const done=state==="done"||state==="already";
   return (
     <main id="top" style={{maxWidth:760,margin:"0 auto",padding:"24px 16px 8px"}}>
       <h1 style={{fontFamily:"Anton",fontSize:"clamp(26px,6vw,38px)",color:C.navy,margin:"0 0 8px",fontWeight:400,letterSpacing:.3}}>Newsletter</h1>
       <p style={{color:C.navySoft,fontSize:15.5,lineHeight:1.5,marginTop:0}}>Gli articoli della settimana di Iattualità, raccolti in una sola email. Notizie verificate con i dati, senza appartenenze politiche. Niente spam: puoi disiscriverti quando vuoi.</p>
-      <div style={{background:C.card,border:"1px solid "+C.line,borderRadius:16,padding:18,marginTop:18}}>
-        {done
-          ? <div style={{textAlign:"center",padding:"14px 6px"}}>
-              <div style={{fontFamily:"Anton",fontSize:22,color:C.navy,marginBottom:8}}>{state==="already"?"Sei già iscritto":"Controlla la tua email"}</div>
-              <p style={{color:C.navySoft,fontSize:14.5,margin:0,lineHeight:1.55}}>{msg}</p>
+      <div style={{marginTop:18}}>
+        {lettore
+          ? <div style={{background:C.card,border:"1px solid "+C.line,borderRadius:16,padding:18}}>
+              {stato==="iscritto"||stato==="gia_iscritto"
+                ? <div style={{textAlign:"center",padding:"10px 6px"}}>
+                    <div style={{fontFamily:"Anton",fontSize:22,color:C.navy,marginBottom:8}}>{stato==="iscritto"?"Iscrizione fatta":"Sei già iscritto"}</div>
+                    <p style={{color:C.navySoft,fontSize:14.5,margin:0,lineHeight:1.55}}>Ti arriverà ogni settimana all'indirizzo con cui hai fatto l'accesso. Se non la trovi, controlla Promozioni e Spam.</p>
+                  </div>
+                : <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                    <p style={{margin:0,color:C.navySoft,fontSize:15,lineHeight:1.5}}>Hai già fatto l'accesso: la newsletter arriva allo stesso indirizzo, senza bisogno di confermarlo di nuovo.</p>
+                    {stato==="errore"&&<div style={erroreStyle}>Non è riuscito. Riprova tra poco.</div>}
+                    <button onClick={iscrivimi} disabled={stato==="busy"} style={{...bottoneStyle(true),opacity:stato==="busy"?.6:1}}>{stato==="busy"?"Iscrizione…":"Iscrivimi alla newsletter"}</button>
+                  </div>}
             </div>
-          : <div style={{display:"flex",flexDirection:"column",gap:14}}>
-              <div>
-                <label style={labStyle}>Email</label>
-                <input type="email" value={email} onChange={e=>{setEmail(e.target.value); if(state==="error")setState("idle");}} onKeyDown={e=>e.key==="Enter"&&submit()} style={inStyle} placeholder="nome@esempio.it" aria-label="Il tuo indirizzo email" autoComplete="email"/>
-                <Honeypot value={trap} onChange={setTrap}/>
-              </div>
-              <label style={{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer"}}>
-                <input type="checkbox" checked={consenso} onChange={e=>{setConsenso(e.target.checked); if(state==="error")setState("idle");}} style={{width:18,height:18,accentColor:C.blue,marginTop:2,flexShrink:0}}/>
-                <span style={{fontSize:13.5,color:C.navySoft,lineHeight:1.45}}>Acconsento a ricevere la newsletter di Iattualità all'indirizzo indicato. Trattiamo i tuoi dati secondo la <a href="/privacy" onClick={e=>{e.preventDefault(); if(window.history){history.pushState(null,"","/privacy"); window.dispatchEvent(new PopStateEvent("popstate"));}}} style={{color:C.blueDeep,fontWeight:600,textDecoration:"underline"}}>Privacy policy</a>. Posso disiscrivermi in qualsiasi momento dal link presente in ogni email.</span>
-              </label>
-              {state==="error"&&<div style={{background:"#FDECEA",border:"1px solid #F5C6C0",color:"#B3261E",borderRadius:10,padding:"10px 12px",fontSize:14}}>{msg}</div>}
-              <button disabled={!valid||state==="busy"} onClick={submit} style={{background:(valid&&state!=="busy")?C.blue:C.line,color:"#fff",border:"none",borderRadius:12,padding:13,fontWeight:700,fontSize:16,cursor:(valid&&state!=="busy")?"pointer":"not-allowed"}}>{state==="busy"?"Iscrizione…":"Iscriviti"}</button>
-              <p style={{fontSize:12.5,color:C.gray,margin:0,lineHeight:1.5}}>Iscrizione con doppia conferma: dopo il click ti arriva un'email per confermare. I dati non vengono ceduti a terzi.</p>
-            </div>}
+          : <AccessoBox variante="newsletter" onEntrato={appenaEntrato} onPage={onPage}/>}
       </div>
     </main>
   );
@@ -1079,37 +1210,149 @@ function StaticPage({page,info,onPage}){
   );
 }
 
-function Newsletter(){
-  const [email,setEmail]=useState("");
-  const [trap,setTrap]=useState("");
-  const [state,setState]=useState("idle"); // idle | busy | done | already | error
-  const [msg,setMsg]=useState("");
-  const valid=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
-  const submit=async()=>{
-    if(!valid){ setState("error"); setMsg("Controlla l'indirizzo email."); return; }
-    setState("busy"); setMsg("");
-    try{
-      const r=await apiSubscribe(email.trim().toLowerCase(),trap);
-      if(r==="already_confirmed"){ setState("already"); setMsg("Questo indirizzo è già iscritto e confermato."); }
-      else { setState("done"); setMsg("Ci siamo quasi: ti abbiamo inviato una mail, apri il link per confermare l'iscrizione. Se non la trovi, guarda in Promozioni o Spam."); }
-    }catch(e){ setState("error"); setMsg(e.message||"Iscrizione non riuscita."); }
-  };
-  const inNL={flex:"1 1 220px",boxSizing:"border-box",padding:"12px 14px",border:"1px solid rgba(255,255,255,.25)",borderRadius:11,fontSize:15,fontFamily:"Barlow",color:"#fff",outline:"none",background:"rgba(255,255,255,.08)"};
-  const done=state==="done"||state==="already";
+// Nel piede basta un invito: il modulo vero sta nella pagina Newsletter, con
+// il codice di verifica che fa anche entrare nel sito.
+function Newsletter({onPage}){
   return (<div style={{marginBottom:28,paddingBottom:26,borderBottom:"1px solid rgba(255,255,255,.12)"}}>
     <h3 style={{fontFamily:"Anton",fontSize:22,margin:"0 0 6px",color:"#fff",fontWeight:400}}>La newsletter di Iattualità</h3>
     <p style={{color:"rgba(255,255,255,.8)",fontSize:14.5,lineHeight:1.5,margin:"0 0 14px",maxWidth:560}}>Gli articoli nuovi, raccolti in una sola email. Niente spam, niente appartenenze: solo i fatti verificati. Ti disiscrivi quando vuoi.</p>
-    {done
-      ? <div style={{display:"flex",alignItems:"center",gap:10,color:"#fff",fontSize:15,background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.18)",borderRadius:11,padding:"13px 15px",maxWidth:560}}><Ic n="mail" s={18} c={C.amber}/><span>{msg}</span></div>
-      : <div style={{maxWidth:560}}>
-          <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
-            <input type="email" value={email} onChange={e=>{setEmail(e.target.value); if(state==="error")setState("idle");}} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="La tua email" style={inNL} aria-label="Il tuo indirizzo email" autoComplete="email"/>
-            <Honeypot value={trap} onChange={setTrap}/>
-            <button onClick={submit} disabled={state==="busy"} style={{background:C.amber,color:C.navy,border:"none",borderRadius:11,padding:"12px 20px",fontWeight:800,fontSize:15,cursor:state==="busy"?"default":"pointer",whiteSpace:"nowrap"}}>{state==="busy"?"Invio…":"Iscriviti"}</button>
-          </div>
-          {state==="error"&&<div style={{color:"#FFD2CE",fontSize:13.5,marginTop:8}}>{msg}</div>}
-          <div style={{color:"rgba(255,255,255,.5)",fontSize:12,marginTop:8}}>Iscrivendoti accetti di ricevere le email di Iattualità. Trattiamo i tuoi dati secondo la <a href="/privacy" style={{color:"rgba(255,255,255,.7)",textDecoration:"underline"}}>Privacy policy</a>.</div>
-        </div>}
+    <a href="/newsletter" onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage("newsletter"); }} style={{display:"inline-flex",alignItems:"center",gap:8,background:C.amber,color:C.navy,borderRadius:11,padding:"12px 20px",fontWeight:800,fontSize:15,textDecoration:"none"}}><Ic n="mail" s={17} c={C.navy}/> Iscriviti alla newsletter</a>
+  </div>);
+}
+
+// ====== ACCESSO DEI LETTORI: componenti ======
+const erroreStyle={background:"#FDECEA",border:"1px solid #F5C6C0",color:"#B3261E",borderRadius:10,padding:"10px 12px",fontSize:14,lineHeight:1.45};
+const bottoneStyle=(attivo)=>({width:"100%",background:attivo?C.navy:C.line,color:"#fff",border:"none",borderRadius:12,padding:"14px 16px",fontWeight:700,fontSize:16,cursor:attivo?"pointer":"not-allowed",fontFamily:"Barlow"});
+const linkPrivacy=(onPage,colore)=>(<a href="/privacy" onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage("privacy"); }} style={{color:colore||C.blueDeep,fontWeight:600,textDecoration:"underline"}}>Privacy policy</a>);
+
+const TESTI_ACCESSO={
+  articolo:{titolo:"Continua a leggere",testo:"Registrati con la tua email: ti mandiamo un codice di 6 cifre e leggi tutti gli articoli di Iattualità. Se ti sei già registrato, usa la stessa email."},
+  popup:{titolo:"Leggi Iattualità per intero",testo:"Lascia la tua email, ti mandiamo un codice di 6 cifre e hai accesso a tutti gli articoli verificati con i dati."},
+  menu:{titolo:"Accedi o registrati",testo:"Scrivi la tua email: ti mandiamo un codice di 6 cifre. Vale sia per entrare la prima volta sia per rientrare."},
+  newsletter:{titolo:null,testo:null}
+};
+
+// Il modulo in due passi: email, poi codice. Lo stesso ovunque (fine
+// articolo, popup, menu, pagina Newsletter); cambiano solo i testi.
+//
+// La newsletter e' una casella a parte, mai pre-spuntata: registrarsi per
+// leggere non vale come consenso a ricevere email. Sulla pagina Newsletter,
+// dove iscriversi e' lo scopo, la casella diventa obbligatoria.
+function AccessoBox({variante,onEntrato,onPage,compatto}){
+  const t=TESTI_ACCESSO[variante]||TESTI_ACCESSO.articolo;
+  const perNewsletter=variante==="newsletter";
+  const [passo,setPasso]=useState("email");   // email | codice
+  const [email,setEmail]=useState("");
+  const [nl,setNl]=useState(false);
+  const [trap,setTrap]=useState("");
+  const [codice,setCodice]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [err,setErr]=useState("");
+  const [puoRimandare,setPuoRimandare]=useState(false);
+  const emailOk=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  const pronto=emailOk&&(!perNewsletter||nl);
+  const idBase=React.useRef("acc-"+Math.random().toString(36).slice(2,8)).current;
+  const codiceRef=React.useRef(null);
+
+  // "Rimanda il codice" compare dopo 30 secondi: prima, la mail e' quasi
+  // sempre in arrivo, e un secondo invio fa solo confusione su quale usare.
+  useEffect(()=>{ if(passo!=="codice")return; setPuoRimandare(false); const k=setTimeout(()=>setPuoRimandare(true),30000); return ()=>clearTimeout(k); },[passo]);
+  useEffect(()=>{ if(passo==="codice"&&codiceRef.current){ try{ codiceRef.current.focus(); }catch(e){} } },[passo]);
+
+  const chiediCodice=async()=>{
+    if(!emailOk){ setErr("Controlla l'indirizzo email."); return; }
+    if(perNewsletter&&!nl){ setErr("Spunta la casella per ricevere la newsletter."); return; }
+    setBusy(true); setErr("");
+    try{ await apiCodice(email.trim().toLowerCase(),nl,trap); setCodice(""); setPasso("codice"); traccia("accesso_codice_richiesto"); }
+    catch(e){ setErr(e.message); }
+    setBusy(false);
+  };
+  const verifica=async(c)=>{
+    const val=(c!=null?c:codice).replace(/\D/g,"");
+    if(val.length!==6){ setErr("Il codice è di 6 cifre."); return; }
+    setBusy(true); setErr("");
+    try{ const d=await apiVerifica(email.trim().toLowerCase(),val); setBusy(false); onEntrato&&onEntrato(d); return; }
+    catch(e){ setErr(e.message); if(e.scaduto) setPuoRimandare(true); setCodice(""); }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{background:C.card,border:"1px solid "+C.line,borderRadius:16,padding:compatto?"4px 0 0":"20px 18px 22px",...(compatto?{border:"none",background:"transparent"}:{})}}>
+      {t.titolo&&<div style={{fontFamily:"Anton",fontSize:24,lineHeight:1.1,color:C.navy,margin:"0 0 8px"}}>{t.titolo}</div>}
+      {passo==="email"
+        ? <React.Fragment>
+            {t.testo&&<p style={{fontSize:15,lineHeight:1.5,color:C.navySoft,margin:"0 0 14px"}}>{t.testo}</p>}
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div>
+                <label htmlFor={idBase+"-email"} style={labStyle}>La tua email</label>
+                <input id={idBase+"-email"} type="email" inputMode="email" value={email} onChange={e=>{setEmail(e.target.value); setErr("");}} onKeyDown={e=>e.key==="Enter"&&pronto&&chiediCodice()} style={{...inStyle,fontSize:16,padding:"12px 14px"}} placeholder="nome@esempio.it" autoComplete="email"/>
+                <Honeypot value={trap} onChange={setTrap}/>
+              </div>
+              <label style={{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer"}}>
+                <input type="checkbox" checked={nl} onChange={e=>{setNl(e.target.checked); setErr("");}} style={{width:18,height:18,accentColor:C.blue,marginTop:2,flexShrink:0}}/>
+                <span style={{fontSize:13.5,color:C.navySoft,lineHeight:1.45}}>{perNewsletter
+                  ? "Voglio ricevere la newsletter settimanale di Iattualità. Posso disiscrivermi quando voglio dal link in ogni email."
+                  : "Mandatemi anche la newsletter settimanale con le notizie verificate (facoltativo). Posso disiscrivermi quando voglio."}</span>
+              </label>
+              {err&&<div role="alert" style={erroreStyle}>{err}</div>}
+              <button onClick={chiediCodice} disabled={!pronto||busy} style={{...bottoneStyle(pronto&&!busy)}}>{busy?"Invio del codice…":"Ricevi il codice"}</button>
+              <p style={{fontSize:12.5,color:C.gray,margin:0,lineHeight:1.5}}>Usiamo la tua email per farti entrare{perNewsletter?" e per mandarti la newsletter":", e per la newsletter solo se la scegli"}. Niente password, niente cessione a terzi. Dettagli nella {linkPrivacy(onPage)}.</p>
+            </div>
+          </React.Fragment>
+        : <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <p style={{fontSize:15,lineHeight:1.5,color:C.navySoft,margin:0}}>Ti abbiamo scritto a <b style={{color:C.navy,wordBreak:"break-all"}}>{email.trim().toLowerCase()}</b>. Inserisci qui il codice di 6 cifre: vale 15 minuti. Se non lo trovi, guarda in Promozioni o Spam.</p>
+            <div>
+              <label htmlFor={idBase+"-codice"} style={labStyle}>Codice</label>
+              <input id={idBase+"-codice"} ref={codiceRef} value={codice} onChange={e=>{ const v=e.target.value.replace(/\D/g,"").slice(0,6); setCodice(v); setErr(""); if(v.length===6&&!busy) verifica(v); }} onKeyDown={e=>e.key==="Enter"&&verifica()} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={6} placeholder="000000" style={{...inStyle,fontSize:26,letterSpacing:8,textAlign:"center",fontWeight:700,padding:"12px 14px"}}/>
+            </div>
+            {err&&<div role="alert" style={erroreStyle}>{err}</div>}
+            <button onClick={()=>verifica()} disabled={codice.length!==6||busy} style={bottoneStyle(codice.length===6&&!busy)}>{busy?"Controllo…":"Entra"}</button>
+            <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",fontSize:13.5}}>
+              <button onClick={()=>{ setPasso("email"); setErr(""); }} style={{background:"none",border:"none",padding:0,color:C.blueDeep,fontWeight:600,cursor:"pointer",fontFamily:"Barlow",fontSize:13.5}}>‹ Cambia email</button>
+              {puoRimandare
+                ? <button onClick={chiediCodice} disabled={busy} style={{background:"none",border:"none",padding:0,color:C.blueDeep,fontWeight:600,cursor:"pointer",fontFamily:"Barlow",fontSize:13.5}}>Rimanda il codice</button>
+                : <span style={{color:C.gray}}>Non è arrivato? Tra poco potrai rimandarlo.</span>}
+            </div>
+          </div>}
+    </div>
+  );
+}
+
+// Fine dell'articolo per chi non ha il testo: l'inizio, che sfuma, e sotto il
+// modulo di accesso. Il testo dell'anteprima e il suo taglio sono gli stessi
+// del prerender (shared/anteprima.js), cosi' la pagina non salta quando
+// React prende il posto dell'HTML del server.
+function AnteprimaBloccata({item,lettore,onEntrato,onRiprova,onPage}){
+  const par=paragrafiAnteprima(item.anteprima);
+  // Chi ha gia' fatto l'accesso vede il testo arrivare, non il modulo.
+  const inArrivo=lettore&&!item.erroreCorpo;
+  return (
+    <div>
+      {par.length>0&&<div style={{position:"relative",fontSize:17,color:C.navySoft,lineHeight:1.7}}>
+        {par.map((p,i)=><p key={i} style={{margin:"0 0 14px"}}>{p}</p>)}
+        {!inArrivo&&<div aria-hidden="true" style={{position:"absolute",left:0,right:0,bottom:0,height:72,background:"linear-gradient(to bottom, rgba(244,242,236,0), "+C.cream+")",pointerEvents:"none"}}/>}
+      </div>}
+      {inArrivo
+        ? <div aria-busy="true" aria-label="Caricamento dell'articolo" style={{display:"grid",gap:10,marginTop:6}}>{[96,100,92,98,70].map((w,i)=><div key={i} style={{height:14,width:w+"%",background:C.line,borderRadius:7}}/>)}</div>
+        : lettore
+          ? <div style={{background:C.card,border:"1px solid "+C.line,borderRadius:16,padding:"18px 18px 20px"}}>
+              <p style={{margin:"0 0 12px",color:C.navySoft,fontSize:15,lineHeight:1.5}}>Non siamo riusciti a caricare il resto dell'articolo.</p>
+              <button onClick={onRiprova} style={{...bottoneStyle(true),width:"auto",padding:"11px 18px",fontSize:15}}>Riprova</button>
+            </div>
+          : <div className="paywall"><AccessoBox variante="articolo" onEntrato={onEntrato} onPage={onPage}/></div>}
+    </div>
+  );
+}
+
+// Finestra di accesso: dal pulsante Accedi o, da sola, in home (popup).
+function AccessoModal({variante,onClose,onEntrato,onPage}){
+  useEffect(()=>{ const k=(e)=>{ if(e.key==="Escape") onClose(); }; window.addEventListener("keydown",k); return ()=>window.removeEventListener("keydown",k); },[onClose]);
+  return (<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(14,17,23,.55)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto"}}>
+    <div role="dialog" aria-modal="true" aria-label={variante==="popup"?"Leggi Iattualità per intero":"Accedi o registrati"} onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:420,background:C.card,borderRadius:18,padding:"18px 20px 20px",position:"relative",margin:"auto"}}>
+      <button onClick={onClose} aria-label="Chiudi" style={{position:"absolute",top:10,right:10,background:"none",border:"none",cursor:"pointer",padding:6,display:"flex"}}><Ic n="x" s={22} c={C.navy}/></button>
+      <div style={{paddingRight:26}}><AccessoBox variante={variante} onEntrato={onEntrato} onPage={onPage} compatto/></div>
+      {variante==="popup"&&<button onClick={onClose} style={{display:"block",margin:"14px auto 0",background:"none",border:"none",color:C.gray,fontSize:13.5,fontWeight:600,cursor:"pointer",fontFamily:"Barlow"}}>Non ora, continuo a guardare</button>}
+    </div>
   </div>);
 }
 
@@ -1303,7 +1546,7 @@ function SiteFooter({info,admin,pieno,onEdit,onPage,onSendNewsletter,onSpecial})
         <h3 style={{fontFamily:"Anton",fontSize:20,margin:"0 0 12px",color:"#fff",fontWeight:400}}>Chi siamo</h3>
         {info.about? <p style={{color:"rgba(255,255,255,.85)",fontSize:15,lineHeight:1.6,margin:0,maxWidth:720,whiteSpace:"pre-line"}}>{info.about}</p> : <p style={{color:"rgba(255,255,255,.6)",fontSize:14,margin:0}}>Aggiungi una breve descrizione dal pulsante qui sopra.</p>}
       </div>}
-      <Newsletter/>
+      <Newsletter onPage={onPage}/>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))",gap:28}}>
         <div>
           <h3 style={{fontFamily:"Anton",fontSize:20,margin:"0 0 14px",color:"#fff",fontWeight:400}}>Seguici</h3>

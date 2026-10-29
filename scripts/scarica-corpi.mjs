@@ -9,9 +9,19 @@
 import fs from "node:fs";
 
 const URL_SB = "https://wzkshpgakvasqwrrgkgd.supabase.co/rest/v1/news?select=body&limit=500";
-const CHIAVE = "sb_publishable_I3s4phA5Be9qnV4pLbWQMQ_8-IGUE-b"; // chiave pubblica, la stessa del sito
+// Dalla migrazione 006 il testo degli articoli non e' piu' leggibile con la
+// chiave pubblica: serve quella di servizio, passata solo da riga di comando
+// e mai scritta nel repository:
+//   SUPABASE_SERVICE_ROLE_KEY=... npm run fixtures
+const CHIAVE = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+if (!CHIAVE) {
+  console.error("Manca SUPABASE_SERVICE_ROLE_KEY: il testo degli articoli e' riservato (migrazione 006).");
+  process.exit(1);
+}
 
-const r = await fetch(URL_SB, { headers: { apikey: CHIAVE } });
+const h = { apikey: CHIAVE };
+if (CHIAVE.indexOf("eyJ") === 0) h.Authorization = "Bearer " + CHIAVE;
+const r = await fetch(URL_SB, { headers: h });
 if (!r.ok) {
   console.error("Supabase ha risposto " + r.status + ": impossibile scaricare i corpi.");
   process.exit(1);

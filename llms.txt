@@ -29,4 +29,6 @@ Gli articoli vivono su `/articolo/<id>/<titolo-abbreviato>`, le categorie su `/a
 
 I contenuti sono protetti dal diritto d'autore. Citazioni brevi con attribuzione e collegamento alla fonte sono benvenute; la riproduzione integrale non è autorizzata.
 
-Ogni pagina è servita già completa di testo nell'HTML, senza bisogno di eseguire JavaScript, e porta dati strutturati schema.org (`NewsArticle` sugli articoli, `NewsMediaOrganization` sulla testata).
+Ogni pagina è servita già pronta nell'HTML, senza bisogno di eseguire JavaScript, e porta dati strutturati schema.org (`NewsArticle` sugli articoli, `NewsMediaOrganization` sulla testata).
+
+Il testo integrale degli articoli è riservato ai lettori registrati: senza accesso è visibile l'anteprima. Le pagine lo dichiarano con `isAccessibleForFree: false`.

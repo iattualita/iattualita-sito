@@ -266,10 +266,19 @@ async function sbLastSend(){
   const a = await r.json();
   return a[0] ? a[0].sent_at : null;
 }
+// Nel digest va l'anteprima (migrazione 005), non summary: summary e' il
+// testo integrale, e una mail inoltrata lo regalerebbe a chiunque. Se la
+// colonna non esiste ancora (400) si riprova con summary, accorciato.
 async function sbNewsSince(iso){
-  const r = await fetch(REST + "/news?select=id,title,subtitle,summary,category,image,date,created_at&created_at=gt." + encodeURIComponent(iso) + "&order=created_at.desc&limit=20", { headers: sbHeaders() });
+  const q = (cols) => fetch(REST + "/news?select=" + cols + "&created_at=gt." + encodeURIComponent(iso) + "&order=created_at.desc&limit=20", { headers: sbHeaders() });
+  let r = await q("id,title,subtitle,anteprima,category,image,date,created_at");
+  if(r.status === 400) r = await q("id,title,subtitle,summary,category,image,date,created_at");
   if(!r.ok) throw await sbError("db select", r);
-  return r.json();
+  return (await r.json()).map(a => {
+    if(a.anteprima === undefined){ const t = String(a.summary || ""); a.anteprima = t.length > 300 ? t.slice(0, 300).replace(/\s+\S*$/, "") + "…" : t; }
+    delete a.summary;
+    return a;
+  });
 }
 async function sbLogSend(articleIds, recipients){
   const r = await fetch(REST + "/newsletter_log", { method:"POST", headers: sbHeaders({Prefer:"return=minimal"}),
@@ -300,7 +309,7 @@ async function verifyRedazione(bearer){
 function digestHtml(articles, unsubUrl){
   const rows = articles.map(a => {
     const img = a.image ? '<img src="'+a.image+'" alt="" width="536" style="width:100%;max-width:536px;border-radius:10px;display:block;margin:0 0 10px">' : "";
-    const sub = a.subtitle || a.summary || "";
+    const sub = String(a.subtitle || a.anteprima || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
     return '<td style="padding:0 0 26px">'
       + img
       + '<div style="font-size:11px;font-weight:bold;letter-spacing:.6px;color:#E8A33D;text-transform:uppercase;padding:0 0 6px">' + (a.category||"") + '</div>'
