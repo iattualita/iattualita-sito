@@ -40,6 +40,11 @@ global.fetch = async (url, opts) => {
     chiaviServizio.push(opts && opts.headers && opts.headers.apikey);
     return ok([{ body: ARTICOLO.body, summary: "" }]);
   }
+  if (u.includes("/numeri_social")) return ok([
+    { piattaforma: "instagram", follower: 38652, visualizzazioni: 1600000, periodo: "ultimi 30 giorni", aggiornato_at: "2026-10-29T03:20:00Z" },
+    { piattaforma: "tiktok", follower: 26150, visualizzazioni: null, periodo: null, aggiornato_at: "2026-10-28T10:00:00Z" },
+    { piattaforma: "youtube", follower: null, visualizzazioni: null, periodo: null, aggiornato_at: null }
+  ]);
   if (u.includes("/site_info")) return ok([{ id: 1, email: "redazione@iattualita.it", phone: "+39 000", instagram: "https://instagram.com/iattualita" }]);
   if (u.includes("/news?id=eq.42")) return ok([ARTICOLO]);
   if (u.includes("/news?id=eq.")) return ok([]);                 // articolo inesistente
@@ -107,6 +112,13 @@ r = await chiedi("/standard-editoriali");
 h = await r.text();
 check("standard-editoriali: presunzione di innocenza nel testo servito",
   r.status === 200 && h.includes("Presunzione di innocenza"));
+
+// ---- i nostri numeri ----
+r = await chiedi("/numeri");
+h = await r.text();
+check("numeri: 200, totale e numeri per piattaforma nell'HTML",
+  r.status === 200 && h.includes("64.802 persone ci seguono") && h.includes("38.652 follower") && h.includes("1.600.000 visualizzazioni (ultimi 30 giorni)"), r.status);
+check("  ^ la piattaforma senza dati non compare con un numero inventato", !h.includes("YouTube</strong>"));
 
 // ---- contatti e social ----
 r = await chiedi("/contatti");
@@ -241,7 +253,7 @@ console.log("");
 
 // ---- sitemap ----
 const xml = await (await sitemap()).text();
-for (const p of ["/chi-siamo", "/standard-editoriali", "/rettifiche", "/trasparenza-ia", "/privacy", "/contatti", "/social", "/newsletter", "/archivio"]) {
+for (const p of ["/chi-siamo", "/standard-editoriali", "/rettifiche", "/trasparenza-ia", "/privacy", "/contatti", "/social", "/newsletter", "/archivio", "/numeri"]) {
   check("sitemap contiene " + p, xml.includes("<loc>https://iattualita.it" + p + "</loc>"));
 }
 check("sitemap: l'articolo ha lo stesso slug del link in home",
