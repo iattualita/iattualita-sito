@@ -222,7 +222,46 @@ function emailHeader(sottotitolo){
 
 // ================== DIGEST SETTIMANALE ==================
 function slugify(x){ return (x||"").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60)||"articolo"; }
-const articleUrl = (a) => SITE_URL + "/articolo/" + a.id + "/" + slugify(a.title);
+const articlePath = (a) => "/articolo/" + a.id + "/" + slugify(a.title);
+const articleUrl = (a) => SITE_URL + articlePath(a);
+
+// ================== ACCESSO DIRETTO DALLA NEWSLETTER ==================
+// Chi riceve la newsletter clicca un articolo ed entra gia' riconosciuto,
+// senza codice: i link della mail passano da /.netlify/functions/entra, che
+// apre la sessione del lettore e lo porta all'articolo (vedi entra.js).
+//
+// Il link e' personale e firmato con LETTORI_SECRET: contiene l'id
+// dell'iscritto e una scadenza, e chi cambia anche una sola cifra lo rende
+// inutile. Scade dopo 60 giorni, perche' una mail vecchia ritrovata o
+// inoltrata non apra il sito per sempre. Se l'iscritto si disiscrive, il
+// link smette di funzionare subito (entra.js controlla lo stato).
+const LETTORI_SECRET = process.env.LETTORI_SECRET || "";
+const ENTRA_GIORNI = 60;
+const b64url = (buf) => Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const firmaEntra = (id, exp) => b64url(crypto.createHmac("sha256", LETTORI_SECRET).update("entra:v1:" + id + ":" + exp).digest());
+
+// Senza segreto (o senza id) il link resta quello normale all'articolo.
+function linkEntra(subId, path, oraS){
+  if(!LETTORI_SECRET || !subId) return SITE_URL + path;
+  const exp = (oraS || Math.floor(Date.now() / 1000)) + ENTRA_GIORNI * 86400;
+  return FN + "/entra?s=" + encodeURIComponent(subId) + "&e=" + exp + "&f=" + firmaEntra(subId, exp) + "&a=" + encodeURIComponent(path);
+}
+
+function verificaEntra(subId, exp, firma, oraS){
+  if(!LETTORI_SECRET || !subId || !firma) return false;
+  const e = Number(exp);
+  if(!Number.isInteger(e) || e <= (oraS || Math.floor(Date.now() / 1000))) return false;
+  const attesa = Buffer.from(firmaEntra(String(subId), e));
+  const data = Buffer.from(String(firma));
+  return attesa.length === data.length && crypto.timingSafeEqual(attesa, data);
+}
+
+async function sbSubscriberById(id){
+  if(!/^[0-9a-f-]{36}$/i.test(String(id || ""))) return null;
+  const r = await fetch(REST + "/subscribers?id=eq." + id + "&select=id,email,status", { headers: sbHeaders() });
+  if(!r.ok) throw await sbError("db select", r);
+  return (await r.json())[0] || null;
+}
 
 // Legge gli iscritti confermati.
 //
@@ -306,16 +345,19 @@ async function verifyRedazione(bearer){
   return !!(await redazioneUser(bearer));
 }
 
-function digestHtml(articles, unsubUrl){
+// link(a): l'indirizzo di ogni articolo. Nel digest vero e' il link
+// personale di accesso diretto; senza, quello normale.
+function digestHtml(articles, unsubUrl, link){
+  const url = link || articleUrl;
   const rows = articles.map(a => {
     const img = a.image ? '<img src="'+a.image+'" alt="" width="536" style="width:100%;max-width:536px;border-radius:10px;display:block;margin:0 0 10px">' : "";
     const sub = String(a.subtitle || a.anteprima || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
     return '<td style="padding:0 0 26px">'
       + img
       + '<div style="font-size:11px;font-weight:bold;letter-spacing:.6px;color:#E8A33D;text-transform:uppercase;padding:0 0 6px">' + (a.category||"") + '</div>'
-      + '<a href="'+articleUrl(a)+'" style="font-size:20px;line-height:1.25;font-weight:bold;color:#16243F;text-decoration:none;display:block">'+ (a.title||"") +'</a>'
+      + '<a href="'+url(a)+'" style="font-size:20px;line-height:1.25;font-weight:bold;color:#16243F;text-decoration:none;display:block">'+ (a.title||"") +'</a>'
       + (sub ? '<div style="font-size:14px;line-height:1.5;color:#2A3A57;padding-top:6px">'+ sub +'</div>' : "")
-      + '<a href="'+articleUrl(a)+'" style="display:inline-block;margin-top:10px;font-size:13px;font-weight:bold;color:#2C5AA0;text-decoration:none">Leggi l\'articolo &rarr;</a>'
+      + '<a href="'+url(a)+'" style="display:inline-block;margin-top:10px;font-size:13px;font-weight:bold;color:#2C5AA0;text-decoration:none">Leggi l\'articolo &rarr;</a>'
       + '</td>';
   }).map(td => '<tr>'+td+'</tr>').join("");
   return '<!doctype html><html lang="it">' + emailHead("Gli articoli della settimana") + '<body style="margin:0;background:#F4F2EC">'
@@ -324,7 +366,8 @@ function digestHtml(articles, unsubUrl){
     + emailHeader("Gli articoli della settimana &middot; non tifiamo per nessuno, verifichiamo")
     + '<tr><td style="padding:0 12px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-family:Arial,Helvetica,sans-serif">' + rows + '</table></td></tr>'
     + '<tr><td style="padding:14px 12px;border-top:1px solid #E3DFD6;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#7A8499;line-height:1.5">'
-    + 'Ricevi questa email perch&eacute; ti sei iscritto su iattualita.it.<br>'
+    + 'Ricevi questa email perch&eacute; ti sei iscritto su iattualita.it. '
+    + 'I link agli articoli ti fanno entrare direttamente sul sito, senza codice: per questo &egrave; meglio non inoltrare questa email.<br>'
     + '<a href="'+unsubUrl+'" style="color:#7A8499">Disiscriviti</a> quando vuoi &middot; IAttualit&agrave; &middot; verificato con i dati'
     + '</td></tr></table></td></tr></table></body></html>';
 }
@@ -392,13 +435,14 @@ async function runDigest(opts){
   // caso si torna al comportamento precedente: tutti in un colpo solo.
   const tracciabile = subs.tracciabile !== false;
   const batch = tracciabile ? pending.slice(0, limit) : pending;
-  const html = digestHtml(articles, "{{UNSUB}}");
   let ok = 0, failed = 0;
 
   await inPool(batch, CONCURRENCY, async (s) => {
     const unsub = FN + "/unsubscribe?token=" + s.token;
     try{
-      await brevoSend(s.email, "Iattualità — gli articoli della settimana", html.split("{{UNSUB}}").join(unsub), null, null, unsub);
+      // Una mail per iscritto: ogni link agli articoli e' personale.
+      const html = digestHtml(articles, unsub, (a) => linkEntra(s.id, articlePath(a)));
+      await brevoSend(s.email, "Iattualità — gli articoli della settimana", html, null, null, unsub);
       if(tracciabile) await sbMarkDigestSent(s.id);
       ok++;
     }catch(e){
@@ -422,6 +466,7 @@ module.exports = {
   brevoSend, newToken, confirmEmailHtml, page, html, json, validEmail,
   rateHit, clientIp,
   runDigest, verifyRedazione, redazioneUser, isGiornalista,
+  linkEntra, verificaEntra, sbSubscriberById, articlePath, digestHtml,
   // usati anche dagli invii speciali (_speciali-lib.js)
   sbHeaders, sbError, inPool, htmlToText, BATCH, CONCURRENCY,
   SUPABASE_URL, REST, FN, emailHead, emailHeader, LOGO_URL, TESTATA_URL, BLU_IA,
