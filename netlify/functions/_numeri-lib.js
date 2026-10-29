@@ -53,8 +53,10 @@ async function leggiYoutube() {
     // YouTube nasconde il numero esatto di iscritti se il canale lo ha
     // scelto: in quel caso hiddenSubscriberCount e' true e il numero manca.
     follower: s.hiddenSubscriberCount ? null : numero(s.subscriberCount),
-    visualizzazioni: numero(s.viewCount),
-    periodo: "totali dal lancio"
+    // Le visualizzazioni totali di YouTube non si mostrano: scelta della
+    // redazione (29 ott 2026). Sulla pagina restano solo gli iscritti.
+    visualizzazioni: null,
+    periodo: null
   };
 }
 
@@ -121,7 +123,11 @@ async function aggiornaTutto() {
       if (!n) { esito[nome] = "non configurato"; continue; }
       const campi = { fonte: "automatico", aggiornato_at: new Date().toISOString(), errore: n.avviso || null };
       if (n.follower != null) campi.follower = n.follower;
-      if (n.visualizzazioni != null) { campi.visualizzazioni = n.visualizzazioni; campi.periodo = n.periodo; }
+      // Le visualizzazioni si scrivono sempre, anche vuote: se una
+      // piattaforma smette di fornirle (o si decide di non mostrarle) il
+      // numero vecchio non deve restare sulla pagina senza aggiornarsi.
+      campi.visualizzazioni = n.visualizzazioni != null ? n.visualizzazioni : null;
+      campi.periodo = n.visualizzazioni != null ? n.periodo : null;
       await salva(nome, campi);
       esito[nome] = "ok" + (n.avviso ? " (" + n.avviso + ")" : "");
     } catch (e) {
