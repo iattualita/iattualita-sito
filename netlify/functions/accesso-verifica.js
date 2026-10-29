@@ -33,30 +33,28 @@ exports.handler = async (event) => {
   if (!L.validEmail(email) || codice.length !== 6)
     return A.risposta(400, { error: "codice", message: "Il codice è di 6 cifre." });
 
-  const ip = L.clientIp(event);
+  const ip = A.chiaveIp(L.clientIp(event));
   if (!(await L.rateHit("ver:ip:" + ip, IP_WINDOW_S, IP_MAX)))
     return A.risposta(429, { error: "rate", message: "Troppi tentativi da questa connessione. Riprova tra un'ora." });
 
   try {
     if (Math.random() < 0.05) await A.codiciPulizia();
 
-    const riga = await A.codiceLeggi(email);
-    if (!riga || new Date(riga.expires_at).getTime() <= Date.now())
-      return A.risposta(400, { error: "scaduto", message: SCADUTO });
-
-    if (riga.tentativi >= A.CODICE_TENTATIVI) {
-      await A.codiceCancella(email);
+    // Il tentativo si conta PRIMA del confronto, in modo atomico: anche
+    // decine di richieste in parallelo ne consumano uno ciascuna.
+    const riga = await A.codiceTentativo(email);
+    if (!riga) {
+      await A.codiceCancella(email);   // scaduto o esaurito: via, se c'e' ancora
       return A.risposta(400, { error: "scaduto", message: SCADUTO });
     }
 
-    if (!A.confrontaImpronta(riga.code_hash, A.impronta(email, codice))) {
-      const usati = riga.tentativi + 1;
-      const restanti = A.CODICE_TENTATIVI - usati;
+    const hash = A.impronta(email, codice);
+    if (!A.confrontaImpronta(riga.code_hash, hash)) {
+      const restanti = A.CODICE_TENTATIVI - riga.tentativi;
       if (restanti <= 0) {
         await A.codiceCancella(email);
         return A.risposta(400, { error: "scaduto", message: "Codice sbagliato troppe volte. Chiedine uno nuovo." });
       }
-      await A.codiceTentativo(email, usati);
       return A.risposta(400, {
         error: "codice",
         message: "Codice sbagliato. Controlla l'ultima email che ti abbiamo mandato" + (restanti <= 2 ? " (ancora " + restanti + (restanti === 1 ? " tentativo)." : " tentativi).") : "."),
@@ -64,8 +62,9 @@ exports.handler = async (event) => {
       });
     }
 
-    // Il codice si usa una volta sola.
-    await A.codiceCancella(email);
+    // Il codice si usa una volta sola, anche con due richieste simultanee.
+    if (!(await A.codiceConsuma(email, hash)))
+      return A.risposta(400, { error: "scaduto", message: SCADUTO });
 
     const lettore = await A.lettoreAccesso(email);
     if (!lettore || !lettore.id) throw new Error("lettore non creato");

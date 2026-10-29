@@ -421,7 +421,9 @@ function App(){
     if(alive)setFull(a);
   })(); return ()=>{ alive=false; }; },[articleId,token,lettore,tentativo]);
   // L'editor ha bisogno del testo completo, che nella lista non c'e' piu'.
-  const openEditor=async(i)=>{ const f=await apiGetArticleRedazione(token,i.id); setEditing(f||i); setShowForm(true); };
+  // Se il testo non arriva NON si apre l'editor con la scheda della lista:
+  // la lista non ha body, e salvando si cancellerebbe l'articolo.
+  const openEditor=async(i)=>{ const f=await apiGetArticleRedazione(token,i.id); if(!f||f.body===undefined){ alert("Non riesco a caricare il testo dell'articolo. Controlla la connessione o rifai l'accesso, poi riprova: l'editor non si apre per non salvare un articolo vuoto."); return; } setEditing(f); setShowForm(true); };
   const saveItem=async(item)=>{ try{ const {id,...rest}=item; if(id)await apiUpdNews(token,id,rest); else await apiAddNews(token,rest); await reloadNews(); setShowForm(false); setEditing(null); note("Salvato."); }catch(e){ const m=String(e.message||e); if(m.indexOf("Sessione scaduta")===0) setShowLogin(true); alert("Errore nel salvataggio:\n\n"+m); } };
   const removeItem=async(id)=>{ try{ await apiDelNews(token,id); await reloadNews(); note("Eliminato."); }catch(e){ alert("Errore:\n\n"+(e.message||e)); } };
   const saveInfo=async(next)=>{ try{ const {id,...rest}=next; const r=await apiUpdInfo(token,rest); setInfo({...DEFAULT_INFO,...r}); setShowInfo(false); note("Aggiornato."); }catch(e){ const m=String(e.message||e); if(m.indexOf("Sessione scaduta")===0) setShowLogin(true); alert("Errore salvataggio:\n\n"+m); } };
@@ -1133,6 +1135,17 @@ function NewsletterPage({lettore,onEntrato,onSessioneScaduta,onPage}){
     if(dm)dm.setAttribute("content","Iscriviti alla newsletter di Iattualità: gli articoli verificati della settimana in una sola email. Niente spam, nessuna appartenenza politica.");
     return ()=>{ document.title="Iattualità · L'informazione intelligente e in tempo reale"; const cc=document.querySelector('link[rel="canonical"]'); if(cc)cc.setAttribute("href","https://iattualita.it/"); if(dm&&prev!=null)dm.setAttribute("content",prev); };
   },[]);
+  // Chi e' gia' dentro: si chiede al server se e' anche iscritto, per non
+  // proporre "Iscrivimi" a chi la newsletter la riceve gia'.
+  useEffect(()=>{ if(!lettore)return; let vivo=true; (async()=>{ try{
+    const r=await fetch("/.netlify/functions/lettore",{credentials:"same-origin"});
+    if(!vivo)return;
+    if(r.status===401){ onSessioneScaduta&&onSessioneScaduta(); return; }
+    const d=await r.json(); if(d&&d.newsletter==="iscritto") setStato(s=>s==="idle"?"gia_iscritto":s);
+  }catch(e){} })(); return ()=>{ vivo=false; }; },[lettore]);
+  // Chi si registra da questa pagina con la casella spuntata e' gia' iscritto:
+  // lo si mostra subito invece di riproporgli il pulsante.
+  const appenaEntrato=(d)=>{ const nl=d&&d.newsletter; if(nl==="iscritto"||nl==="gia_iscritto") setStato(nl); onEntrato&&onEntrato(d); };
   // Chi ha gia' fatto l'accesso ha un indirizzo gia' verificato: basta un clic.
   const iscrivimi=async()=>{
     setStato("busy");
@@ -1160,7 +1173,7 @@ function NewsletterPage({lettore,onEntrato,onSessioneScaduta,onPage}){
                     <button onClick={iscrivimi} disabled={stato==="busy"} style={{...bottoneStyle(true),opacity:stato==="busy"?.6:1}}>{stato==="busy"?"Iscrizione…":"Iscrivimi alla newsletter"}</button>
                   </div>}
             </div>
-          : <AccessoBox variante="newsletter" onEntrato={onEntrato} onPage={onPage}/>}
+          : <AccessoBox variante="newsletter" onEntrato={appenaEntrato} onPage={onPage}/>}
       </div>
     </main>
   );

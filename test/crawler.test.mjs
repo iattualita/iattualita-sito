@@ -33,6 +33,9 @@ _svuotaCache();
 check("Googlebot con IP di Google: verificato", await crawlerVerificato(UA, "66.249.64.7", lista));
 check("Googlebot con IP qualunque: no", !(await crawlerVerificato(UA, "93.40.1.1", lista)));
 check("browser normale con IP di Google: no", !(await crawlerVerificato("Mozilla/5.0 Safari", "66.249.64.7", lista)));
+check("Rich Results Test (Google-InspectionTool) da IP di Google: no, e' uno strumento pubblico",
+  !(await crawlerVerificato("Mozilla/5.0 (Linux; Android 6.0.1) Chrome/125.0 Mobile Safari/537.36 (compatible; Google-InspectionTool/1.0;)", "66.249.64.7", lista)));
+check("GoogleOther da IP di Google: no", !(await crawlerVerificato("GoogleOther", "66.249.64.7", lista)));
 check("la lista si scarica una volta sola", scaricata === 1, scaricata);
 
 _svuotaCache();

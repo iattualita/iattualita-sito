@@ -40,7 +40,7 @@ exports.handler = async (event) => {
   if (!L.validEmail(email) || email.length > 254)
     return A.risposta(400, { error: "email", message: "Controlla l'indirizzo email." });
 
-  const ip = L.clientIp(event);
+  const ip = A.chiaveIp(L.clientIp(event));
   if (!(await L.rateHit("acc:ip:" + ip, IP_WINDOW_S, IP_MAX)))
     return A.risposta(429, { error: "rate", message: "Troppe richieste da questa connessione. Riprova tra un'ora." });
 

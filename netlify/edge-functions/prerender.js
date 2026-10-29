@@ -732,7 +732,11 @@ ${socialHtml}
     // li' un 404 sarebbe una bugia a Google, che potrebbe deindicizzare un
     // articolo valido. Si serve la shell e React ritentera'.
     const stato = Number(String(e && e.message).match(/supabase (\d+)/)?.[1] || 0);
-    if (stato >= 400 && stato < 500) return notFound(res, html);
+    // Solo 400 vuol dire "id non valido". 401/403 sono permessi negati
+    // (una colonna non aperta al pubblico, vedi migrazione 006): e' un errore
+    // di configurazione nostro, e un 404 con noindex farebbe sparire da Google
+    // tutti gli articoli insieme.
+    if (stato === 400) return notFound(res, html);
     return shell(res, html);
   }
 

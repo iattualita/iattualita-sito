@@ -69,6 +69,33 @@ grant select, insert, update, delete on public.lettori        to service_role;
 grant select, insert, update, delete on public.codici_accesso to service_role;
 
 -- ---------------------------------------------------------------------------
+-- codice_tentativo(email): conta un tentativo e restituisce il codice da
+-- confrontare, in una sola istruzione.
+--
+-- Leggere il contatore e poi riscriverlo in due passi lascerebbe un buco:
+-- dieci tentativi lanciati insieme leggerebbero tutti "0" e scriverebbero
+-- tutti "1", e il limite di 5 non varrebbe piu'. Qui l'incremento e il
+-- controllo avvengono nello stesso UPDATE, che Postgres esegue una riga alla
+-- volta: il sesto tentativo non riceve niente, comunque arrivi.
+--
+-- Nessuna riga restituita = codice inesistente, scaduto o gia' bruciato.
+-- ---------------------------------------------------------------------------
+create or replace function public.codice_tentativo(e text)
+returns table (code_hash text, newsletter boolean, tentativi integer)
+language sql
+as $$
+  update public.codici_accesso c
+     set tentativi = c.tentativi + 1
+   where c.email = e
+     and c.tentativi < 5
+     and c.expires_at > now()
+  returning c.code_hash, c.newsletter, c.tentativi
+$$;
+
+revoke all on function public.codice_tentativo(text) from public, anon, authenticated;
+grant execute on function public.codice_tentativo(text) to service_role;
+
+-- ---------------------------------------------------------------------------
 -- 3. L'anteprima di ogni articolo
 --
 -- E' una colonna calcolata dal database a ogni salvataggio: nessuno la

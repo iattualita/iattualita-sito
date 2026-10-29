@@ -19,7 +19,11 @@
 const MOTORI = [
   {
     nome: "google",
-    ua: /Googlebot|Google-InspectionTool|GoogleOther|Storebot-Google/i,
+    // Solo i crawler che indicizzano. NON Google-InspectionTool ne'
+    // GoogleOther: li usa anche il Rich Results Test, uno strumento pubblico
+    // che mostra a chiunque l'HTML ricevuto. Ammetterli vorrebbe dire che
+    // basta incollare l'indirizzo di un articolo li' per leggerlo intero.
+    ua: /Googlebot|Storebot-Google/i,
     url: "https://developers.google.com/static/search/apis/ipranges/googlebot.json"
   },
   {
@@ -130,8 +134,14 @@ async function prefissi(motore, fetcher) {
 }
 
 // true solo se user-agent E indirizzo IP appartengono a un motore di ricerca.
+// Gli strumenti di test pubblici (Rich Results Test, Lighthouse...) partono
+// dagli stessi IP dei crawler e mostrano a chiunque l'HTML ricevuto: si
+// escludono esplicitamente, anche se un giorno il loro user-agent dovesse
+// contenere anche la parola Googlebot.
+const STRUMENTI_DI_TEST = /Google-InspectionTool|GoogleOther|Google-Site-Verification|Chrome-Lighthouse|adidxbot/i;
 export async function crawlerVerificato(userAgent, ip, fetcher) {
   const ua = String(userAgent || "");
+  if (STRUMENTI_DI_TEST.test(ua)) return false;
   const motore = MOTORI.find((m) => m.ua.test(ua));
   if (!motore) return false;
   const addr = parseIp(ip);

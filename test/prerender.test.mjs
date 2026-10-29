@@ -213,6 +213,15 @@ global.fetch = async (u) => {
 let rErr = await chiedi("/articolo/999999/x");
 check("id di articolo malformato: 404, non 500", rErr.status === 404, "status " + rErr.status);
 
+// Colonna non aperta al pubblico (permesso negato): errore nostro, non un
+// articolo inesistente. Un 404 con noindex toglierebbe da Google tutto.
+global.fetch = async (u) => {
+  if (String(u).includes("/news")) return new Response('{"code":"42501"}', { status: 401 });
+  return fetchBuono(u);
+};
+rErr = await chiedi("/articolo/42/x");
+check("permesso negato su una colonna: shell 200 non in cache, mai 404", rErr.status === 200 && (rErr.headers.get("cache-control") || "").includes("no-store"), "status " + rErr.status);
+
 global.fetch = async (u) => {
   if (String(u).includes("/news")) return new Response("boom", { status: 503 });
   return fetchBuono(u);

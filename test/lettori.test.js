@@ -9,7 +9,7 @@ const path = require("path");
 const FN = path.join(__dirname, "..", "netlify", "functions");
 
 // ---------- finto Supabase + Brevo ----------
-let db, mail, limiteOk;
+let db, mail, limiteOk, chiaviLimite = [];
 function reset() {
   db = {
     codici: new Map(),       // email -> riga
@@ -30,14 +30,27 @@ global.fetch = async (url, opt = {}) => {
   const corpo = opt.body ? JSON.parse(opt.body) : null;
 
   if (u.includes("api.brevo.com")) { mail.push(corpo); return risp(201, {}); }
-  if (u.includes("/rpc/rate_hit")) return risp(200, limiteOk(corpo.k));
+  if (u.includes("/rpc/rate_hit")) { chiaviLimite.push(corpo.k); return risp(200, limiteOk(corpo.k)); }
+  // Come la funzione SQL codice_tentativo: incremento e controllo insieme.
+  // Node e' a un solo thread, quindi qui e' atomico come in Postgres.
+  if (u.includes("/rpc/codice_tentativo")) {
+    const c = db.codici.get(corpo.e);
+    if (!c || c.tentativi >= 5 || new Date(c.expires_at).getTime() <= Date.now()) return risp(200, []);
+    c.tentativi += 1;
+    return risp(200, [{ code_hash: c.code_hash, newsletter: c.newsletter, tentativi: c.tentativi }]);
+  }
 
   if (u.includes("/codici_accesso")) {
     const e = param(u, "email");
     if (metodo === "POST") { db.codici.set(corpo.email, { ...corpo }); return risp(201, null); }
     if (metodo === "GET") return risp(200, e && db.codici.has(e) ? [db.codici.get(e)] : []);
     if (metodo === "PATCH") { Object.assign(db.codici.get(e), corpo); return risp(204, null); }
-    if (metodo === "DELETE") { if (e) db.codici.delete(e); return risp(204, null); }
+    if (metodo === "DELETE") {
+      const h = param(u, "code_hash");
+      if (h) { const c = db.codici.get(e); if (c && c.code_hash === h) { db.codici.delete(e); return risp(200, [c]); } return risp(200, []); }
+      if (e) db.codici.delete(e);
+      return risp(204, null);
+    }
   }
   if (u.includes("/lettori")) {
     const id = param(u, "id");
@@ -166,6 +179,28 @@ function check(nome, cond, extra) {
   db.codici.get("s@esempio.it").expires_at = new Date(Date.now() - 1000).toISOString();
   r = await post(verifica, { email: "s@esempio.it", codice: giusto });
   check("codice scaduto: rifiutato", r.statusCode === 400 && JSON.parse(r.body).error === "scaduto");
+
+  reset();
+  await post(codice, { email: "p@esempio.it" });
+  giusto = codiceInviato();
+  sbagliato = giusto === "000000" ? "111111" : "000000";
+  const raffica = await Promise.all(Array.from({ length: 12 }, () => post(verifica, { email: "p@esempio.it", codice: sbagliato })));
+  check("12 tentativi sbagliati in parallelo: il limite di 5 regge", raffica.every((x) => x.statusCode === 400) && !db.codici.has("p@esempio.it"));
+  r = await post(verifica, { email: "p@esempio.it", codice: giusto });
+  check("  ^ e poi il codice giusto non vale piu'", r.statusCode === 400 && db.lettori.size === 0);
+
+  reset();
+  await post(codice, { email: "d@esempio.it" });
+  giusto = codiceInviato();
+  const doppio = await Promise.all([post(verifica, { email: "d@esempio.it", codice: giusto }), post(verifica, { email: "d@esempio.it", codice: giusto })]);
+  check("codice giusto mandato due volte insieme: entra una volta sola", doppio.filter((x) => x.statusCode === 200).length === 1, doppio.map((x) => x.statusCode));
+
+  chiaviLimite = [];
+  await codice({ httpMethod: "POST", headers: { ...JSONH, "x-nf-client-connection-ip": "2a01:4f8:1c1b:abcd:1:2:3:4" }, body: JSON.stringify({ email: "v6@esempio.it" }) });
+  await codice({ httpMethod: "POST", headers: { ...JSONH, "x-nf-client-connection-ip": "2a01:4f8:1c1b:abcd:ffff::9" }, body: JSON.stringify({ email: "v6@esempio.it" }) });
+  const ipKeys = chiaviLimite.filter((k) => k.startsWith("acc:ip:"));
+  check("IPv6: due indirizzi della stessa rete /64 contano come uno", ipKeys.length === 2 && ipKeys[0] === ipKeys[1] && ipKeys[0] === "acc:ip:2a01:4f8:1c1b:abcd::/64", ipKeys);
+  check("IPv4: chiave invariata", A.chiaveIp("93.40.1.1") === "93.40.1.1" && A.chiaveIp("::1") === "0:0:0:0::/64");
 
   // ---- testo integrale ----
   reset();

@@ -39,6 +39,19 @@ const COOKIE_SESSIONE = "iatt_sessione";
 // ogni pagina: chi non e' registrato non fa partire nessuna funzione.
 const COOKIE_SEGNALE = "iatt_lettore";
 
+// Chiave per i limiti per provenienza. Un IPv6 domestico riceve di solito
+// un'intera rete /64 (miliardi di indirizzi): contare il singolo indirizzo
+// permetterebbe di aggirare il limite cambiandone uno a ogni richiesta.
+function chiaveIp(ip) {
+  const t = String(ip || "").trim().toLowerCase();
+  if (t.indexOf(":") < 0) return t;
+  const [testa, coda] = t.split("::");
+  const a = testa ? testa.split(":") : [];
+  const b = coda !== undefined && coda ? coda.split(":") : [];
+  const gruppi = coda !== undefined ? a.concat(Array(Math.max(0, 8 - a.length - b.length)).fill("0"), b) : a;
+  return gruppi.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, "")).join(":") + "::/64";
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (s) => UUID.test(String(s || ""));
 
@@ -178,11 +191,26 @@ async function codiceLeggi(email) {
   return (await r.json())[0] || null;
 }
 
-async function codiceTentativo(email, tentativi) {
-  const r = await fetch(REST + "/codici_accesso?email=eq." + encodeURIComponent(email), {
-    method: "PATCH", headers: H({ Prefer: "return=minimal" }), body: JSON.stringify({ tentativi })
-  });
+// Conta un tentativo e restituisce { code_hash, newsletter, tentativi }, o
+// null se il codice non c'e', e' scaduto o ha gia' avuto 5 tentativi.
+// L'incremento e' atomico nel database (funzione codice_tentativo, 005):
+// tentativi lanciati in parallelo non possono superare il limite.
+async function codiceTentativo(email) {
+  const r = await fetch(REST + "/rpc/codice_tentativo", { method: "POST", headers: H(), body: JSON.stringify({ e: email }) });
   if (!r.ok) throw await L.sbError("codice tentativo", r);
+  const a = await r.json();
+  return (Array.isArray(a) ? a[0] : a) || null;
+}
+
+// Brucia il codice SOLO se e' ancora quello verificato. Se due richieste col
+// codice giusto arrivano insieme, una sola trova la riga: l'altra riceve
+// false, e il codice resta usato una volta sola.
+async function codiceConsuma(email, hash) {
+  const r = await fetch(REST + "/codici_accesso?email=eq." + encodeURIComponent(email) + "&code_hash=eq." + hash, {
+    method: "DELETE", headers: H({ Prefer: "return=representation" })
+  });
+  if (!r.ok) throw await L.sbError("codice consuma", r);
+  return (await r.json()).length > 0;
 }
 
 async function codiceCancella(email) {
@@ -275,7 +303,7 @@ module.exports = {
   isUuid, nuovoCodice, impronta, confrontaImpronta,
   creaSessione, leggiSessione, leggiCookie, sessioneDaRichiesta,
   cookieAccesso, cookieUscita, risposta, richiestaDalSito, leggiJson,
-  codiceSalva, codiceLeggi, codiceTentativo, codiceCancella, codiciPulizia,
+  codiceSalva, codiceLeggi, codiceTentativo, codiceConsuma, codiceCancella, codiciPulizia, chiaveIp,
   lettoreAccesso, lettorePerId, lettoreCancella, articoloCompleto,
   newsletterIscrivi, newsletterStato,
   emailCodiceHtml
