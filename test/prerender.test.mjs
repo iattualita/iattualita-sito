@@ -13,7 +13,10 @@ const ARTICOLO = {
   id: 42,
   title: "Titolo dell'articolo",
   subtitle: "Occhiello",
-  body: "<p>Corpo con un $& e un apostrofo d'esempio.</p><script>alert(1)</script>",
+  body: "<p>Corpo con un $& e un apostrofo d'esempio. TESTO-RISERVATO</p><script>alert(1)</script>",
+  // Colonna calcolata dal database (migrazione 005): l'unico testo che vede
+  // chi non ha fatto l'accesso.
+  anteprima: "Inizio dell'articolo con un $& dentro. Seconda frase dell'anteprima che continua",
   category: "Geopolitica",
   author_name: "Lorenzo",
   // Ieri, calcolato: con una data fissa il controllo della news-sitemap
@@ -23,9 +26,20 @@ const ARTICOLO = {
 };
 
 // Finto Supabase: risponde secondo la tabella richiesta.
-global.fetch = async (url) => {
+// Intervalli IP ufficiali di Googlebot (finti): 66.249.64.0/27 e un IPv6.
+const GOOGLEBOT_JSON = { prefixes: [{ ipv4Prefix: "66.249.64.0/27" }, { ipv6Prefix: "2001:4860:4801:10::/64" }] };
+let chiaviServizio = [];
+
+global.fetch = async (url, opts) => {
   const u = String(url);
   const ok = (d) => new Response(JSON.stringify(d), { status: 200, headers: { "content-type": "application/json" } });
+  if (u.includes("googlebot.json")) return ok(GOOGLEBOT_JSON);
+  if (u.includes("bingbot.json")) return ok({ prefixes: [] });
+  // Il testo integrale si chiede solo con la chiave di servizio.
+  if (u.includes("select=body,summary")) {
+    chiaviServizio.push(opts && opts.headers && opts.headers.apikey);
+    return ok([{ body: ARTICOLO.body, summary: "" }]);
+  }
   if (u.includes("/site_info")) return ok([{ id: 1, email: "redazione@iattualita.it", phone: "+39 000", instagram: "https://instagram.com/iattualita" }]);
   if (u.includes("/news?id=eq.42")) return ok([ARTICOLO]);
   if (u.includes("/news?id=eq.")) return ok([]);                 // articolo inesistente
@@ -47,8 +61,14 @@ const INTESTAZIONI_ORIGINALI = {
   "x-content-type-options": "nosniff",
   "content-length": "12345"
 };
-const contesto = { next: async () => new Response(SHELL, { status: 200, headers: INTESTAZIONI_ORIGINALI }) };
-const chiedi = (p) => prerender(new Request("https://iattualita.it" + p), contesto);
+const contesto = { next: async () => new Response(SHELL, { status: 200, headers: INTESTAZIONI_ORIGINALI }), ip: "93.40.1.1" };
+const chiedi = (p, ua, ip) => prerender(
+  new Request("https://iattualita.it" + p, { headers: ua ? { "user-agent": ua } : {} }),
+  ip ? { ...contesto, ip } : contesto
+);
+// La chiave di servizio arriva dalle variabili d'ambiente di Netlify.
+globalThis.Netlify = { env: { get: (k) => (k === "SUPABASE_SERVICE_ROLE_KEY" ? "sb_secret_prova" : undefined) } };
+const UA_GOOGLEBOT = "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
 
 const results = [];
 function check(name, cond, extra) {
@@ -99,17 +119,59 @@ r = await chiedi("/social");
 h = await r.text();
 check("social: 200 e h1 Seguici", r.status === 200 && h.includes(">Seguici<"), r.status);
 
-// ---- articolo ----
+// ---- articolo, visitatore qualunque: anteprima e blocco ----
 r = await chiedi("/articolo/42/titolo-dell-articolo");
 h = await r.text();
-check("articolo: 200, corpo iniettato e JSON-LD NewsArticle",
-  r.status === 200 && h.includes("Corpo con un") && h.includes('"@type":"NewsArticle"'), r.status);
-check("  ^ lo <script> dentro il corpo viene rimosso",
-  !h.includes("alert(1)"));
+check("articolo: 200, anteprima iniettata e JSON-LD NewsArticle",
+  r.status === 200 && h.includes("Inizio dell&#39;articolo") && h.includes('"@type":"NewsArticle"'), r.status);
+check("  ^ il testo integrale NON c'e'", !h.includes("TESTO-RISERVATO") && !h.includes("Corpo con un"));
+check("  ^ c'e' il blocco 'continua a leggere' con la classe .paywall",
+  h.includes('class="paywall"') && h.includes("Continua a leggere gratis"));
+check("  ^ l'anteprima si chiude su una parola intera, con i puntini",
+  h.includes("Seconda frase dell&#39;anteprima che…</p>") && !h.includes("continua"));
+check("  ^ dichiarato a Google: isAccessibleForFree false e cssSelector .paywall",
+  h.includes('"isAccessibleForFree":false') && h.includes('"cssSelector":".paywall"'));
 check("  ^ il $& del testo non viene interpretato come pattern",
   h.includes("$&"));
 check("  ^ la cover passa dalla Image CDN, non da Supabase diretto",
   h.includes("/.netlify/images?url=") && !h.includes('src="https://wzkshpgakvasqwrrgkgd'));
+check("  ^ la chiave di servizio non e' stata usata", chiaviServizio.length === 0, chiaviServizio);
+
+// ---- chi si finge Googlebot da un IP qualunque: anteprima come tutti ----
+r = await chiedi("/articolo/42/titolo-dell-articolo", UA_GOOGLEBOT, "93.40.1.1");
+h = await r.text();
+check("finto Googlebot (user-agent giusto, IP sbagliato): niente testo integrale",
+  r.status === 200 && !h.includes("TESTO-RISERVATO") && h.includes("Continua a leggere gratis"));
+
+// ---- Googlebot vero: testo integrale ----
+r = await chiedi("/articolo/42/titolo-dell-articolo", UA_GOOGLEBOT, "66.249.64.5");
+h = await r.text();
+check("Googlebot verificato (IPv4): riceve il testo integrale dentro .paywall",
+  r.status === 200 && h.includes("TESTO-RISERVATO") && h.includes('class="paywall" data-corpo-completo data-articolo="42"'), r.status);
+check("  ^ lo <script> dentro il corpo viene rimosso", !h.includes("alert(1)"));
+check("  ^ il $& del testo non viene interpretato come pattern", h.includes("Corpo con un $&"));
+check("  ^ e la risposta non finisce in nessuna cache condivisa",
+  r.headers.get("cache-control") === "private, no-store", r.headers.get("cache-control"));
+check("  ^ il testo e' stato chiesto con la chiave di servizio", chiaviServizio[0] === "sb_secret_prova", chiaviServizio);
+
+r = await chiedi("/articolo/42/titolo-dell-articolo", UA_GOOGLEBOT, "2001:4860:4801:10::2a");
+h = await r.text();
+check("Googlebot verificato (IPv6): testo integrale", h.includes("TESTO-RISERVATO"));
+
+// IP di Google ma user-agent da browser: e' una persona (es. un dipendente
+// Google o un servizio cloud), non il crawler.
+r = await chiedi("/articolo/42/titolo-dell-articolo", "Mozilla/5.0 (iPhone) Safari/604.1", "66.249.64.5");
+h = await r.text();
+check("IP di Google ma browser normale: anteprima", !h.includes("TESTO-RISERVATO"));
+
+// Senza chiave di servizio, anche il crawler vero riceve l'anteprima.
+const NetlifyPrima = globalThis.Netlify;
+globalThis.Netlify = { env: { get: () => undefined } };
+r = await chiedi("/articolo/42/titolo-dell-articolo", UA_GOOGLEBOT, "66.249.64.5");
+h = await r.text();
+check("chiave di servizio mancante: anche Googlebot riceve l'anteprima (mai il testo per errore)",
+  r.status === 200 && !h.includes("TESTO-RISERVATO") && h.includes("Continua a leggere gratis"));
+globalThis.Netlify = NetlifyPrima;
 
 // ---- 404 veri ----
 r = await chiedi("/articolo/999/inesistente");

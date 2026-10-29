@@ -28,11 +28,18 @@ function cdnAbs(u, w) {
 
 export default async () => {
   let items = [];
+  // Solo colonne pubbliche: il testo integrale (body, summary) e' riservato
+  // ai lettori registrati e dopo la migrazione 006 la chiave pubblica non lo
+  // legge piu'. Nel feed va il sottotitolo o l'inizio dell'anteprima.
+  // Se la colonna anteprima non esiste ancora (005 non eseguita) Supabase
+  // risponde 400 e si riprova con i campi di prima, finche' sono leggibili.
+  const q = (cols) => fetch(
+    SUPABASE_URL + "/rest/v1/news?select=" + cols + "&order=date.desc.nullslast,created_at.desc&limit=30",
+    { headers: { apikey: SUPABASE_KEY } }
+  );
   try {
-    const r = await fetch(
-      SUPABASE_URL + "/rest/v1/news?select=*&order=date.desc.nullslast,created_at.desc&limit=30",
-      { headers: { apikey: SUPABASE_KEY } }
-    );
+    let r = await q("id,title,subtitle,anteprima,category,date,created_at,image");
+    if (r.status === 400) r = await q("id,title,subtitle,category,date,created_at,image");
     if (r.ok) items = await r.json();
   } catch (e) { /* feed vuoto in caso di errore */ }
 
@@ -43,7 +50,7 @@ export default async () => {
     const date = it.date || it.created_at;
     let pub = now;
     try { if (date) pub = new Date(date).toUTCString(); } catch (e) {}
-    const desc = stripHtml(it.subtitle || it.summary || it.body || "").slice(0, 500);
+    const desc = stripHtml(it.subtitle || it.anteprima || "").slice(0, 300);
     return `    <item>
       <title>${esc(it.title)}</title>
       <link>${esc(url)}</link>
