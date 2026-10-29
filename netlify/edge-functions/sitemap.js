@@ -55,6 +55,7 @@ export default async function handler() {
   // raggiungibile, ed e' tra i segnali che Google News guarda.
   urls.push({ loc: SITE + "/contatti", changefreq: "monthly", priority: "0.6" });
   urls.push({ loc: SITE + "/social", changefreq: "monthly", priority: "0.4" });
+  urls.push({ loc: SITE + "/numeri", changefreq: "weekly", priority: "0.5" });
 
   // Pagine argomento — dedotte dalle categorie realmente presenti in archivio
   const cats = [...new Set(news.map((n) => n.category).filter(Boolean))].sort((a, b) =>

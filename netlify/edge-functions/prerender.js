@@ -576,6 +576,43 @@ export default async function handler(request, context) {
     return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=3600") });
   }
 
+  // ---- I NOSTRI NUMERI ----
+  // Pagina da mandare a sponsor e uffici stampa: il crawler (e l'anteprima
+  // dei link condivisi) deve trovare i numeri gia' nell'HTML.
+  if (segRaw === "numeri") {
+    let righe = [];
+    try {
+      righe = await sb("numeri_social?select=piattaforma,follower,visualizzazioni,periodo,aggiornato_at");
+    } catch {
+      /* senza numeri la pagina esce comunque, e React riprova */
+    }
+    const NOMI = { youtube: "YouTube", instagram: "Instagram", facebook: "Facebook", tiktok: "TikTok" };
+    const fmt = (n) => Number(n).toLocaleString("it-IT");
+    const valide = righe.filter((r) => r.follower != null).sort((a, b) => b.follower - a.follower);
+    const totale = valide.reduce((s, r) => s + Number(r.follower), 0);
+    const u = SITE + "/numeri";
+    const t = "I nostri numeri · Iattualità";
+    const d = totale
+      ? fmt(totale) + " persone seguono Iattualità sui social. Follower e visualizzazioni di ogni canale, con la data dell'ultimo aggiornamento."
+      : "Follower e visualizzazioni dei canali di Iattualità, con la data dell'ultimo aggiornamento.";
+    const blk = "<!--OG_START-->\n" + pageOgBlock(t, d, u, webPageLd("I nostri numeri", d, u)) + "\n<!--OG_END-->";
+    html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => blk);
+    html = inject(`${WRAP_OPEN}
+<p style="font-size:12px;color:#7A8499;margin:0 0 10px"><a href="/" style="color:#2C5AA0">Iattualità</a></p>
+<h1 ${H1}>I nostri numeri</h1>
+${totale ? `<p style="font-size:19px;font-weight:700;color:#16243F">${esc(fmt(totale))} persone ci seguono sui social</p>` : ""}
+<ul>${valide
+      .map(
+        (r) =>
+          `<li><strong>${esc(NOMI[r.piattaforma] || r.piattaforma)}</strong>: ${esc(fmt(r.follower))} ${r.piattaforma === "youtube" ? "iscritti" : "follower"}${
+            r.visualizzazioni != null ? `, ${esc(fmt(r.visualizzazioni))} visualizzazioni${r.periodo ? " (" + esc(r.periodo) + ")" : ""}` : ""
+          }${r.aggiornato_at ? ` — aggiornato il ${esc(fmtDateIt(r.aggiornato_at))}` : ""}</li>`
+      )
+      .join("")}</ul>
+</div>`);
+    return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=3600") });
+  }
+
   // ---- CONTATTI E SOCIAL ----
   // Per una testata la pagina contatti e' un segnale di affidabilita': dice a
   // chi legge (e a Google News) che dietro il sito c'e' qualcuno di

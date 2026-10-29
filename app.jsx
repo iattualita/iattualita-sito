@@ -346,7 +346,7 @@ function topicFullUrl(cat){ return window.location.origin+topicPath(cat); }
 function serieFullUrl(s){ return window.location.origin+seriePath(s); }
 function serieFromSlug(slug){ return SERIES.find(s=>slugify(s)===slug)||null; }
 function serieFromAlias(seg){ return Object.keys(SERIE_ALIAS).find(s=>SERIE_ALIAS[s]==="/"+seg)||null; }
-function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } if(p.indexOf("/serie/")===0){ const s=serieFromSlug(decodeURIComponent(p.slice("/serie/".length).split("/")[0])); if(s) return {name:"serie",serie:s}; } const seg=p.replace(/^\/+|\/+$/g,""); const alias=seg?serieFromAlias(seg):null; if(alias){ return {name:"serie",serie:alias}; } if(seg==="archivio"){ return {name:"archivio"}; } if(seg==="newsletter"||seg==="contatti"||seg==="social"){ return {name:"page",page:seg}; } if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
+function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } if(p.indexOf("/serie/")===0){ const s=serieFromSlug(decodeURIComponent(p.slice("/serie/".length).split("/")[0])); if(s) return {name:"serie",serie:s}; } const seg=p.replace(/^\/+|\/+$/g,""); const alias=seg?serieFromAlias(seg):null; if(alias){ return {name:"serie",serie:alias}; } if(seg==="archivio"){ return {name:"archivio"}; } if(seg==="newsletter"||seg==="contatti"||seg==="social"||seg==="numeri"){ return {name:"page",page:seg}; } if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
 function copyToClipboard(url,onOk,onFail){ (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(onOk).catch(()=>{ try{ window.prompt("Copia il link:",url); }catch(e){} if(onFail)onFail(); }); }
 
 // ====== TESTO FORMATTATO (rich text) ======
@@ -562,6 +562,7 @@ function App(){
                 resterebbero senza indirizzo proprio — non linkabili, non
                 condivisibili, invisibili a Google, e perse a ogni ricarica. */}
             <button onClick={()=>openPage("social")} style={menuItem}>Social</button>
+            <button onClick={()=>openPage("numeri")} style={menuItem}>I nostri numeri</button>
             <button onClick={()=>openPage("contatti")} style={menuItem}>Contatti</button>
             <button onClick={()=>openPage("newsletter")} style={menuItem}>Newsletter</button>
             {!admin&&(lettore
@@ -579,7 +580,7 @@ function App(){
           raggiungibile dal focus via programma senza inserirlo nel giro del
           tab: chi salta qui riprende a tabulare dal contenuto, non da capo. */}
       <div id="contenuto" tabIndex={-1} style={{outline:"none"}}>
-      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic} lettore={lettore} onEntrato={entrato} onRiprova={()=>setTentativo(t=>t+1)} onPage={openPage}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="newsletter" ? <NewsletterPage lettore={lettore} onEntrato={entrato} onSessioneScaduta={()=>setLettore(false)} onPage={openPage}/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
+      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic} lettore={lettore} onEntrato={entrato} onRiprova={()=>setTentativo(t=>t+1)} onPage={openPage}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="numeri" ? <NumeriPage info={info} pieno={pieno} token={token} note={note} onPage={openPage}/> : view==="newsletter" ? <NewsletterPage lettore={lettore} onEntrato={entrato} onSessioneScaduta={()=>setLettore(false)} onPage={openPage}/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
       <main id="top" style={{maxWidth:980,margin:"0 auto",padding:"16px"}}>
         {view==="archivio"&&<div style={{marginBottom:14}}><div style={{fontFamily:"Anton",fontSize:26,color:C.navy}}>Archivio</div><div style={{fontSize:14,color:C.gray}}>Tutti gli articoli di Iattualità. Cerca o filtra per argomento.</div></div>}
         {view==="serie"&&activeSerie&&<div style={{marginBottom:16,background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"14px 16px"}}>
@@ -1089,6 +1090,108 @@ function SocialPage({info}){
   );
 }
 
+// ====== I NOSTRI NUMERI ======
+// Follower e visualizzazioni dei canali, dalla tabella numeri_social
+// (migrazione 007). YouTube, Instagram e Facebook li aggiorna ogni notte
+// numeri-cron.mjs dalle API ufficiali; TikTok lo scrivono i soci da qui.
+// Serve a sponsor, uffici stampa e ospiti: per questo ogni numero ha la sua
+// data e il link al profilo, cosi' chiunque puo' verificarlo.
+const NUMERI_COLS="piattaforma,follower,visualizzazioni,periodo,fonte,aggiornato_at";
+async function apiGetNumeri(token){
+  try{
+    const r=token
+      ? await authed(token,t=>fetch(API+"/numeri_social?select="+NUMERI_COLS+",errore",{headers:hdr(t)}))
+      : await fetch(API+"/numeri_social?select="+NUMERI_COLS,{headers:hdr()});
+    return r.ok?await r.json():[];
+  }catch(e){ return []; }
+}
+async function apiSalvaNumero(token,piattaforma,campi){
+  const r=await authed(token,t=>fetch(API+"/numeri_social?piattaforma=eq."+piattaforma,{method:"PATCH",headers:{...hdr(t,true),Prefer:"return=representation"},body:JSON.stringify(campi)}));
+  if(!r.ok) throw new Error(await r.text());
+  const a=await r.json(); if(!a.length) throw new Error("Salvataggio non consentito.");
+  return a[0];
+}
+const NUMERI_ETICHETTA={youtube:"iscritti",instagram:"follower",facebook:"follower",tiktok:"follower"};
+const fmtNum=(n)=>{ try{ return Number(n).toLocaleString("it-IT"); }catch(e){ return String(n); } };
+const fmtGrande=(n)=>{ n=Number(n); if(n>=1e6) return (n/1e6).toLocaleString("it-IT",{maximumFractionDigits:1})+" mln"; if(n>=1e4) return Math.round(n/1e3).toLocaleString("it-IT")+"K"; return fmtNum(n); };
+
+function NumeriPage({info,pieno,token,note,onPage}){
+  const [righe,setRighe]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [bozza,setBozza]=useState({});
+  const carica=async()=>setRighe(await apiGetNumeri(pieno?token:null));
+  useEffect(()=>{ carica(); },[pieno]);
+  useEffect(()=>{
+    document.title="I nostri numeri · Iattualità";
+    const c=document.querySelector('link[rel="canonical"]'); if(c)c.setAttribute("href","https://iattualita.it/numeri");
+    return ()=>{ document.title="Iattualità · L'informazione intelligente e in tempo reale"; const cc=document.querySelector('link[rel="canonical"]'); if(cc)cc.setAttribute("href","https://iattualita.it/"); };
+  },[]);
+  const lista=(righe||[]).filter(r=>r.follower!=null||pieno).sort((a,b)=>(b.follower||0)-(a.follower||0));
+  const totale=lista.reduce((s,r)=>s+(Number(r.follower)||0),0);
+  const ultimo=lista.map(r=>r.aggiornato_at).filter(Boolean).sort().pop();
+  const aggiornaOra=async()=>{
+    setBusy(true);
+    try{
+      const r=await authed(token,t=>fetch("/.netlify/functions/numeri-aggiorna",{method:"POST",headers:{Authorization:"Bearer "+t}}));
+      const d=await r.json(); if(!r.ok) throw new Error(d.message||"Errore");
+      await carica();
+      alert("Aggiornamento fatto:\n\n"+Object.entries(d.esito||{}).map(([k,v])=>k+": "+v).join("\n"));
+    }catch(e){ alert("Aggiornamento non riuscito:\n\n"+(e.message||e)); }
+    setBusy(false);
+  };
+  const salvaManuale=async(p)=>{
+    const b=bozza[p]||{}; const num=(x)=>{ const v=String(x==null?"":x).replace(/[^\d]/g,""); return v===""?null:Number(v); };
+    try{
+      await apiSalvaNumero(token,p,{follower:num(b.follower),visualizzazioni:num(b.visualizzazioni),periodo:(b.periodo||"").trim()||null,aggiornato_at:new Date().toISOString()});
+      setBozza(x=>({...x,[p]:undefined})); await carica(); note&&note("Numeri salvati.");
+    }catch(e){ alert("Salvataggio non riuscito:\n\n"+(e.message||e)); }
+  };
+  return (
+    <main style={{maxWidth:820,margin:"0 auto",padding:"24px 16px 8px"}}>
+      <h1 style={{fontFamily:"Anton",fontSize:"clamp(26px,6vw,38px)",color:C.navy,margin:"0 0 8px",fontWeight:400,letterSpacing:.3}}>I nostri numeri</h1>
+      <p style={{color:C.navySoft,fontSize:15.5,lineHeight:1.55,marginTop:0,maxWidth:680}}>Iattualità racconta l'attualità verificata con i dati, senza appartenenze politiche. Questi sono i numeri dei nostri canali: ogni dato porta la data dell'ultimo aggiornamento e il link al profilo, per verificarlo.</p>
+      {righe===null
+        ? <div style={{height:180,background:C.line,borderRadius:16,marginTop:18,opacity:.5}}/>
+        : <React.Fragment>
+            {totale>0&&<div style={{background:C.navy,color:"#fff",borderRadius:18,padding:"22px 22px 20px",marginTop:18}}>
+              <div style={{fontFamily:"Anton",fontSize:"clamp(40px,10vw,64px)",lineHeight:1,letterSpacing:.5}}>{fmtNum(totale)}</div>
+              <div style={{fontSize:15.5,fontWeight:600,marginTop:8,color:"rgba(255,255,255,.85)"}}>persone ci seguono sui social</div>
+              {ultimo&&<div style={{fontSize:12.5,marginTop:10,color:"rgba(255,255,255,.6)"}}>Dati aggiornati al {fmtDate(ultimo)}</div>}
+            </div>}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(230px, 1fr))",gap:12,marginTop:14}}>
+              {lista.map(r=>{ const s=SOCIALS.find(x=>x.k===r.piattaforma)||{n:r.piattaforma,col:C.navy,ic:"link"}; const url=info&&info[r.piattaforma]; const b=bozza[r.piattaforma]; return (
+                <div key={r.piattaforma} style={{background:C.card,border:"1px solid "+C.line,borderRadius:16,padding:"16px 18px",display:"flex",flexDirection:"column",gap:8}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{display:"flex",width:36,height:36,borderRadius:10,background:s.col,alignItems:"center",justifyContent:"center",flexShrink:0}}><Ic n={s.ic} s={19} c="#fff"/></span>
+                    <span style={{fontFamily:"Anton",fontSize:19,color:C.navy,letterSpacing:.2}}>{s.n}</span>
+                  </div>
+                  <div><span style={{fontFamily:"Anton",fontSize:34,color:C.navy,lineHeight:1}}>{r.follower!=null?fmtNum(r.follower):"—"}</span> <span style={{fontSize:14,color:C.navySoft,fontWeight:600}}>{NUMERI_ETICHETTA[r.piattaforma]||"follower"}</span></div>
+                  {r.visualizzazioni!=null&&<div style={{fontSize:14,color:C.navySoft}}><b style={{color:C.navy}}>{fmtGrande(r.visualizzazioni)}</b> visualizzazioni{r.periodo?" · "+r.periodo:""}</div>}
+                  <div style={{fontSize:12,color:C.gray,marginTop:"auto"}}>{r.aggiornato_at?("Aggiornato il "+fmtDate(r.aggiornato_at)+" · "+(r.fonte==="automatico"?"dato ufficiale della piattaforma":"inserito dalla redazione")):"In attesa del primo aggiornamento"}</div>
+                  {url&&<a href={url} target="_blank" rel="noreferrer" style={{fontSize:13,color:C.blueDeep,fontWeight:700,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4}}>Vedi il profilo <Ic n="ext" s={12} c={C.blueDeep}/></a>}
+                  {pieno&&r.errore&&<div style={{fontSize:12,color:"#B3261E",background:"#FDECEA",borderRadius:8,padding:"6px 8px"}}>Ultimo errore: {r.errore}</div>}
+                  {pieno&&r.fonte==="manuale"&&(b
+                    ? <div style={{display:"grid",gap:6,marginTop:4}}>
+                        <input value={b.follower??""} onChange={e=>setBozza(x=>({...x,[r.piattaforma]:{...b,follower:e.target.value}}))} placeholder="Follower" inputMode="numeric" style={inStyle}/>
+                        <input value={b.visualizzazioni??""} onChange={e=>setBozza(x=>({...x,[r.piattaforma]:{...b,visualizzazioni:e.target.value}}))} placeholder="Visualizzazioni (facoltativo)" inputMode="numeric" style={inStyle}/>
+                        <input value={b.periodo??""} onChange={e=>setBozza(x=>({...x,[r.piattaforma]:{...b,periodo:e.target.value}}))} placeholder="Periodo, es. ultimi 30 giorni" style={inStyle}/>
+                        <div style={{display:"flex",gap:6}}><button onClick={()=>salvaManuale(r.piattaforma)} style={{flex:1,background:C.navy,color:"#fff",border:"none",borderRadius:9,padding:"9px",fontWeight:700,cursor:"pointer"}}>Salva</button><button onClick={()=>setBozza(x=>({...x,[r.piattaforma]:undefined}))} style={{background:C.cream,border:"1px solid "+C.line,borderRadius:9,padding:"9px 12px",cursor:"pointer"}}>Annulla</button></div>
+                      </div>
+                    : <button onClick={()=>setBozza(x=>({...x,[r.piattaforma]:{follower:r.follower??"",visualizzazioni:r.visualizzazioni??"",periodo:r.periodo||""}}))} style={{marginTop:4,background:C.amber,color:C.navy,border:"none",borderRadius:9,padding:"8px 12px",fontWeight:700,fontSize:13,cursor:"pointer"}}>Aggiorna a mano</button>)}
+                </div>
+              ); })}
+            </div>
+            {pieno&&<button onClick={aggiornaOra} disabled={busy} style={{marginTop:14,background:C.card,border:"1px solid "+C.line,color:C.navy,borderRadius:11,padding:"11px 16px",fontWeight:700,cursor:busy?"default":"pointer",fontFamily:"Barlow"}}>{busy?"Aggiornamento…":"Aggiorna adesso YouTube, Instagram e Facebook"}</button>}
+            {lista.length===0&&!pieno&&<div style={{textAlign:"center",padding:"40px 20px",background:C.card,borderRadius:16,border:"1px dashed "+C.line,marginTop:18}}><p style={{color:C.gray,margin:0,fontSize:14.5}}>I numeri saranno presto online.</p></div>}
+          </React.Fragment>}
+      <div style={{background:C.card,border:"1px solid "+C.line,borderRadius:16,padding:"18px 20px",marginTop:22}}>
+        <div style={{fontFamily:"Anton",fontSize:21,color:C.navy,marginBottom:6}}>Collabora con Iattualità</div>
+        <p style={{margin:0,color:C.navySoft,fontSize:15,lineHeight:1.55}}>Sponsorizzazioni, partnership, interviste e richieste stampa: {info&&info.email? <a href={"mailto:"+info.email} style={{color:C.blueDeep,fontWeight:700}}>{info.email}</a> : <a href="/contatti" onClick={e=>{e.preventDefault(); onPage&&onPage("contatti");}} style={{color:C.blueDeep,fontWeight:700}}>scrivici</a>}.</p>
+      </div>
+    </main>
+  );
+}
+
 function ContactPage({info}){
   const [f,setF]=useState({nome:"",email:"",oggetto:"",messaggio:""});
   const [sent,setSent]=useState(false);
@@ -1567,7 +1670,7 @@ function SiteFooter({info,admin,pieno,onEdit,onPage,onSendNewsletter,onSpecial})
         {/* Contatti e Social in fondo alla lista: sono veri <a href>, quindi
             danno al crawler un collegamento da seguire verso due pagine che
             altrimenti si raggiungono solo dal menu. */}
-        {[...Object.keys(STATIC_PAGES).map(k=>[k,STATIC_PAGES[k].h1]),["contatti","Contatti"],["social","Seguici"]].map(([k,label])=>(
+        {[...Object.keys(STATIC_PAGES).map(k=>[k,STATIC_PAGES[k].h1]),["contatti","Contatti"],["social","Seguici"],["numeri","I nostri numeri"]].map(([k,label])=>(
           <a key={k} href={"/"+k} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage(k); }} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>{label}</a>
         ))}
       </div>
