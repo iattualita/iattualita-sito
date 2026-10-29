@@ -59,6 +59,11 @@ check("altrimenti sull'ultima parola, con i puntini",
   paragrafiAnteprima("Breve. Una frase molto lunga che non finisce mai e viene tagliata a met").join("|")
     === "Breve. Una frase molto lunga che non finisce mai e viene tagliata a…");
 check("i paragrafi restano separati", paragrafiAnteprima("Primo paragrafo.\nSecondo paragrafo.\n\n").length === 2);
+// Caso reale: testo incollato con un a capo a ogni riga visiva.
+const incollato = "Il mercato del\nlavoro italiano è entrato in una fase sospesa, quasi una bolla di quiete che\nperò non rassicura. La crescita si arresta.\nL'Italia si ferma: la stagnazione\ndell'occupazione\nA settembre gli\noccupati sono 24.328.000, 7.000 in meno rispetto ad agosto.";
+const ric = paragrafiAnteprima(incollato);
+check("righe spezzate a meta' frase: ricucite in paragrafi veri",
+  ric.length === 2 && ric[0] === "Il mercato del lavoro italiano è entrato in una fase sospesa, quasi una bolla di quiete che però non rassicura. La crescita si arresta.", ric);
 
 console.log("\n" + risultati.length + " controlli, " + risultati.filter((x) => !x).length + " falliti");
 if (risultati.some((x) => !x)) process.exit(1);

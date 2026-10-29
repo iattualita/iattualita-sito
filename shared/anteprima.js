@@ -10,9 +10,31 @@
 // sistema solo la fine: si chiude sull'ultima frase intera se ne resta
 // abbastanza, altrimenti sull'ultima parola con i puntini.
 
+// Molti articoli arrivano incollati da PDF o da altri siti, con un a capo
+// (spesso un <div> o un <p>) a ogni riga visiva: "Il mercato del" /
+// "lavoro italiano e' entrato...". Presi cosi', diventano paragrafi di tre
+// parole con uno spazio enorme fra l'uno e l'altro. Qui si ricuciono: una riga
+// che non chiude una frase continua nella successiva. Un paragrafo vero
+// finisce quasi sempre con un punto (o ! ? … : e virgolette di chiusura).
+function ricuciRighe(t) {
+  const righe = t.split(/\n+/).map((r) => r.trim()).filter(Boolean);
+  const paragrafi = [];
+  let corrente = "";
+  for (const r of righe) {
+    corrente = corrente ? corrente + " " + r : r;
+    if (/[.!?…:»"”)]$/.test(r)) {
+      paragrafi.push(corrente);
+      corrente = "";
+    }
+  }
+  if (corrente) paragrafi.push(corrente);
+  return paragrafi.join("\n");
+}
+
 export function paragrafiAnteprima(testo) {
   let t = String(testo || "").replace(/\r/g, "").replace(/[ \t]+/g, " ").trim();
   if (!t) return [];
+  t = ricuciRighe(t);
 
   const fineFrase = Math.max(t.lastIndexOf(". "), t.lastIndexOf("! "), t.lastIndexOf("? "), t.lastIndexOf(".\n"));
   if (/[.!?]$/.test(t)) {
