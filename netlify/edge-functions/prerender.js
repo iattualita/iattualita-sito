@@ -229,7 +229,7 @@ function newsArticleLd(a, url, img, published, modified, desc) {
     dateModified: modified || published || undefined,
     articleSection: a.category || undefined,
     inLanguage: "it-IT",
-    // Il testo completo e' riservato ai lettori registrati (gratis): lo si
+    // Il testo completo e' riservato ai lettori registrati: lo si
     // dichiara a Google, insieme alla parte della pagina che e' riservata.
     isAccessibleForFree: false,
     hasPart: {
@@ -258,7 +258,7 @@ function newsArticleLd(a, url, img, published, modified, desc) {
 // sostituisce con il modulo vero (email e codice): qui serve solo a occupare
 // lo stesso spazio e a dire cosa c'e' dopo, anche a chi non esegue script.
 const BLOCCO_ACCESSO = `<div class="paywall" style="margin:4px 0 0;background:#FFFFFF;border:1px solid #E3DFD6;border-radius:16px;padding:20px 18px 22px">
-<p style="font-family:Anton,sans-serif;font-size:24px;line-height:1.1;color:#16243F;margin:0 0 8px">Continua a leggere gratis</p>
+<p style="font-family:Anton,sans-serif;font-size:24px;line-height:1.1;color:#16243F;margin:0 0 8px">Continua a leggere</p>
 <p style="font-size:15px;line-height:1.5;color:#2A3A57;margin:0">Registrati con la tua email: ti mandiamo un codice di 6 cifre e leggi tutti gli articoli di Iattualità.</p>
 </div>`;
 

@@ -126,7 +126,7 @@ check("articolo: 200, anteprima iniettata e JSON-LD NewsArticle",
   r.status === 200 && h.includes("Inizio dell&#39;articolo") && h.includes('"@type":"NewsArticle"'), r.status);
 check("  ^ il testo integrale NON c'e'", !h.includes("TESTO-RISERVATO") && !h.includes("Corpo con un"));
 check("  ^ c'e' il blocco 'continua a leggere' con la classe .paywall",
-  h.includes('class="paywall"') && h.includes("Continua a leggere gratis"));
+  h.includes('class="paywall"') && h.includes("Continua a leggere"));
 check("  ^ l'anteprima si chiude su una parola intera, con i puntini",
   h.includes("Seconda frase dell&#39;anteprima che…</p>") && !h.includes("continua"));
 check("  ^ dichiarato a Google: isAccessibleForFree false e cssSelector .paywall",
@@ -141,7 +141,7 @@ check("  ^ la chiave di servizio non e' stata usata", chiaviServizio.length === 
 r = await chiedi("/articolo/42/titolo-dell-articolo", UA_GOOGLEBOT, "93.40.1.1");
 h = await r.text();
 check("finto Googlebot (user-agent giusto, IP sbagliato): niente testo integrale",
-  r.status === 200 && !h.includes("TESTO-RISERVATO") && h.includes("Continua a leggere gratis"));
+  r.status === 200 && !h.includes("TESTO-RISERVATO") && h.includes("Continua a leggere"));
 
 // ---- Googlebot vero: testo integrale ----
 r = await chiedi("/articolo/42/titolo-dell-articolo", UA_GOOGLEBOT, "66.249.64.5");
@@ -170,7 +170,7 @@ globalThis.Netlify = { env: { get: () => undefined } };
 r = await chiedi("/articolo/42/titolo-dell-articolo", UA_GOOGLEBOT, "66.249.64.5");
 h = await r.text();
 check("chiave di servizio mancante: anche Googlebot riceve l'anteprima (mai il testo per errore)",
-  r.status === 200 && !h.includes("TESTO-RISERVATO") && h.includes("Continua a leggere gratis"));
+  r.status === 200 && !h.includes("TESTO-RISERVATO") && h.includes("Continua a leggere"));
 globalThis.Netlify = NetlifyPrima;
 
 // ---- 404 veri ----

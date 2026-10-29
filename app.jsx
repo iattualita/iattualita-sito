@@ -124,7 +124,7 @@ const Honeypot=({value,onChange})=>(
 
 
 // ====== ACCESSO DEI LETTORI ======
-// Registrazione gratuita con email e codice a 6 cifre: chi entra legge gli
+// Registrazione con email e codice a 6 cifre: chi entra legge gli
 // articoli interi, chi no vede l'anteprima. I lettori NON sono utenti
 // Supabase (quelli sono la redazione): la sessione e' un cookie firmato dalle
 // funzioni Netlify (_lettori-lib.js), che il sito non puo' leggere.
@@ -1213,8 +1213,8 @@ const bottoneStyle=(attivo)=>({width:"100%",background:attivo?C.navy:C.line,colo
 const linkPrivacy=(onPage,colore)=>(<a href="/privacy" onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage("privacy"); }} style={{color:colore||C.blueDeep,fontWeight:600,textDecoration:"underline"}}>Privacy policy</a>);
 
 const TESTI_ACCESSO={
-  articolo:{titolo:"Continua a leggere gratis",testo:"Registrati con la tua email: ti mandiamo un codice di 6 cifre e leggi tutti gli articoli di Iattualità. Se ti sei già registrato, usa la stessa email."},
-  popup:{titolo:"Leggi Iattualità per intero",testo:"È gratis. Lasci la tua email, ti mandiamo un codice di 6 cifre e hai accesso a tutti gli articoli verificati con i dati."},
+  articolo:{titolo:"Continua a leggere",testo:"Registrati con la tua email: ti mandiamo un codice di 6 cifre e leggi tutti gli articoli di Iattualità. Se ti sei già registrato, usa la stessa email."},
+  popup:{titolo:"Leggi Iattualità per intero",testo:"Lascia la tua email, ti mandiamo un codice di 6 cifre e hai accesso a tutti gli articoli verificati con i dati."},
   menu:{titolo:"Accedi o registrati",testo:"Scrivi la tua email: ti mandiamo un codice di 6 cifre. Vale sia per entrare la prima volta sia per rientrare."},
   newsletter:{titolo:null,testo:null}
 };

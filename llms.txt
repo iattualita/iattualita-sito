@@ -31,4 +31,4 @@ I contenuti sono protetti dal diritto d'autore. Citazioni brevi con attribuzione
 
 Ogni pagina è servita già pronta nell'HTML, senza bisogno di eseguire JavaScript, e porta dati strutturati schema.org (`NewsArticle` sugli articoli, `NewsMediaOrganization` sulla testata).
 
-Il testo integrale degli articoli è riservato ai lettori registrati (la registrazione è gratuita): senza accesso è visibile l'anteprima. Le pagine lo dichiarano con `isAccessibleForFree: false`.
+Il testo integrale degli articoli è riservato ai lettori registrati: senza accesso è visibile l'anteprima. Le pagine lo dichiarano con `isAccessibleForFree: false`.
