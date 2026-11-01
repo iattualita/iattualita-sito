@@ -60,8 +60,15 @@ html{background:#F4F2EC}#root{min-height:100vh}
 }
 </style>
 
+<!-- Dati strutturati della home. Il blocco WebSite dice a Google come si chiama
+     il sito (name) e le varianti da considerare (alternateName): senza, Google
+     scambiava "iattualita" per un refuso di "attualità". Il dominio in minuscolo
+     e' il ripiego che Google stesso suggerisce. sameAs collega i profili social. -->
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"NewsMediaOrganization","name":"Iattualità","url":"https://iattualita.it","logo":"https://iattualita.it/favicon-192.png","slogan":"L'informazione intelligente e in tempo reale"}
+{"@context":"https://schema.org","@graph":[
+{"@type":"WebSite","@id":"https://iattualita.it/#website","name":"Iattualità","alternateName":["IAttualità","iattualita.it"],"url":"https://iattualita.it/","inLanguage":"it-IT","publisher":{"@id":"https://iattualita.it/#organization"}},
+{"@type":"NewsMediaOrganization","@id":"https://iattualita.it/#organization","name":"Iattualità","alternateName":"IAttualità","url":"https://iattualita.it/","logo":{"@type":"ImageObject","url":"https://iattualita.it/favicon-192.png","width":192,"height":192},"slogan":"L'informazione intelligente e in tempo reale","sameAs":["https://instagram.com/iattualita","https://tiktok.com/@iattualita","https://facebook.com/iattualita","https://youtube.com/@iattualita","https://threads.net/@iattualita"]}
+]}
 </script>
 
 <!-- ANALYTICS COOKIELESS: crea il sito su cloud.umami.is e incolla il tuo website-id qui sotto -->
