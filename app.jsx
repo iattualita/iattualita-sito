@@ -51,25 +51,44 @@ function hdr(token,json){ const h={apikey:SUPABASE_KEY}; if(token)h.Authorizatio
 // I token Supabase scadono dopo un'ora. Prima il refresh_token veniva scartato
 // al login: passati 60 minuti ogni salvataggio moriva con PGRST303 "JWT expired"
 // e l'unico modo per rientrare era ricaricare la pagina, perdendo l'articolo.
-// La sessione vive solo in memoria: chiudendo la scheda si esce, come prima.
-let SESSION=null; // {access_token, refresh_token, expires_at}
+//
+// La sessione vive nella scheda (sessionStorage): prima stava solo in memoria,
+// e bastava ricaricare o aprire un link diretto (/tg, un articolo) per
+// ritrovarsi fuori dalla redazione, con i pulsanti di modifica spariti.
+// Ora sopravvive a ricariche e cambi di pagina; chiudendo la scheda si esce
+// comunque, come prima. "Esci" la cancella subito.
+const SESSION_KEY="iatt_redazione_sessione";
+function salvaSessione(){ try{ if(SESSION) sessionStorage.setItem(SESSION_KEY,JSON.stringify(SESSION)); else sessionStorage.removeItem(SESSION_KEY); }catch(e){} }
+function sessioneSalvata(){ try{ const s=JSON.parse(sessionStorage.getItem(SESSION_KEY)||"null"); return s&&s.access_token&&s.refresh_token?s:null; }catch(e){ return null; } }
+let SESSION=sessioneSalvata(); // {access_token, refresh_token, expires_at}
 const SESSION_DEAD="Sessione scaduta. Rifai l'accesso qui sotto, poi premi Salva: il testo resta dov'e'.";
 function setSession(d){
-  if(!d||!d.access_token){ SESSION=null; return null; }
+  if(!d||!d.access_token){ SESSION=null; salvaSessione(); return null; }
   SESSION={access_token:d.access_token,
            refresh_token:d.refresh_token||(SESSION&&SESSION.refresh_token)||null,
            expires_at:Date.now()+(Number(d.expires_in||3600)*1000)};
+  salvaSessione();
   return SESSION.access_token;
 }
+function chiudiSessione(){ SESSION=null; salvaSessione(); }
+
+// Il lucchetto della redazione compare solo se l'indirizzo contiene "admin".
+// Prima valeva solo per quella pagina: su /tg o su un articolo il lucchetto
+// non c'era e non si poteva entrare. Ora il dispositivo se lo ricorda.
+const REDAZIONE_KEY="iatt_redazione";
+function dispositivoRedazione(){
+  const inUrl=(window.location.search+window.location.hash).toLowerCase().includes("admin");
+  try{ if(inUrl) localStorage.setItem(REDAZIONE_KEY,"1"); return inUrl||localStorage.getItem(REDAZIONE_KEY)==="1"; }catch(e){ return inUrl; }
+}
 async function refreshSession(){
-  if(!SESSION||!SESSION.refresh_token){ SESSION=null; throw new Error(SESSION_DEAD); }
+  if(!SESSION||!SESSION.refresh_token){ chiudiSessione(); throw new Error(SESSION_DEAD); }
   let d=null;
   try{
     const r=await fetch(SUPABASE_URL+"/auth/v1/token?grant_type=refresh_token",{method:"POST",headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json"},body:JSON.stringify({refresh_token:SESSION.refresh_token})});
     d=await r.json();
     if(!r.ok) d=null;
   }catch(e){ d=null; }
-  if(!d||!d.access_token){ SESSION=null; throw new Error(SESSION_DEAD); }
+  if(!d||!d.access_token){ chiudiSessione(); throw new Error(SESSION_DEAD); }
   return setSession(d);
 }
 // Rinnova un minuto prima della scadenza. Se il server rifiuta il token
@@ -370,7 +389,10 @@ function App(){
   const [activeSerie,setActiveSerie]=useState(null);
   const HOME_VETRINA=9, LIST_STEP=12;
   const [shown,setShown]=useState(LIST_STEP);
-  const [token,setToken]=useState(null);
+  const [token,setToken]=useState(()=>SESSION?SESSION.access_token:null);
+  // Sessione ritrovata dopo una ricarica ma gia' scaduta: si rinnova subito,
+  // e se il rinnovo non va si esce invece di mostrare pulsanti che falliscono.
+  useEffect(()=>{ if(SESSION&&Date.now()>SESSION.expires_at-60000){ refreshSession().then(t=>setToken(t)).catch(()=>setToken(null)); } },[]);
   const [showForm,setShowForm]=useState(false);
   const [editing,setEditing]=useState(null);
   const [video,setVideo]=useState(null);
@@ -392,7 +414,7 @@ function App(){
   const [tentativo,setTentativo]=useState(0);   // "Riprova" sul testo che non e' arrivato
   useEffect(()=>{ setShown(LIST_STEP); },[activeCat,activeSerie,query,view]);
 
-  const adminGate=(window.location.search+window.location.hash).toLowerCase().includes("admin");
+  const adminGate=dispositivoRedazione();
   const admin=!!token;
   const giornalista=admin&&tokenRuolo(token)==="giornalista";
   const pieno=admin&&!giornalista;   // tu e il socio: tutti i poteri
@@ -430,7 +452,7 @@ function App(){
   // Se il testo non arriva NON si apre l'editor con la scheda della lista:
   // la lista non ha body, e salvando si cancellerebbe l'articolo.
   const openEditor=async(i)=>{ const f=await apiGetArticleRedazione(token,i.id); if(!f||f.body===undefined){ alert("Non riesco a caricare il testo dell'articolo. Controlla la connessione o rifai l'accesso, poi riprova: l'editor non si apre per non salvare un articolo vuoto."); return; } setEditing(f); setShowForm(true); };
-  const saveItem=async(item)=>{ try{ const {id,...rest}=item; if(id)await apiUpdNews(token,id,rest); else await apiAddNews(token,rest); await reloadNews(); setShowForm(false); setEditing(null); note("Salvato."); }catch(e){ const m=String(e.message||e); if(m.indexOf("Sessione scaduta")===0) setShowLogin(true); alert("Errore nel salvataggio:\n\n"+m); } };
+  const saveItem=async(item)=>{ try{ const {id,...rest}=item; if(id)await apiUpdNews(token,id,rest); else await apiAddNews(token,rest); await reloadNews(); setTentativo(t=>t+1); setShowForm(false); setEditing(null); note("Salvato."); }catch(e){ const m=String(e.message||e); if(m.indexOf("Sessione scaduta")===0) setShowLogin(true); alert("Errore nel salvataggio:\n\n"+m); } };
   const removeItem=async(id)=>{ try{ await apiDelNews(token,id); await reloadNews(); note("Eliminato."); }catch(e){ alert("Errore:\n\n"+(e.message||e)); } };
   const saveInfo=async(next)=>{ try{ const {id,...rest}=next; const r=await apiUpdInfo(token,rest); setInfo({...DEFAULT_INFO,...r}); setShowInfo(false); note("Aggiornato."); }catch(e){ const m=String(e.message||e); if(m.indexOf("Sessione scaduta")===0) setShowLogin(true); alert("Errore salvataggio:\n\n"+m); } };
   const saveLogo=async(url,cfg)=>{ try{ const r=await apiUpdInfo(token,{logo_url:url,logo_cfg:cfg}); setInfo(p=>({...p,logo_url:r.logo_url,logo_cfg:r.logo_cfg})); }catch(e){ alert("Errore logo:\n\n"+(e.message||e)); } };
@@ -505,7 +527,7 @@ function App(){
   const chiudiAccesso=()=>{ if(accesso==="popup"){ try{ localStorage.setItem("iatt_popup_chiuso",String(Date.now())); }catch(e){} traccia("popup_chiuso"); } setAccesso(null); };
 
   const doLogin=async(email,password)=>{ const d=await apiLogin(email,password); setToken(setSession(d)); setShowLogin(false); note("Bentornato in redazione."); };
-  const logout=()=>{ setToken(null); note("Uscito dalla redazione."); };
+  const logout=()=>{ chiudiSessione(); setToken(null); note("Uscito dalla redazione."); };
 
   const go=(v,anchor)=>{ setMenuOpen(false); if(window.location.pathname!=="/"){ history.pushState(null,"","/"+(window.location.search||"")); } setArticleId(null); setActiveSerie(null); if(v==="home")setActiveCat("Tutte"); setView(v); if(v==="home"&&anchor){ setTimeout(()=>{const el=document.getElementById(anchor); if(el)el.scrollIntoView({behavior:"smooth"});},40);} else { window.scrollTo(0,0);} };
   const openArticle=(item)=>{ history.pushState(null,"",articlePath(item)); setArticleId(item.id); setView("article"); window.scrollTo(0,0); };
@@ -588,7 +610,7 @@ function App(){
           raggiungibile dal focus via programma senza inserirlo nel giro del
           tab: chi salta qui riprende a tabulare dal contenuto, non da capo. */}
       <div id="contenuto" tabIndex={-1} style={{outline:"none"}}>
-      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic} lettore={lettore} onEntrato={entrato} onRiprova={()=>setTentativo(t=>t+1)} onPage={openPage} onSerie={openSerie}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="numeri" ? <NumeriPage info={info} pieno={pieno} token={token} note={note} onPage={openPage}/> : view==="newsletter" ? <NewsletterPage lettore={lettore} onEntrato={entrato} onSessioneScaduta={()=>setLettore(false)} onPage={openPage}/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
+      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic} lettore={lettore} onEntrato={entrato} onRiprova={()=>setTentativo(t=>t+1)} onPage={openPage} onSerie={openSerie} onEdit={article&&admin&&puoModificare(article)?()=>openEditor(article):null}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="numeri" ? <NumeriPage info={info} pieno={pieno} token={token} note={note} onPage={openPage}/> : view==="newsletter" ? <NewsletterPage lettore={lettore} onEntrato={entrato} onSessioneScaduta={()=>setLettore(false)} onPage={openPage}/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
       <main id="top" style={{maxWidth:980,margin:"0 auto",padding:"16px"}}>
         {view==="archivio"&&<div style={{marginBottom:14}}><div style={{fontFamily:"Anton",fontSize:26,color:C.navy}}>Archivio</div><div style={{fontSize:14,color:C.gray}}>Tutti gli articoli di Iattualità. Cerca o filtra per argomento.</div></div>}
         {view==="serie"&&activeSerie&&<div style={{marginBottom:16,background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"14px 16px"}}>
@@ -650,7 +672,7 @@ function App(){
 
       <SiteFooter info={info} admin={admin} pieno={pieno} onEdit={()=>setShowInfo(true)} onPage={openPage} onSendNewsletter={sendNewsletter} onSpecial={()=>setShowSpecial(true)}/>
 
-      {showForm&&admin&&<NewsForm initial={editing} token={token} onClose={()=>{setShowForm(false);setEditing(null);}} onSave={saveItem}/>}
+      {showForm&&admin&&<NewsForm initial={editing} defaultSerie={!editing&&view==="serie"&&isRubrica(activeSerie)?activeSerie:""} token={token} onClose={()=>{setShowForm(false);setEditing(null);}} onSave={saveItem}/>}
       {showSpecial&&admin&&<SpecialForm token={token} note={note} onClose={()=>setShowSpecial(false)} onSessionDead={()=>setShowLogin(true)}/>}
       {showInfo&&pieno&&<InfoModal initial={info} onClose={()=>setShowInfo(false)} onSave={saveInfo}/>}
       {video&&<VideoModal item={video} onClose={()=>setVideo(null)}/>}
@@ -747,7 +769,7 @@ function Card({item,big,admin,canEdit,canDelete,onOpen,onPlay,onEdit,onDelete,on
   );
 }
 
-function ArticlePage({item,news,onOpen,loading,onBack,onCopy,note,onTopic,lettore,onEntrato,onRiprova,onPage,onSerie}){
+function ArticlePage({item,news,onOpen,loading,onBack,onCopy,note,onTopic,lettore,onEntrato,onRiprova,onPage,onSerie,onEdit}){
   useEffect(()=>{ if(item){
     document.title=item.title+" · Iattualità";
     const setP=(p,v)=>{ let m=document.querySelector('meta[property="'+p+'"]'); if(!m){ m=document.createElement("meta"); m.setAttribute("property",p); document.head.appendChild(m);} m.setAttribute("content",v||""); };
@@ -770,7 +792,10 @@ function ArticlePage({item,news,onOpen,loading,onBack,onCopy,note,onTopic,lettor
   const share=()=>{ const url=articleFullUrl(item); if(navigator.share){ navigator.share({title:item.title,text:item.subtitle||"",url}).catch(()=>{}); } else { onCopy&&onCopy(item); } };
   return (
     <main style={{maxWidth:760,margin:"0 auto",padding:"18px 16px 8px"}}>
-      {backBtn}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+        {backBtn}
+        {onEdit&&<button onClick={onEdit} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.blue,color:"#fff",border:"none",borderRadius:10,padding:"8px 14px",fontWeight:700,fontSize:13.5,cursor:"pointer",marginBottom:12,fontFamily:"Barlow"}}><Ic n="edit" s={15} c="#fff"/> Modifica</button>}
+      </div>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10,flexWrap:"wrap"}}>
         <PillLink c={item.category} onTopic={onTopic}/>
         {item.author_name&&<span style={{fontSize:12.5,color:C.navySoft,fontWeight:600}}>di <span rel="author">{item.author_name}</span></span>}
@@ -1015,8 +1040,9 @@ function RichEditor({value,onChange}){
   );
 }
 
-function NewsForm({initial,token,onClose,onSave}){
-  const [f,setF]=useState(()=> initial ? {...initial, body: initial.body || plainToHtml(initial.summary||"")} : {title:"",subtitle:"",category:"Attualità",serie:"",author_name:"Lorenzo",summary:"",body:"",date:new Date().toISOString().slice(0,10),link:"",video:"",image:"",og_image:"",featured:false});
+function NewsForm({initial,defaultSerie,token,onClose,onSave}){
+  // "Aggiungi" premuto da /tg o /meteo: l'edizione nasce gia' nella rubrica.
+  const [f,setF]=useState(()=> initial ? {...initial, body: initial.body || plainToHtml(initial.summary||"")} : {title:"",subtitle:"",category:defaultSerie==="Meteo"?"Ambiente":"Attualità",serie:defaultSerie||"",author_name:"Lorenzo",summary:"",body:"",date:new Date().toISOString().slice(0,10),link:"",video:"",image:"",og_image:"",featured:false});
   const [busy,setBusy]=useState(false);
   const [busyOg,setBusyOg]=useState(false);
   const [dirty,setDirty]=useState(false);
