@@ -34,10 +34,50 @@ export function slugify(s) {
 
 // URL breve per le serie che meritano un indirizzo proprio; le altre vivono
 // su /serie/<slug>. Una serie ha sempre un solo URL: niente doppioni.
-export const SERIE_ALIAS = { "Podcast": "/podcast" };
+export const SERIE_ALIAS = { "Podcast": "/podcast", "TG": "/tg", "Meteo": "/meteo" };
 
 export function seriePath(s) {
   return SERIE_ALIAS[s] || "/serie/" + slugify(s);
+}
+
+// ====== RUBRICHE VIDEO SETTIMANALI ======
+// Il TG del venerdi' e il meteo del lunedi': ogni edizione e' un articolo
+// della serie omonima, con il link allo Short di YouTube e il testo del
+// copione. Rispetto alle altre serie hanno due cose in piu':
+//   1. una pagina dedicata (/tg, /meteo) con l'ultima edizione in alto e il
+//      video verticale, poi l'archivio delle edizioni precedenti;
+//   2. sono LIBERE: il testo si legge senza registrazione. Sono la vetrina
+//      che fa tornare le persone ogni settimana, e sono contenuto originale
+//      (video + copione) che nessun'altra testata ha.
+//
+// La stessa lista sta in netlify/functions/_lettori-lib.js (RUBRICHE_LIBERE),
+// che e' CommonJS e non puo' importare questo file. test/rubriche.test.mjs
+// controlla che le due liste coincidano.
+export const RUBRICHE = {
+  "TG": {
+    nome: "TGIAttualità",
+    giorno: "Ogni venerdì",
+    title: "TG Iattualità · Il telegiornale del venerdì",
+    desc: "Il telegiornale settimanale di Iattualità: le cinque notizie della settimana in due minuti, con Lorenzo. Ogni venerdì, verificato con i dati.",
+    intro: "Le cinque notizie che contano della settimana, raccontate in due minuti da Lorenzo. Ogni edizione ha il video e il testo completo, con le fonti."
+  },
+  "Meteo": {
+    nome: "Il meteo della settimana",
+    giorno: "Ogni lunedì",
+    title: "Meteo della settimana · Iattualità",
+    desc: "Il meteo della settimana di Iattualità: com'è il tempo in Italia giorno per giorno, in un minuto. Ogni lunedì, con Lorenzo.",
+    intro: "Che tempo farà in Italia nei prossimi sette giorni, giorno per giorno, in un minuto. Ogni lunedì un nuovo video, con il testo completo."
+  }
+};
+
+export function isRubrica(s) {
+  return !!s && Object.prototype.hasOwnProperty.call(RUBRICHE, s);
+}
+
+// Id del video YouTube (anche Shorts e youtu.be), oppure null.
+export function youtubeId(u) {
+  const m = String(u || "").match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/);
+  return m ? m[1] : null;
 }
 
 // Le colonne di site_info che contengono l'indirizzo di un canale social.

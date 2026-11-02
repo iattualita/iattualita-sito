@@ -39,6 +39,14 @@ const COOKIE_SESSIONE = "iatt_sessione";
 // ogni pagina: chi non e' registrato non fa partire nessuna funzione.
 const COOKIE_SEGNALE = "iatt_lettore";
 
+// Serie il cui testo si legge senza registrazione: le rubriche video
+// settimanali (TG del venerdi', meteo del lunedi'). Deve coincidere con le
+// chiavi di RUBRICHE in shared/site-pages.js, che qui non si puo' importare
+// (questo file e' CommonJS, quello un modulo ES). Lo controlla
+// test/rubriche.test.mjs.
+const RUBRICHE_LIBERE = ["TG", "Meteo"];
+const serieLibera = (s) => RUBRICHE_LIBERE.indexOf(String(s || "")) >= 0;
+
 // Chiave per i limiti per provenienza. Un IPv6 domestico riceve di solito
 // un'intera rete /64 (miliardi di indirizzi): contare il singolo indirizzo
 // permetterebbe di aggirare il limite cambiandone uno a ogni richiesta.
@@ -252,7 +260,7 @@ async function lettoreCancella(id) {
 
 async function articoloCompleto(id) {
   if (!isUuid(id)) return null;
-  const r = await fetch(REST + "/news?id=eq." + id + "&select=id,body,summary&limit=1", { headers: H() });
+  const r = await fetch(REST + "/news?id=eq." + id + "&select=id,body,summary,serie&limit=1", { headers: H() });
   if (!r.ok) throw await L.sbError("articolo", r);
   return (await r.json())[0] || null;
 }
@@ -299,7 +307,7 @@ function emailCodiceHtml(codice) {
 module.exports = {
   config: { SECRET },
   SESSIONE_S, RINNOVA_SOTTO_S, CODICE_TENTATIVI,
-  COOKIE_SESSIONE, COOKIE_SEGNALE,
+  COOKIE_SESSIONE, COOKIE_SEGNALE, RUBRICHE_LIBERE, serieLibera,
   isUuid, nuovoCodice, impronta, confrontaImpronta,
   creaSessione, leggiSessione, leggiCookie, sessioneDaRichiesta,
   cookieAccesso, cookieUscita, risposta, richiestaDalSito, leggiJson,
