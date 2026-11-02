@@ -2,7 +2,7 @@
 // file solo, condiviso con le edge function: prima erano duplicati qui e in
 // prerender.js, e bastava aggiornarne uno per far vedere a Google una
 // versione diversa da quella del lettore.
-import { slugify, SERIE_ALIAS, seriePath, SOCIALS, STATIC_PAGES } from "./shared/site-pages.js";
+import { slugify, SERIE_ALIAS, seriePath, SOCIALS, STATIC_PAGES, RUBRICHE, isRubrica } from "./shared/site-pages.js";
 import { paragrafiAnteprima } from "./shared/anteprima.js";
 
 const { useState, useEffect } = React;
@@ -22,8 +22,12 @@ const catColor = (c)=>({Economia:C.blueDeep,Cronaca:C.red,Geopolitica:C.navy,Sal
 // geopolitica compare sia in /argomento/Geopolitica sia in /podcast, e resta
 // in homepage come qualsiasi altro articolo. Per aggiungere una serie basta
 // scrivere il nome qui: rotta, pagina e sitemap seguono da sole.
-const SERIES = ["Podcast","Ponte sullo Stretto","Licenze taxi e NCC"];
+const SERIES = ["TG","Meteo","Podcast","Ponte sullo Stretto","Licenze taxi e NCC"];
+// TG e Meteo sono rubriche video (shared/site-pages.js, RUBRICHE): pagina
+// dedicata con l'ultima edizione in alto e testo libero per tutti.
+const RUBRICA_COL = { "TG":"#3C96B7", "Meteo":"#2C5AA0" };
 const SERIE_META = {
+  ...Object.fromEntries(Object.entries(RUBRICHE).map(([k,r])=>[k,{title:r.title,desc:r.desc,intro:r.intro}])),
   "Podcast":{
     title:"Podcast · Iattualità",
     desc:"Il podcast di Iattualità: ogni episodio raccontato per intero, con i dati verificati e le fonti in chiaro.",
@@ -162,7 +166,8 @@ async function apiCorpo(id){
 // Google esegue JavaScript, e senza questo nella pagina renderizzata
 // vedrebbe il blocco invece del testo. Per un lettore qualunque l'elemento
 // non esiste, quindi qui non c'e' niente da raccogliere.
-const CORPO_SSR=(()=>{ try{ const el=document.querySelector("#root .paywall[data-corpo-completo]"); return el?{id:el.getAttribute("data-articolo"),html:el.innerHTML}:null; }catch(e){ return null; } })();
+// Nelle rubriche libere (TG, meteo) l'elemento c'e' per tutti, senza .paywall.
+const CORPO_SSR=(()=>{ try{ const el=document.querySelector("#root [data-corpo-completo]"); return el?{id:el.getAttribute("data-articolo"),html:el.innerHTML}:null; }catch(e){ return null; } })();
 function traccia(evento){ try{ if(window.umami&&window.umami.track) window.umami.track(evento); }catch(e){} }
 // anteprima e' calcolata dal database (colonna generata, migrazione 005):
 // mandarla in un salvataggio fa rispondere "can only be updated to DEFAULT".
@@ -411,10 +416,11 @@ function App(){
     else {
       a=await apiGetArticle(articleId);
       if(a&&CORPO_SSR&&String(CORPO_SSR.id)===String(a.id)) a={...a,body:CORPO_SSR.html,completo:true};
-      else if(a&&lettore){
+      // Le rubriche libere (TG, meteo) la funzione le consegna anche senza accesso.
+      else if(a&&(lettore||isRubrica(a.serie))){
         const c=await apiCorpo(articleId);
         if(c.status===200) a={...a,body:c.body,completo:true};
-        else if(c.status===401){ if(alive)setLettore(false); }
+        else if(c.status===401){ if(alive&&lettore)setLettore(false); }
         else a={...a,erroreCorpo:true};
       }
     }
@@ -555,6 +561,8 @@ function App(){
           <button onClick={()=>setMenuOpen(o=>!o)} aria-label={menuOpen?"Chiudi il menu":"Apri il menu"} aria-expanded={menuOpen} title="Menu" style={{display:"flex",alignItems:"center",justifyContent:"center",background:C.cream,color:C.navy,border:"1px solid "+C.line,borderRadius:10,width:40,height:40,cursor:"pointer",flexShrink:0}}><Ic n={menuOpen?"x":"menu"} s={19} c={C.navy}/></button>
           {menuOpen&&<nav style={{flexBasis:"100%",display:"flex",flexDirection:"column",gap:2,paddingTop:6,marginTop:6,borderTop:"1px solid "+C.line}}>
             <button onClick={()=>go("home","top")} style={menuItem}>News</button>
+            <button onClick={()=>openSerie("TG")} style={menuItem}>TG del venerdì</button>
+            <button onClick={()=>openSerie("Meteo")} style={menuItem}>Meteo della settimana</button>
             <button onClick={()=>openSerie("Podcast")} style={menuItem}>Podcast</button>
             <button onClick={openArchive} style={menuItem}>Archivio</button>
             <button onClick={()=>openPage("chi-siamo")} style={menuItem}>Chi siamo</button>
@@ -580,14 +588,14 @@ function App(){
           raggiungibile dal focus via programma senza inserirlo nel giro del
           tab: chi salta qui riprende a tabulare dal contenuto, non da capo. */}
       <div id="contenuto" tabIndex={-1} style={{outline:"none"}}>
-      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic} lettore={lettore} onEntrato={entrato} onRiprova={()=>setTentativo(t=>t+1)} onPage={openPage}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="numeri" ? <NumeriPage info={info} pieno={pieno} token={token} note={note} onPage={openPage}/> : view==="newsletter" ? <NewsletterPage lettore={lettore} onEntrato={entrato} onSessioneScaduta={()=>setLettore(false)} onPage={openPage}/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
+      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic} lettore={lettore} onEntrato={entrato} onRiprova={()=>setTentativo(t=>t+1)} onPage={openPage} onSerie={openSerie}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="numeri" ? <NumeriPage info={info} pieno={pieno} token={token} note={note} onPage={openPage}/> : view==="newsletter" ? <NewsletterPage lettore={lettore} onEntrato={entrato} onSessioneScaduta={()=>setLettore(false)} onPage={openPage}/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
       <main id="top" style={{maxWidth:980,margin:"0 auto",padding:"16px"}}>
         {view==="archivio"&&<div style={{marginBottom:14}}><div style={{fontFamily:"Anton",fontSize:26,color:C.navy}}>Archivio</div><div style={{fontSize:14,color:C.gray}}>Tutti gli articoli di Iattualità. Cerca o filtra per argomento.</div></div>}
         {view==="serie"&&activeSerie&&<div style={{marginBottom:16,background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"14px 16px"}}>
           <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-            <span style={{background:C.navy,color:"#fff",fontSize:10.5,fontWeight:800,padding:"3px 9px",borderRadius:6,textTransform:"uppercase",letterSpacing:.5}}>Serie</span>
-            <h1 style={{fontFamily:"Anton",fontSize:26,color:C.navy,margin:0,fontWeight:400,letterSpacing:.3}}>{activeSerie}</h1>
-            <span style={{fontSize:13,color:C.gray}}>{filtered.length} {filtered.length===1?"articolo":"articoli"}</span>
+            <span style={{background:RUBRICA_COL[activeSerie]||C.navy,color:"#fff",fontSize:10.5,fontWeight:800,padding:"3px 9px",borderRadius:6,textTransform:"uppercase",letterSpacing:.5}}>{isRubrica(activeSerie)?RUBRICHE[activeSerie].giorno:"Serie"}</span>
+            <h1 style={{fontFamily:"Anton",fontSize:26,color:C.navy,margin:0,fontWeight:400,letterSpacing:.3}}>{isRubrica(activeSerie)?<NomeRubrica serie={activeSerie}/>:activeSerie}</h1>
+            <span style={{fontSize:13,color:C.gray}}>{filtered.length} {isRubrica(activeSerie)?(filtered.length===1?"edizione":"edizioni"):(filtered.length===1?"articolo":"articoli")}</span>
           </div>
           <p style={{fontSize:14.5,color:C.navySoft,lineHeight:1.55,margin:"8px 0 0",maxWidth:720}}>{(SERIE_META[activeSerie]||{}).intro||("Tutti gli articoli della serie "+activeSerie+".")}</p>
           <button onClick={()=>copySerieLink(activeSerie)} style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:12,background:C.cream,color:C.navy,border:"1px solid "+C.line,borderRadius:10,padding:"8px 12px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"Barlow"}}><Ic n="link" s={15} c={C.navy}/> Copia link serie</button>
@@ -605,6 +613,7 @@ function App(){
           <button onClick={()=>copyTopicLink(activeCat)} style={{display:"inline-flex",alignItems:"center",gap:6,background:C.cream,color:C.navy,border:"1px solid "+C.line,borderRadius:10,padding:"8px 12px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"Barlow"}}><Ic n="link" s={15} c={C.navy}/> Copia link argomento</button>
         </div>}
         {loading? <Scheletro n={HOME_VETRINA}/>
+          : filtered.length===0&&view==="serie"&&isRubrica(activeSerie)&&!query? <div style={{background:C.card,border:"1px solid "+C.line,borderRadius:16,padding:"28px 20px",textAlign:"center"}}><div style={{fontFamily:"Anton",fontSize:22,color:C.navy,marginBottom:6}}>La prima edizione è in arrivo</div><p style={{color:C.navySoft,fontSize:15,margin:0}}>{RUBRICHE[activeSerie].giorno} un nuovo video su Iattualità. Torna a trovarci!</p></div>
           : filtered.length===0? <Empty admin={admin} gate={adminGate} hasNews={news.length>0} onAdd={()=>{setEditing(null);setShowForm(true);}} onLogin={()=>setShowLogin(true)}/>
           : (()=>{
               const isVetrina = view!=="archivio" && view!=="serie" && activeCat==="Tutte" && !query;
@@ -615,15 +624,24 @@ function App(){
                   <div style={{display:"flex",flexWrap:"wrap",gap:14,marginTop:16}}>
                     {vetrina.map(n=><div key={n.id} style={{flex:"1 1 270px",minWidth:0,display:"flex",flexDirection:"column"}}><Card item={n} admin={admin} canEdit={puoModificare} canDelete={pieno} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={openEditor} onDelete={removeItem}/></div>)}
                   </div>
+                  {/* Sotto le schede, non sopra: la home pre-renderizzata non ha
+                      questa striscia, e inserita in alto farebbe saltare la pagina. */}
+                  <RubricheStrip news={news} onSerie={openSerie}/>
                   {rest.length>HOME_VETRINA&&<a href="/archivio" onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0) return; e.preventDefault(); openArchive(); }} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:22,background:C.navy,color:"#fff",borderRadius:12,padding:"14px 18px",fontSize:15,fontWeight:700,textDecoration:"none",fontFamily:"Barlow"}}>Vedi tutti gli articoli nell'archivio <Ic n="enter" s={16} c="#fff"/></a>}
                 </React.Fragment>;
               }
-              const list = filtered.slice(0, shown);
+              // Rubrica (TG, meteo) senza ricerca in corso: l'ultima edizione in
+              // grande con il video, sotto l'archivio delle precedenti.
+              const rubrica = view==="serie" && isRubrica(activeSerie) && !query;
+              const base = rubrica ? filtered.slice(1) : filtered;
+              const list = base.slice(0, shown);
               return <React.Fragment>
+                {rubrica&&<RubricaHero item={filtered[0]} onOpen={openArticle}/>}
+                {rubrica&&list.length>0&&<div style={{fontFamily:"Anton",fontSize:21,color:C.navy,margin:"26px 0 0",fontWeight:400,letterSpacing:.2}}>Edizioni precedenti</div>}
                 <div style={{display:"flex",flexWrap:"wrap",gap:14,marginTop:16}}>
                   {list.map(n=><div key={n.id} style={{flex:"1 1 270px",minWidth:0,display:"flex",flexDirection:"column"}}><Card item={n} admin={admin} canEdit={puoModificare} canDelete={pieno} onOpen={openArticle} onCopy={copyArticleLink} onPlay={setVideo} onEdit={openEditor} onDelete={removeItem}/></div>)}
                 </div>
-                {filtered.length>shown&&<div style={{display:"flex",justifyContent:"center",marginTop:22}}><button onClick={()=>setShown(s=>s+LIST_STEP)} style={{background:C.card,color:C.navy,border:"1px solid "+C.line,borderRadius:12,padding:"12px 24px",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"Barlow"}}>Mostra altri ({filtered.length-shown})</button></div>}
+                {base.length>shown&&<div style={{display:"flex",justifyContent:"center",marginTop:22}}><button onClick={()=>setShown(s=>s+LIST_STEP)} style={{background:C.card,color:C.navy,border:"1px solid "+C.line,borderRadius:12,padding:"12px 24px",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"Barlow"}}>Mostra altri ({base.length-shown})</button></div>}
               </React.Fragment>;
             })()}
       </main>
@@ -729,7 +747,7 @@ function Card({item,big,admin,canEdit,canDelete,onOpen,onPlay,onEdit,onDelete,on
   );
 }
 
-function ArticlePage({item,news,onOpen,loading,onBack,onCopy,note,onTopic,lettore,onEntrato,onRiprova,onPage}){
+function ArticlePage({item,news,onOpen,loading,onBack,onCopy,note,onTopic,lettore,onEntrato,onRiprova,onPage,onSerie}){
   useEffect(()=>{ if(item){
     document.title=item.title+" · Iattualità";
     const setP=(p,v)=>{ let m=document.querySelector('meta[property="'+p+'"]'); if(!m){ m=document.createElement("meta"); m.setAttribute("property",p); document.head.appendChild(m);} m.setAttribute("content",v||""); };
@@ -740,13 +758,15 @@ function ArticlePage({item,news,onOpen,loading,onBack,onCopy,note,onTopic,lettor
     const iso=(d)=>{ try{ return d?new Date(d).toISOString():undefined; }catch(e){ return undefined; } };
     const ld={ "@context":"https://schema.org","@type":"NewsArticle","headline":(item.title||"").slice(0,110),"description":desc,"datePublished":iso(item.date||item.created_at),"dateModified":iso(item.updated_at||item.date||item.created_at),"author":item.author_name?{"@type":"Person","name":item.author_name}:{"@type":"Organization","name":"Iattualità"},"publisher":{"@type":"Organization","name":"Iattualità","logo":{"@type":"ImageObject","url":"https://iattualita.it/favicon-192.png"}},"mainEntityOfPage":{"@type":"WebPage","@id":articleFullUrl(item)},"articleSection":item.category,
       // Testo riservato ai lettori registrati: stessa dichiarazione del prerender.
-      "isAccessibleForFree":false,"hasPart":{"@type":"WebPageElement","isAccessibleForFree":false,"cssSelector":".paywall"} };
+      // Le rubriche (TG, meteo) sono libere.
+      ...(isRubrica(item.serie)?{"isAccessibleForFree":true}:{"isAccessibleForFree":false,"hasPart":{"@type":"WebPageElement","isAccessibleForFree":false,"cssSelector":".paywall"}}) };
     if(item.image)ld.image=[item.image];
     let s=document.getElementById("ld-article"); if(!s){ s=document.createElement("script"); s.type="application/ld+json"; s.id="ld-article"; document.head.appendChild(s); } s.textContent=JSON.stringify(ld);
   } return ()=>{ document.title="Iattualità · L'informazione intelligente e in tempo reale"; const s=document.getElementById("ld-article"); if(s)s.remove(); }; },[item]);
   const backBtn=(<button onClick={onBack} style={{display:"inline-flex",alignItems:"center",gap:6,background:"none",border:"none",color:C.blueDeep,fontSize:14,fontWeight:700,cursor:"pointer",padding:"4px 0",marginBottom:12}}>‹ Torna alle news</button>);
   if(!item) return (<main style={{maxWidth:760,margin:"0 auto",padding:"40px 16px",textAlign:"center"}}>{loading? <ScheletroArticolo/> : <React.Fragment><div style={{fontFamily:"Anton",fontSize:22,color:C.navy,marginBottom:8}}>Articolo non trovato</div><p style={{color:C.gray,marginBottom:16,fontSize:14.5}}>Il link potrebbe non essere più valido.</p>{backBtn}</React.Fragment>}</main>);
   const yt=ytId(item.video);
+  const libera=isRubrica(item.serie);
   const share=()=>{ const url=articleFullUrl(item); if(navigator.share){ navigator.share({title:item.title,text:item.subtitle||"",url}).catch(()=>{}); } else { onCopy&&onCopy(item); } };
   return (
     <main style={{maxWidth:760,margin:"0 auto",padding:"18px 16px 8px"}}>
@@ -759,11 +779,18 @@ function ArticlePage({item,news,onOpen,loading,onBack,onCopy,note,onTopic,lettor
       </div>
       <h1 style={{fontFamily:"Anton",fontSize:"clamp(26px,6vw,40px)",color:C.navy,margin:"0 0 12px",fontWeight:400,lineHeight:1.08,letterSpacing:.2}}>{item.title}</h1>
       {item.subtitle&&<p style={{fontSize:19,color:C.navy,lineHeight:1.4,margin:"0 0 16px",fontWeight:700}}>{item.subtitle}</p>}
-      {(item.image||yt)&&<div style={{borderRadius:16,overflow:"hidden",marginBottom:18,background:C.navy}}>{item.image? <img src={imgCDN(item.image,900)} onError={e=>onImgErr(e,item.image)} alt={item.title} fetchpriority="high" decoding="async" style={{width:"100%",display:"block"}}/> : <img src={"https://img.youtube.com/vi/"+yt+"/hqdefault.jpg"} alt={item.title} decoding="async" style={{width:"100%",display:"block"}}/>}</div>}
+      {/* Nelle rubriche il video e' il contenuto principale: prende il posto
+          della copertina, con le stesse misure dell'anteprima del prerender. */}
+      {libera&&yt? <PlayerVerticale yt={yt} title={item.title} style={{marginBottom:18}}/>
+        : (item.image||yt)&&<div style={{borderRadius:16,overflow:"hidden",marginBottom:18,background:C.navy}}>{item.image? <img src={imgCDN(item.image,900)} onError={e=>onImgErr(e,item.image)} alt={item.title} fetchpriority="high" decoding="async" style={{width:"100%",display:"block"}}/> : <img src={"https://img.youtube.com/vi/"+yt+"/hqdefault.jpg"} alt={item.title} decoding="async" style={{width:"100%",display:"block"}}/>}</div>}
       {item.completo
-        ? ((item.body&&item.body.trim())? <div className="article-body paywall" style={{fontSize:17,color:C.navySoft,lineHeight:1.7}} dangerouslySetInnerHTML={{__html:sanitizeHtml(item.body)}}/> : item.summary? <div className="paywall" style={{fontSize:17,color:C.navySoft,lineHeight:1.7,whiteSpace:"pre-line"}}>{item.summary}</div> : null)
+        ? ((item.body&&item.body.trim())? <div className={libera?"article-body":"article-body paywall"} style={{fontSize:17,color:C.navySoft,lineHeight:1.7}} dangerouslySetInnerHTML={{__html:sanitizeHtml(item.body)}}/> : item.summary? <div className={libera?undefined:"paywall"} style={{fontSize:17,color:C.navySoft,lineHeight:1.7,whiteSpace:"pre-line"}}>{item.summary}</div> : null)
+        : libera ? <TestoInArrivo item={item} onRiprova={onRiprova}/>
         : <AnteprimaBloccata item={item} lettore={lettore} onEntrato={onEntrato} onRiprova={onRiprova} onPage={onPage}/>}
-      {item.video&&yt&&<div style={{marginTop:20,aspectRatio:"16/9",background:"#000",borderRadius:14,overflow:"hidden"}}><iframe src={"https://www.youtube.com/embed/"+yt} style={{width:"100%",height:"100%",border:"none"}} allowFullScreen/></div>}
+      {libera&&<a href={seriePath(item.serie)} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0) return; e.preventDefault(); onSerie&&onSerie(item.serie); }} style={{display:"inline-flex",alignItems:"center",gap:8,marginTop:20,background:RUBRICA_COL[item.serie]||C.navy,color:"#fff",padding:"11px 18px",borderRadius:10,textDecoration:"none",fontWeight:700,fontSize:14.5}}>{RUBRICHE[item.serie].nome}: tutte le edizioni <Ic n="enter" s={15} c="#fff"/></a>}
+      {item.video&&yt&&!libera&&(isShortUrl(item.video)
+        ? <PlayerVerticale yt={yt} title={item.title} style={{marginTop:20}}/>
+        : <div style={{marginTop:20,aspectRatio:"16/9",background:"#000",borderRadius:14,overflow:"hidden"}}><iframe src={"https://www.youtube.com/embed/"+yt} title={item.title} style={{width:"100%",height:"100%",border:"none"}} allowFullScreen/></div>)}
       {item.video&&!yt&&<div style={{marginTop:20}}><a href={item.video} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:8,background:C.blue,color:"#fff",padding:"11px 20px",borderRadius:10,textDecoration:"none",fontWeight:700}}>Guarda il video su {platform(item.video)} <Ic n="ext" s={16} c="#fff"/></a></div>}
       {item.link&&<div style={{marginTop:20,paddingTop:16,borderTop:"1px solid "+C.line}}><a href={item.link} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:6,color:C.blueDeep,textDecoration:"none",fontWeight:700,fontSize:14.5}}>Vedi il post originale su {platform(item.link)} <Ic n="ext" s={14} c={C.blueDeep}/></a></div>}
       <div style={{marginTop:22,paddingTop:16,borderTop:"1px solid "+C.line}}>
@@ -795,12 +822,78 @@ function ArticlePage({item,news,onOpen,loading,onBack,onCopy,note,onTopic,lettor
   );
 }
 
+// ====== RUBRICHE VIDEO (TG, meteo) ======
+const isShortUrl=(u)=>/youtube\.com\/shorts\//.test(u||"");
+
+// "TGIAttualità" con "IA" in azzurro, come nello stemma e nei banner del TG.
+function NomeRubrica({serie}){
+  const n=(RUBRICHE[serie]||{}).nome||serie;
+  if(serie!=="TG") return n;
+  return <React.Fragment>TG<span style={{color:RUBRICA_COL.TG}}>IA</span>TTUALITÀ</React.Fragment>;
+}
+
+// Player per gli Shorts: 9:16, largo al massimo 340px, centrato. Le misure
+// devono restare uguali a quelle dell'anteprima in prerender.js (articleHtml),
+// altrimenti al montaggio di React la pagina salta.
+function PlayerVerticale({yt,title,style}){
+  return (<div style={{width:"100%",maxWidth:340,aspectRatio:"9/16",margin:"0 auto",borderRadius:16,overflow:"hidden",background:"#000",...(style||{})}}>
+    <iframe src={"https://www.youtube.com/embed/"+yt} title={title||"Video"} loading="lazy" style={{width:"100%",height:"100%",border:"none",display:"block"}} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen/>
+  </div>);
+}
+
+// Testo di una rubrica in arrivo: e' libero, quindi niente modulo di accesso.
+function TestoInArrivo({item,onRiprova}){
+  const par=paragrafiAnteprima(item.anteprima);
+  return (<div>
+    {par.length>0&&<div style={{fontSize:17,color:C.navySoft,lineHeight:1.7}}>{par.map((p,i)=><p key={i} style={{margin:"0 0 14px"}}>{p}</p>)}</div>}
+    {item.erroreCorpo
+      ? <button onClick={onRiprova} style={{background:C.card,color:C.navy,border:"1px solid "+C.line,borderRadius:10,padding:"10px 16px",fontWeight:700,cursor:"pointer",fontFamily:"Barlow"}}>Il testo non si è caricato. Riprova</button>
+      : <div aria-busy="true" aria-label="Caricamento del testo" style={{display:"grid",gap:10,marginTop:6}}>{[96,100,92,98,70].map((w,i)=><div key={i} style={{height:14,width:w+"%",background:C.line,borderRadius:7}}/>)}</div>}
+  </div>);
+}
+
+// In cima a /tg e /meteo: l'ultima edizione, con il video e il link al testo.
+function RubricaHero({item,onOpen}){
+  if(!item) return null;
+  const yt=ytId(item.video);
+  const open=(e)=>{ if(e&&(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)) return; if(e)e.preventDefault(); onOpen&&onOpen(item); };
+  return (<section style={{background:C.card,border:"1px solid "+C.line,borderRadius:16,padding:16,display:"flex",flexWrap:"wrap",gap:20,alignItems:"center"}}>
+    <div style={{flex:"1 1 260px",maxWidth:340,margin:"0 auto"}}>
+      {yt? <PlayerVerticale yt={yt} title={item.title}/>
+        : item.image? <img src={imgCDN(item.image,600)} onError={e=>onImgErr(e,item.image)} alt={item.title} style={{width:"100%",borderRadius:16,display:"block"}}/> : null}
+    </div>
+    <div style={{flex:"1 1 280px",minWidth:0}}>
+      <div style={{fontSize:12,fontWeight:800,color:RUBRICA_COL[item.serie]||C.blueDeep,letterSpacing:.5,textTransform:"uppercase",marginBottom:6}}>Ultima edizione · {fmtDate(item.date)}</div>
+      <h2 style={{fontFamily:"Anton",fontSize:"clamp(22px,5vw,32px)",color:C.navy,margin:"0 0 10px",fontWeight:400,lineHeight:1.08}}><a href={articlePath(item)} onClick={open} style={{color:C.navy,textDecoration:"none"}}>{item.title}</a></h2>
+      {item.subtitle&&<p style={{fontSize:16,color:C.navySoft,lineHeight:1.45,margin:"0 0 14px",fontWeight:600}}>{item.subtitle}</p>}
+      <a href={articlePath(item)} onClick={open} style={{display:"inline-flex",alignItems:"center",gap:8,background:C.navy,color:"#fff",padding:"11px 18px",borderRadius:10,textDecoration:"none",fontWeight:700,fontSize:14.5}}>Leggi il testo dell'edizione <Ic n="enter" s={15} c="#fff"/></a>
+    </div>
+  </section>);
+}
+
+// In home, sotto le schede: l'ultimo TG e l'ultimo meteo, se esistono.
+function RubricheStrip({news,onSerie}){
+  const ultime=Object.keys(RUBRICHE).map(k=>({k,item:(news||[]).find(n=>n.serie===k)})).filter(x=>x.item);
+  if(!ultime.length) return null;
+  return (<div style={{display:"flex",flexWrap:"wrap",gap:12,marginTop:22}}>
+    {ultime.map(({k,item})=>{ const yt=ytId(item.video); const img=item.image?imgCDN(item.image,200):(yt?"https://img.youtube.com/vi/"+yt+"/hqdefault.jpg":null); return (
+      <a key={k} href={seriePath(k)} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0) return; e.preventDefault(); onSerie(k); }} style={{flex:"1 1 280px",display:"flex",gap:12,alignItems:"center",background:C.card,border:"1px solid "+C.line,borderLeft:"5px solid "+(RUBRICA_COL[k]||C.navy),borderRadius:12,padding:10,textDecoration:"none"}}>
+        {img&&<img src={img} alt="" loading="lazy" decoding="async" style={{width:54,height:96,objectFit:"cover",borderRadius:8,flexShrink:0,background:C.navy}}/>}
+        <div style={{minWidth:0}}>
+          <div style={{fontFamily:"Anton",fontSize:18,color:C.navy,lineHeight:1.1}}><NomeRubrica serie={k}/></div>
+          <div style={{fontSize:12,color:C.gray,margin:"2px 0 4px"}}>{RUBRICHE[k].giorno} · ultima edizione {fmtDate(item.date)}</div>
+          <div style={{fontSize:14,fontWeight:700,color:C.navySoft,lineHeight:1.3,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{item.title}</div>
+        </div>
+      </a>); })}
+  </div>);
+}
+
 function VideoModal({item,onClose}){
   const yt=ytId(item.video);
   return (<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(14,17,23,.8)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:760,background:C.card,borderRadius:16,overflow:"hidden"}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:yt&&isShortUrl(item.video)?380:760,background:C.card,borderRadius:16,overflow:"hidden"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:"1px solid "+C.line}}><strong style={{fontFamily:"Anton",color:C.navy,fontSize:18,fontWeight:400}}>{item.title}</strong><button onClick={onClose} aria-label="Chiudi" style={{background:"none",border:"none",cursor:"pointer"}}><Ic n="x" s={22} c={C.navy}/></button></div>
-      {yt? <div style={{aspectRatio:"16/9",background:"#000"}}><iframe src={"https://www.youtube.com/embed/"+yt} style={{width:"100%",height:"100%",border:"none"}} allowFullScreen/></div>
+      {yt? <div style={{aspectRatio:isShortUrl(item.video)?"9/16":"16/9",maxHeight:"80vh",margin:"0 auto",background:"#000"}}><iframe src={"https://www.youtube.com/embed/"+yt} title={item.title} style={{width:"100%",height:"100%",border:"none"}} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen/></div>
         : <div style={{padding:32,textAlign:"center"}}><p style={{color:C.navySoft,marginBottom:16}}>I video di {platform(item.video)} si aprono nell'app originale.</p><a href={item.video} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:8,background:C.blue,color:"#fff",padding:"11px 20px",borderRadius:10,textDecoration:"none",fontWeight:700}}>Guarda su {platform(item.video)} <Ic n="ext" s={16} c="#fff"/></a></div>}
     </div>
   </div>);
@@ -963,6 +1056,7 @@ function NewsForm({initial,token,onClose,onSave}){
             {SERIES.map(s=><option key={s} value={s}>{s}</option>)}
           </select>
           <div style={{fontSize:12,color:C.gray,marginTop:5}}>Per gli articoli del podcast scegli "Podcast": l'articolo compare in <b>/podcast</b> e resta comunque in home e nella sua categoria tematica. La categoria non va mai usata per il formato.</div>
+          {isRubrica(f.serie)&&<div style={{fontSize:12.5,color:C.navy,marginTop:6,background:C.cream,border:"1px solid "+C.line,borderRadius:8,padding:"8px 10px"}}><b>{RUBRICHE[f.serie].nome}</b>: incolla qui sotto il link dello Short di YouTube e nel testo il copione dell'edizione. L'edizione compare in cima a <b>{seriePath(f.serie)}</b> ed è leggibile da tutti, senza registrazione.</div>}
         </div>
         <div><label style={labStyle}>Firma</label><input style={inStyle} value={f.author_name||""} onChange={e=>set("author_name",e.target.value)} placeholder="Lorenzo"/>
           <div style={{fontSize:12,color:C.gray,marginTop:5}}>Compare sotto il titolo e nei dati strutturati. Una firma visibile è uno dei segnali di affidabilità più forti per Google.</div>
@@ -972,7 +1066,7 @@ function NewsForm({initial,token,onClose,onSave}){
           <div style={{fontSize:12,color:C.gray,marginTop:6}}>Usa la barra per grassetto, corsivo, dimensioni, titoli, elenchi e link. Nelle anteprime compare solo titolo e sottotitolo; qui si legge tutto l'articolo formattato.</div>
         </div>
         <div><label style={labStyle}>Link al post social</label><input style={inStyle} value={f.link||""} onChange={e=>set("link",e.target.value)} placeholder="https://tiktok.com/… o Instagram, Facebook…"/></div>
-        <div><label style={labStyle}>Link video (YouTube si incorpora)</label><input style={inStyle} value={f.video||""} onChange={e=>set("video",e.target.value)} placeholder="https://youtube.com/…"/></div>
+        <div><label style={labStyle}>Link video (YouTube e Shorts si incorporano)</label><input style={inStyle} value={f.video||""} onChange={e=>set("video",e.target.value)} placeholder="https://youtube.com/shorts/…"/></div>
         <div><label style={labStyle}>Copertina</label>
           <div style={{display:"flex",gap:8}}>
             <input style={{...inStyle,flex:1}} value={f.image||""} onChange={e=>set("image",e.target.value)} placeholder="URL immagine, oppure carica →"/>
@@ -1665,6 +1759,8 @@ function SiteFooter({info,admin,pieno,onEdit,onPage,onSendNewsletter,onSpecial})
         </div>
       </div>
       <div style={{borderTop:"1px solid rgba(255,255,255,.12)",marginTop:26,paddingTop:18,display:"flex",flexWrap:"wrap",gap:"6px 18px",justifyContent:"center"}}>
+        <a href={seriePath("TG")} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>TG</a>
+        <a href={seriePath("Meteo")} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>Meteo</a>
         <a href={seriePath("Podcast")} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>Podcast</a>
         <a href="/newsletter" onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage("newsletter"); }} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>Newsletter</a>
         {/* Contatti e Social in fondo alla lista: sono veri <a href>, quindi

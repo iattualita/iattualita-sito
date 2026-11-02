@@ -22,7 +22,7 @@
 // cloaking. Il testo sta in Supabase dietro la service_role (migrazione 006):
 // questa funzione lo chiede solo per il crawler verificato.
 
-import { slugify, SERIE_ALIAS, SOCIALS, STATIC_PAGES as PAGES } from "../../shared/site-pages.js";
+import { slugify, SERIE_ALIAS, SOCIALS, STATIC_PAGES as PAGES, RUBRICHE, isRubrica, youtubeId } from "../../shared/site-pages.js";
 import { safeBody } from "../../shared/safe-body.js";
 import { paragrafiAnteprima } from "../../shared/anteprima.js";
 import { crawlerVerificato } from "../../shared/crawler.js";
@@ -190,7 +190,27 @@ ${a.category ? `<meta property="article:section" content="${esc(a.category)}">` 
 <meta name="twitter:description" content="${esc(desc)}">
 <meta name="twitter:image" content="${esc(imgOg)}">
 <script type="application/ld+json">${ld(newsArticleLd(a, url, imgOg, published, modified, desc))}</script>
-<script type="application/ld+json">${ld(breadcrumbLd(a, url))}</script>`;
+<script type="application/ld+json">${ld(breadcrumbLd(a, url))}</script>${videoLdTag(a, desc, published)}`;
+}
+
+// VideoObject per gli articoli con un video YouTube (le edizioni del TG e del
+// meteo, soprattutto): e' cio' che permette a Google di mostrarli anche nei
+// risultati Video. uploadDate e' obbligatorio: senza data, niente blocco.
+function videoLdTag(a, desc, published) {
+  const yt = youtubeId(a.video);
+  if (!yt || !published) return "";
+  return `
+<script type="application/ld+json">${ld({
+    "@context": "https://schema.org",
+    "@type": "VideoObject",
+    name: String(a.title || "").slice(0, 110),
+    description: desc || a.title,
+    thumbnailUrl: ["https://img.youtube.com/vi/" + yt + "/hqdefault.jpg"],
+    uploadDate: published,
+    embedUrl: "https://www.youtube.com/embed/" + yt,
+    inLanguage: "it-IT",
+    publisher: { "@type": "NewsMediaOrganization", name: "Iattualità", url: SITE }
+  })}</script>`;
 }
 
 // JSON-LD serializzato in modo che un "<" nel testo non chiuda lo <script>
@@ -231,12 +251,17 @@ function newsArticleLd(a, url, img, published, modified, desc) {
     inLanguage: "it-IT",
     // Il testo completo e' riservato ai lettori registrati: lo si
     // dichiara a Google, insieme alla parte della pagina che e' riservata.
-    isAccessibleForFree: false,
-    hasPart: {
-      "@type": "WebPageElement",
-      isAccessibleForFree: false,
-      cssSelector: ".paywall",
-    },
+    // Le rubriche (TG, meteo) invece sono libere per tutti.
+    ...(isRubrica(a.serie)
+      ? { isAccessibleForFree: true }
+      : {
+          isAccessibleForFree: false,
+          hasPart: {
+            "@type": "WebPageElement",
+            isAccessibleForFree: false,
+            cssSelector: ".paywall",
+          },
+        }),
     author: a.author_name
       ? { "@type": "Person", name: a.author_name }
       : { "@type": "Organization", name: "Iattualità", url: SITE },
@@ -267,22 +292,40 @@ function anteprimaHtml(a) {
   return par.map((p) => `<p style="margin:0 0 14px">${esc(p)}</p>`).join("") + BLOCCO_ACCESSO;
 }
 
-// completo: { body, summary } solo per il crawler verificato, altrimenti null.
+// completo: { body, summary } per il crawler verificato e, per le rubriche
+// libere (TG, meteo), per chiunque. Altrimenti null.
 function articleHtml(a, completo) {
+  const libera = isRubrica(a.serie);
   const body = completo
     ? // data-corpo-completo: app.jsx lo raccoglie prima di montare React, cosi'
       // anche la pagina renderizzata da Google (che esegue JavaScript) mostra
-      // il testo invece del blocco. Esiste solo nella risposta al crawler.
-      `<div class="paywall" data-corpo-completo data-articolo="${esc(a.id)}">${
+      // il testo invece del blocco. Negli articoli riservati esiste solo
+      // nella risposta al crawler; nelle rubriche libere c'e' per tutti, e
+      // senza la classe .paywall, perche' non c'e' niente di riservato.
+      `<div class="${libera ? "article-body" : "paywall"}" data-corpo-completo data-articolo="${esc(a.id)}">${
         completo.body && completo.body.trim()
           ? safeBody(completo.body)
           : "<p>" + esc(completo.summary || "").replace(/\n/g, "<br>") + "</p>"
       }</div>`
+    : libera
+    ? // Testo non disponibile (chiave di servizio mancante): l'anteprima, ma
+      // senza l'invito a registrarsi, che qui non avrebbe senso.
+      paragrafiAnteprima(a.anteprima).map((p) => `<p style="margin:0 0 14px">${esc(p)}</p>`).join("")
     : anteprimaHtml(a);
 
+  // Nelle rubriche il video e' il contenuto principale e prende il posto della
+  // copertina. Qui c'e' l'anteprima dello Short con le stesse misure del
+  // player verticale di app.jsx (9:16, largo al massimo 340px): quando React
+  // monta il player la pagina non salta.
+  const yt = libera ? youtubeId(a.video) : null;
   // La cover passa dalla Image CDN: e' la riga che pesava di piu' sull'egress.
-  const cover = a.image
+  const cover = yt
+    ? `<a href="https://www.youtube.com/shorts/${esc(yt)}" style="display:block;width:100%;max-width:340px;aspect-ratio:9/16;margin:0 auto 18px;border-radius:16px;overflow:hidden;background:#000"><img src="https://img.youtube.com/vi/${esc(yt)}/hqdefault.jpg" alt="${esc(a.title)}" decoding="async" style="width:100%;height:100%;object-fit:cover"></a>`
+    : a.image
     ? `<img src="${esc(cdn(a.image, 900))}" alt="${esc(a.title)}" width="760" height="428" decoding="async" style="width:100%;height:auto;border-radius:16px;margin:0 0 18px">`
+    : "";
+  const rubrica = libera
+    ? `<p style="margin-top:24px"><a href="${esc(SERIE_ALIAS[a.serie])}" style="color:#2C5AA0;font-weight:700">${esc(RUBRICHE[a.serie].nome)}: tutte le edizioni</a></p>`
     : "";
 
   return `<article style="max-width:760px;margin:0 auto;padding:18px 16px;font-family:Barlow,system-ui,sans-serif;color:#2A3A57;line-height:1.7">
@@ -296,6 +339,7 @@ ${a.date ? ` · <time datetime="${esc(String(a.date).slice(0, 10))}">${esc(fmtDa
 ${a.subtitle ? `<p style="font-size:19px;font-weight:700;color:#16243F;margin:0 0 16px">${esc(a.subtitle)}</p>` : ""}
 ${cover}
 <div style="font-size:17px">${body}</div>
+${rubrica}
 ${a.category ? `<p style="margin-top:24px"><a href="/argomento/${encodeURIComponent(a.category)}" style="color:#2C5AA0;font-weight:700">Altri articoli in ${esc(a.category)}</a></p>` : ""}
 </article>`;
 }
@@ -740,13 +784,32 @@ ${socialHtml}
       ? (rows.find((r) => slugify(r.serie) === slugify(serieWanted)) || {}).serie
       : ALIAS_TO_SERIE[segRaw];
     const list = target ? rows.filter((r) => r.serie === target) : [];
+    // Rubrica (TG, meteo) ancora senza edizioni: la pagina esiste gia', ci
+    // porta il menu. Si serve con 200 ma noindex, finche' non c'e' niente da
+    // indicizzare; con la prima edizione il noindex sparisce da solo.
+    const rbVuota = !list.length && ALIAS_TO_SERIE[segRaw] && RUBRICHE[ALIAS_TO_SERIE[segRaw]];
+    if (rbVuota) {
+      const u = SITE + "/" + segRaw;
+      const blk = "<!--OG_START-->\n" + pageOgBlock(rbVuota.title, rbVuota.desc, u, webPageLd(rbVuota.nome, rbVuota.desc, u)) +
+        '\n<meta name="robots" content="noindex">\n<!--OG_END-->';
+      html = html
+        .replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => blk)
+        .replace(/<meta name="robots" content="index, follow[^"]*">/, () => "");
+      html = inject(`${WRAP_OPEN}
+<h1 ${H1}>${esc(rbVuota.nome)}</h1>
+<p style="font-size:17px">${esc(rbVuota.intro)}</p>
+<p style="font-weight:700">La prima edizione è in arrivo. ${esc(rbVuota.giorno)} su Iattualità.</p>
+</div>`);
+      return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=300") });
+    }
     if (!list.length) return notFound(res, html);
     const u = SITE + (SERIE_ALIAS[target] || "/serie/" + slugify(target));
-    const t = target + " · Iattualità";
-    const d = "Tutte le puntate della serie " + target + " di Iattualità.";
+    const rb = RUBRICHE[target];
+    const t = rb ? rb.title : target + " · Iattualità";
+    const d = rb ? rb.desc : "Tutte le puntate della serie " + target + " di Iattualità.";
     const blk = "<!--OG_START-->\n" + pageOgBlock(t, d, u, collectionLd(target, u, list)) + "\n<!--OG_END-->";
     html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => blk);
-    html = inject(listHtml(target, d, list));
+    html = inject(listHtml(rb ? rb.nome : target, d, list));
     return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=900") });
   }
 
@@ -792,18 +855,21 @@ ${socialHtml}
   html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => block);
 
   // Testo integrale solo al crawler verificato. Per tutti gli altri, compresi
-  // quelli che si spacciano per Googlebot, l'anteprima.
+  // quelli che si spacciano per Googlebot, l'anteprima. Le rubriche libere
+  // (TG, meteo) escono complete per chiunque.
+  const libera = isRubrica(a.serie);
   let completo = null;
-  if (await crawlerVerificato(request.headers.get("user-agent"), context.ip)) {
+  if (libera || (await crawlerVerificato(request.headers.get("user-agent"), context.ip))) {
     completo = await sbTestoIntegrale(a.id);
   }
   html = inject(articleHtml(a, completo));
 
-  // La versione col testo integrale non deve finire in nessuna cache
-  // condivisa, dove potrebbe essere servita a un lettore qualsiasi.
+  // La versione col testo integrale di un articolo riservato non deve finire
+  // in nessuna cache condivisa, dove potrebbe essere servita a un lettore
+  // qualsiasi. Quella di una rubrica libera e' uguale per tutti.
   return new Response(html, {
     status: 200,
-    headers: intestazioni(res, completo ? "private, no-store" : "public, max-age=0, s-maxage=600"),
+    headers: intestazioni(res, completo && !libera ? "private, no-store" : "public, max-age=0, s-maxage=600"),
   });
 }
 
