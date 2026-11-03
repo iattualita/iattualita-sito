@@ -1,5 +1,9 @@
 // netlify/functions/accesso-codice.js
-// POST { email, newsletter, website }  ->  manda il codice di accesso a 6 cifre.
+// POST { email, website }  ->  manda il codice di accesso a 6 cifre.
+//
+// Leggere gli articoli interi richiede l'iscrizione alla newsletter (scelta
+// della redazione, 3 nov 2026): chi chiede il codice si iscrive, e il modulo
+// lo dice prima. L'iscrizione diventa effettiva quando il codice e' verificato.
 //
 // Primo passo dell'accesso dei lettori (il secondo e' accesso-verifica.js).
 // Vale sia per chi si registra sia per chi rientra: non c'e' differenza, ed
@@ -53,7 +57,7 @@ exports.handler = async (event) => {
     if (!okBreve || !okGiorno) return A.risposta(200, { ok: true });
 
     const codice = A.nuovoCodice();
-    await A.codiceSalva(email, A.impronta(email, codice), body.newsletter === true);
+    await A.codiceSalva(email, A.impronta(email, codice), true);
 
     // Il codice nell'oggetto: sul telefono si legge gia' dalla notifica,
     // senza aprire l'app di posta e perdere la pagina che si stava leggendo.

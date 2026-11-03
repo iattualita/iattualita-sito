@@ -105,7 +105,7 @@ function check(nome, cond, extra) {
   check("  ^ l'indirizzo e' normalizzato in minuscolo", mail[0].to[0].email === "lettrice@esempio.it");
   const riga = db.codici.get("lettrice@esempio.it");
   check("  ^ nel database c'e' l'impronta, non il codice", riga && riga.code_hash.length === 64 && riga.code_hash !== codiceInviato());
-  check("  ^ newsletter non spuntata resta false", riga.newsletter === false);
+  check("  ^ la newsletter e' sempre richiesta, anche se il modulo manda false", riga.newsletter === true);
 
   reset();
   r = await post(codice, { email: "bot@esempio.it", website: "http://spam" });
@@ -154,7 +154,15 @@ function check(nome, cond, extra) {
   reset();
   await post(codice, { email: "n@esempio.it", newsletter: false });
   r = await post(verifica, { email: "n@esempio.it", codice: codiceInviato() });
-  check("newsletter NON spuntata: accesso si', iscrizione no", r.statusCode === 200 && db.subscribers.size === 0 && JSON.parse(r.body).newsletter === null);
+  check("newsletter obbligatoria: chi entra viene iscritto, confermato", r.statusCode === 200 && db.subscribers.get("n@esempio.it") && db.subscribers.get("n@esempio.it").status === "confirmed" && JSON.parse(r.body).newsletter === "iscritto", db.subscribers.get("n@esempio.it"));
+
+  // Codice chiesto prima della regola (newsletter false nel database): alla
+  // verifica l'iscrizione si fa comunque.
+  reset();
+  await post(codice, { email: "vecchio@esempio.it" });
+  db.codici.get("vecchio@esempio.it").newsletter = false;
+  r = await post(verifica, { email: "vecchio@esempio.it", codice: codiceInviato() });
+  check("codice chiesto prima della regola: iscritto lo stesso", r.statusCode === 200 && db.subscribers.get("vecchio@esempio.it").status === "confirmed");
 
   reset();
   db.subscribers.set("ex@esempio.it", { id: "s1", email: "ex@esempio.it", status: "unsubscribed", token: "t-vecchio" });
@@ -235,11 +243,21 @@ function check(nome, cond, extra) {
   r = await get(completo, { id: "non-un-uuid" }, sess);
   check("id non valido: 404", r.statusCode === 404);
 
+  // Disiscritto (o registrato prima della regola): dentro, ma niente testo.
+  db.subscribers.get("t@esempio.it").status = "unsubscribed";
+  r = await get(completo, { id: ART }, sess);
+  check("non iscritto alla newsletter: 403 'newsletter', niente testo", r.statusCode === 403 && JSON.parse(r.body).error === "newsletter" && !r.body.includes("TESTO-INTEGRALE"), r);
+  db.subscribers.delete("t@esempio.it");
+  r = await get(completo, { id: ART }, sess);
+  check("  ^ anche senza nessuna riga in subscribers", r.statusCode === 403);
+
   // ---- sessione ----
   r = await get(lettore, {}, sess);
   check("lettore GET: chi sono", r.statusCode === 200 && JSON.parse(r.body).email === "t@esempio.it");
   r = await post(lettore, { azione: "newsletter" }, { cookie: sess });
   check("lettore: iscrizione alla newsletter con un clic", r.statusCode === 200 && db.subscribers.get("t@esempio.it").status === "confirmed");
+  r = await get(completo, { id: ART }, sess);
+  check("  ^ e subito dopo l'articolo si apre", r.statusCode === 200 && JSON.parse(r.body).body.includes("TESTO-INTEGRALE"));
   r = await post(lettore, { azione: "esci" });
   check("esci: cancella i due cookie anche senza sessione",
     r.statusCode === 200 && r.multiValueHeaders["Set-Cookie"].every((c) => /Max-Age=0/.test(c)));

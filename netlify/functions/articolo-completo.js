@@ -43,6 +43,13 @@ exports.handler = async (event) => {
     if (!lettore) return A.risposta(401, { error: "sessione" }, A.cookieUscita());
     if (!articolo) return A.risposta(404, { error: "articolo" });
 
+    // Gli articoli interi sono per gli iscritti alla newsletter. Chi si e'
+    // disiscritto (o si era registrato prima di questa regola) riceve 403:
+    // il sito gli propone di iscriversi con un clic, senza rifare l'accesso,
+    // perche' il suo indirizzo e' gia' verificato. Le rubriche libere no.
+    if (!A.serieLibera(articolo.serie) && (await A.newsletterStato(lettore.email)) !== "iscritto")
+      return A.risposta(403, { error: "newsletter" });
+
     const body = corpo(articolo);
 
     // Chi torna a leggere non deve rifare l'accesso: a meno di due mesi
