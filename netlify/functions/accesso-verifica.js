@@ -69,13 +69,13 @@ exports.handler = async (event) => {
     const lettore = await A.lettoreAccesso(email);
     if (!lettore || !lettore.id) throw new Error("lettore non creato");
 
-    // La newsletter e' un di piu': se l'iscrizione fallisce, l'accesso resta
-    // valido e lo si dice, invece di bloccare la lettura per questo.
-    let newsletter = null;
-    if (riga.newsletter) {
-      try { newsletter = await A.newsletterIscrivi(email); }
-      catch (e) { console.error("accesso-verifica, newsletter:", e && e.message); newsletter = "errore"; }
-    }
+    // Iscrizione alla newsletter: obbligatoria per leggere, si fa sempre
+    // (anche per i codici chiesti prima di questa regola). Se fallisce, la
+    // sessione si apre lo stesso: all'apertura dell'articolo il sito propone
+    // di completare l'iscrizione con un clic, senza rifare il codice.
+    let newsletter;
+    try { newsletter = await A.newsletterIscrivi(email); }
+    catch (e) { console.error("accesso-verifica, newsletter:", e && e.message); newsletter = "errore"; }
 
     return A.risposta(200, { ok: true, newsletter }, A.cookieAccesso(lettore.id));
   } catch (e) {

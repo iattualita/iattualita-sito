@@ -443,6 +443,8 @@ function App(){
         const c=await apiCorpo(articleId);
         if(c.status===200) a={...a,body:c.body,completo:true};
         else if(c.status===401){ if(alive&&lettore)setLettore(false); }
+        // 403: e' dentro ma non e' (piu') iscritto alla newsletter.
+        else if(c.status===403) a={...a,serveNewsletter:true};
         else a={...a,erroreCorpo:true};
       }
     }
@@ -494,7 +496,7 @@ function App(){
     setLettore(true); setAccesso(null);
     traccia("accesso_completato");
     const nl=d&&d.newsletter;
-    note(nl==="iscritto"?"Fatto: sei dentro e sei iscritto alla newsletter.":nl==="gia_iscritto"?"Fatto: sei dentro. Eri già iscritto alla newsletter.":nl==="errore"?"Sei dentro. L'iscrizione alla newsletter non è riuscita: riprova dalla pagina Newsletter.":"Fatto: buona lettura.");
+    note(nl==="iscritto"?"Fatto: sei dentro e sei iscritto alla newsletter.":nl==="gia_iscritto"?"Fatto: sei dentro. Eri già iscritto alla newsletter.":nl==="errore"?"Sei dentro. L'iscrizione alla newsletter non è riuscita: aprendo un articolo puoi completarla con un clic.":"Fatto: buona lettura.");
   };
   const esci=async()=>{ setMenuOpen(false); await apiLettore("esci"); setLettore(false); note("Sei uscito."); };
   const eliminaAccount=async()=>{
@@ -601,7 +603,7 @@ function App(){
                   <button onClick={esci} style={menuItem}>Esci</button>
                   <button onClick={eliminaAccount} style={{...menuItem,fontSize:14,color:C.gray}}>Cancella il mio account</button>
                 </React.Fragment>
-              : <button onClick={()=>{ setMenuOpen(false); setAccesso("menu"); }} style={menuItem}>Accedi o registrati</button>)}
+              : <button onClick={()=>{ setMenuOpen(false); setAccesso("menu"); }} style={menuItem}>Accedi o iscriviti</button>)}
           </nav>}
         </div>
       </header>
@@ -1449,31 +1451,29 @@ const bottoneStyle=(attivo)=>({width:"100%",background:attivo?C.navy:C.line,colo
 const linkPrivacy=(onPage,colore)=>(<a href="/privacy" onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage("privacy"); }} style={{color:colore||C.blueDeep,fontWeight:600,textDecoration:"underline"}}>Privacy policy</a>);
 
 const TESTI_ACCESSO={
-  articolo:{titolo:"Continua a leggere",testo:"Registrati con la tua email: ti mandiamo un codice di 6 cifre e leggi tutti gli articoli di Iattualità. Se ti sei già registrato, usa la stessa email."},
-  popup:{titolo:"Leggi Iattualità per intero",testo:"Lascia la tua email, ti mandiamo un codice di 6 cifre e hai accesso a tutti gli articoli verificati con i dati."},
-  menu:{titolo:"Accedi o registrati",testo:"Scrivi la tua email: ti mandiamo un codice di 6 cifre. Vale sia per entrare la prima volta sia per rientrare."},
+  articolo:{titolo:"Continua a leggere",testo:"Iscriviti alla newsletter di Iattualità e leggi tutti gli articoli interi. Ti mandiamo un codice di 6 cifre per confermare l'email. Se sei già iscritto, usa la stessa email."},
+  popup:{titolo:"Leggi Iattualità per intero",testo:"Iscriviti alla newsletter: ogni settimana le notizie verificate con i dati e, da subito, tutti gli articoli interi sul sito."},
+  menu:{titolo:"Accedi o iscriviti",testo:"Scrivi la tua email: ti mandiamo un codice di 6 cifre. Vale sia per iscriverti la prima volta sia per rientrare."},
   newsletter:{titolo:null,testo:null}
 };
 
 // Il modulo in due passi: email, poi codice. Lo stesso ovunque (fine
 // articolo, popup, menu, pagina Newsletter); cambiano solo i testi.
 //
-// La newsletter e' una casella a parte, mai pre-spuntata: registrarsi per
-// leggere non vale come consenso a ricevere email. Sulla pagina Newsletter,
-// dove iscriversi e' lo scopo, la casella diventa obbligatoria.
+// Leggere gli articoli interi richiede l'iscrizione alla newsletter (scelta
+// della redazione, 3 nov 2026). Non c'e' casella da spuntare: il modulo dice
+// in chiaro, prima dell'invio, che chiedere il codice vuol dire iscriversi.
 function AccessoBox({variante,onEntrato,onPage,compatto}){
   const t=TESTI_ACCESSO[variante]||TESTI_ACCESSO.articolo;
-  const perNewsletter=variante==="newsletter";
   const [passo,setPasso]=useState("email");   // email | codice
   const [email,setEmail]=useState("");
-  const [nl,setNl]=useState(false);
   const [trap,setTrap]=useState("");
   const [codice,setCodice]=useState("");
   const [busy,setBusy]=useState(false);
   const [err,setErr]=useState("");
   const [puoRimandare,setPuoRimandare]=useState(false);
   const emailOk=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
-  const pronto=emailOk&&(!perNewsletter||nl);
+  const pronto=emailOk;
   const idBase=React.useRef("acc-"+Math.random().toString(36).slice(2,8)).current;
   const codiceRef=React.useRef(null);
 
@@ -1484,9 +1484,8 @@ function AccessoBox({variante,onEntrato,onPage,compatto}){
 
   const chiediCodice=async()=>{
     if(!emailOk){ setErr("Controlla l'indirizzo email."); return; }
-    if(perNewsletter&&!nl){ setErr("Spunta la casella per ricevere la newsletter."); return; }
     setBusy(true); setErr("");
-    try{ await apiCodice(email.trim().toLowerCase(),nl,trap); setCodice(""); setPasso("codice"); traccia("accesso_codice_richiesto"); }
+    try{ await apiCodice(email.trim().toLowerCase(),true,trap); setCodice(""); setPasso("codice"); traccia("accesso_codice_richiesto"); }
     catch(e){ setErr(e.message); }
     setBusy(false);
   };
@@ -1511,15 +1510,9 @@ function AccessoBox({variante,onEntrato,onPage,compatto}){
                 <input id={idBase+"-email"} type="email" inputMode="email" value={email} onChange={e=>{setEmail(e.target.value); setErr("");}} onKeyDown={e=>e.key==="Enter"&&pronto&&chiediCodice()} style={{...inStyle,fontSize:16,padding:"12px 14px"}} placeholder="nome@esempio.it" autoComplete="email"/>
                 <Honeypot value={trap} onChange={setTrap}/>
               </div>
-              <label style={{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer"}}>
-                <input type="checkbox" checked={nl} onChange={e=>{setNl(e.target.checked); setErr("");}} style={{width:18,height:18,accentColor:C.blue,marginTop:2,flexShrink:0}}/>
-                <span style={{fontSize:13.5,color:C.navySoft,lineHeight:1.45}}>{perNewsletter
-                  ? "Voglio ricevere la newsletter settimanale di Iattualità. Posso disiscrivermi quando voglio dal link in ogni email."
-                  : "Mandatemi anche la newsletter settimanale con le notizie verificate (facoltativo). Posso disiscrivermi quando voglio."}</span>
-              </label>
               {err&&<div role="alert" style={erroreStyle}>{err}</div>}
-              <button onClick={chiediCodice} disabled={!pronto||busy} style={{...bottoneStyle(pronto&&!busy)}}>{busy?"Invio del codice…":"Ricevi il codice"}</button>
-              <p style={{fontSize:12.5,color:C.gray,margin:0,lineHeight:1.5}}>Usiamo la tua email per farti entrare{perNewsletter?" e per mandarti la newsletter":", e per la newsletter solo se la scegli"}. Niente password, niente cessione a terzi. Dettagli nella {linkPrivacy(onPage)}.</p>
+              <button onClick={chiediCodice} disabled={!pronto||busy} style={{...bottoneStyle(pronto&&!busy)}}>{busy?"Invio del codice…":"Iscriviti e ricevi il codice"}</button>
+              <p style={{fontSize:12.5,color:C.gray,margin:0,lineHeight:1.5}}>Continuando ti iscrivi alla newsletter settimanale di Iattualità, che serve per leggere gli articoli interi. Puoi disiscriverti quando vuoi dal link in ogni email: gli articoli torneranno visibili in anteprima. Niente password, niente cessione a terzi. Dettagli nella {linkPrivacy(onPage)}.</p>
             </div>
           </React.Fragment>
         : <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -1548,7 +1541,7 @@ function AccessoBox({variante,onEntrato,onPage,compatto}){
 function AnteprimaBloccata({item,lettore,onEntrato,onRiprova,onPage}){
   const par=paragrafiAnteprima(item.anteprima);
   // Chi ha gia' fatto l'accesso vede il testo arrivare, non il modulo.
-  const inArrivo=lettore&&!item.erroreCorpo;
+  const inArrivo=lettore&&!item.erroreCorpo&&!item.serveNewsletter;
   return (
     <div>
       {par.length>0&&<div style={{position:"relative",fontSize:17,color:C.navySoft,lineHeight:1.7}}>
@@ -1557,6 +1550,8 @@ function AnteprimaBloccata({item,lettore,onEntrato,onRiprova,onPage}){
       </div>}
       {inArrivo
         ? <div aria-busy="true" aria-label="Caricamento dell'articolo" style={{display:"grid",gap:10,marginTop:6}}>{[96,100,92,98,70].map((w,i)=><div key={i} style={{height:14,width:w+"%",background:C.line,borderRadius:7}}/>)}</div>
+        : lettore&&item.serveNewsletter
+          ? <div className="paywall"><IscrizioneUnClic onFatto={onRiprova}/></div>
         : lettore
           ? <div style={{background:C.card,border:"1px solid "+C.line,borderRadius:16,padding:"18px 18px 20px"}}>
               <p style={{margin:"0 0 12px",color:C.navySoft,fontSize:15,lineHeight:1.5}}>Non siamo riusciti a caricare il resto dell'articolo.</p>
@@ -1567,11 +1562,31 @@ function AnteprimaBloccata({item,lettore,onEntrato,onRiprova,onPage}){
   );
 }
 
+// Per chi ha gia' fatto l'accesso ma non e' iscritto alla newsletter (si e'
+// disiscritto, o si era registrato prima che diventasse obbligatoria): il suo
+// indirizzo e' gia' verificato, quindi basta un clic.
+function IscrizioneUnClic({onFatto}){
+  const [stato,setStato]=useState("idle"); // idle | busy | errore
+  const iscrivi=async()=>{
+    setStato("busy");
+    const r=await apiLettore("newsletter");
+    if(r.ok){ traccia("newsletter_iscrizione"); onFatto&&onFatto(); return; }
+    setStato("errore");
+  };
+  return (<div style={{background:C.card,border:"1px solid "+C.line,borderRadius:16,padding:"20px 18px 22px"}}>
+    <div style={{fontFamily:"Anton",fontSize:24,lineHeight:1.1,color:C.navy,margin:"0 0 8px"}}>Continua a leggere</div>
+    <p style={{fontSize:15,lineHeight:1.5,color:C.navySoft,margin:"0 0 14px"}}>Gli articoli interi sono per gli iscritti alla newsletter settimanale. Il tuo indirizzo è già confermato: ti basta un clic.</p>
+    {stato==="errore"&&<div role="alert" style={{...erroreStyle,marginBottom:12}}>Non è riuscito. Riprova tra poco.</div>}
+    <button onClick={iscrivi} disabled={stato==="busy"} style={{...bottoneStyle(stato!=="busy")}}>{stato==="busy"?"Iscrizione…":"Iscrivimi e continua a leggere"}</button>
+    <p style={{fontSize:12.5,color:C.gray,margin:"10px 0 0",lineHeight:1.5}}>Puoi disiscriverti quando vuoi dal link in ogni email.</p>
+  </div>);
+}
+
 // Finestra di accesso: dal pulsante Accedi o, da sola, in home (popup).
 function AccessoModal({variante,onClose,onEntrato,onPage}){
   useEffect(()=>{ const k=(e)=>{ if(e.key==="Escape") onClose(); }; window.addEventListener("keydown",k); return ()=>window.removeEventListener("keydown",k); },[onClose]);
   return (<div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(14,17,23,.55)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto"}}>
-    <div role="dialog" aria-modal="true" aria-label={variante==="popup"?"Leggi Iattualità per intero":"Accedi o registrati"} onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:420,background:C.card,borderRadius:18,padding:"18px 20px 20px",position:"relative",margin:"auto"}}>
+    <div role="dialog" aria-modal="true" aria-label={variante==="popup"?"Leggi Iattualità per intero":"Accedi o iscriviti"} onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:420,background:C.card,borderRadius:18,padding:"18px 20px 20px",position:"relative",margin:"auto"}}>
       <button onClick={onClose} aria-label="Chiudi" style={{position:"absolute",top:10,right:10,background:"none",border:"none",cursor:"pointer",padding:6,display:"flex"}}><Ic n="x" s={22} c={C.navy}/></button>
       <div style={{paddingRight:26}}><AccessoBox variante={variante} onEntrato={onEntrato} onPage={onPage} compatto/></div>
       {variante==="popup"&&<button onClick={onClose} style={{display:"block",margin:"14px auto 0",background:"none",border:"none",color:C.gray,fontSize:13.5,fontWeight:600,cursor:"pointer",fontFamily:"Barlow"}}>Non ora, continuo a guardare</button>}
