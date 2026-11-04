@@ -528,6 +528,29 @@ function App(){
   },[view,lettore,admin,adminGate,accesso,showForm,showLogin,showInfo,showSpecial,video]);
   const chiudiAccesso=()=>{ if(accesso==="popup"){ try{ localStorage.setItem("iatt_popup_chiuso",String(Date.now())); }catch(e){} traccia("popup_chiuso"); } setAccesso(null); };
 
+  // Promemoria a chi si e' iscritto ma non ha confermato: una volta sola per
+  // indirizzo (send-promemoria.js, migrazione 008). Stesso schema a blocchi
+  // della newsletter: si richiama finche' non ha finito.
+  const sendPromemoria=async()=>{
+    const call=(dry)=>authed(token,t=>fetch("/.netlify/functions/send-promemoria",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+t},body:JSON.stringify({dry})}));
+    try{
+      let r=await call(true); let d=await r.json();
+      if(!r.ok) throw new Error(d.message||"Errore");
+      if(!d.daServire){ alert("Nessuno da avvisare: tutti gli iscritti in attesa hanno già ricevuto il promemoria, oppure non ce ne sono."); return; }
+      if(!window.confirm("Promemoria di conferma:\n\n• "+d.daServire+" iscritti non hanno mai confermato e non hanno ancora ricevuto il promemoria\n• ricevono UNA email con il link per confermare, nessun contenuto della newsletter\n• non lo riceveranno mai una seconda volta\n\nInviare adesso?")) return;
+      let inviate=0, fallite=0, giri=0;
+      for(;;){
+        r=await call(false); d=await r.json();
+        if(!r.ok) throw new Error(d.message||"Errore invio");
+        inviate+=d.delivered||0; fallite+=d.failed||0;
+        if(d.done) break;
+        if(!d.delivered&&!d.failed) break;
+        if(++giri>200) throw new Error("Fermato per sicurezza dopo "+inviate+" promemoria. Ripremi il pulsante per completare.");
+        note("Promemoria in corso… "+inviate+" inviati, "+d.remaining+" da fare.");
+      }
+      note("Promemoria inviato a "+inviate+" iscritti"+(fallite?" ("+fallite+" non riusciti)":"")+".");
+    }catch(e){ const m=String(e.message||e); if(/JWT|Sessione scaduta/i.test(m)) setShowLogin(true); alert("Promemoria:\n\n"+m); }
+  };
   const doLogin=async(email,password)=>{ const d=await apiLogin(email,password); setToken(setSession(d)); setShowLogin(false); note("Bentornato in redazione."); };
   const logout=()=>{ chiudiSessione(); setToken(null); note("Uscito dalla redazione."); };
 
@@ -672,7 +695,7 @@ function App(){
       )}
       </div>
 
-      <SiteFooter info={info} admin={admin} pieno={pieno} onEdit={()=>setShowInfo(true)} onPage={openPage} onSendNewsletter={sendNewsletter} onSpecial={()=>setShowSpecial(true)}/>
+      <SiteFooter info={info} admin={admin} pieno={pieno} onEdit={()=>setShowInfo(true)} onPage={openPage} onSendNewsletter={sendNewsletter} onPromemoria={sendPromemoria} onSpecial={()=>setShowSpecial(true)}/>
 
       {showForm&&admin&&<NewsForm initial={editing} defaultSerie={!editing&&view==="serie"&&isRubrica(activeSerie)?activeSerie:""} token={token} onClose={()=>{setShowForm(false);setEditing(null);}} onSave={saveItem}/>}
       {showSpecial&&admin&&<SpecialForm token={token} note={note} onClose={()=>setShowSpecial(false)} onSessionDead={()=>setShowLogin(true)}/>}
@@ -1770,13 +1793,14 @@ function SpecialForm({token,onClose,note,onSessionDead}){
   </div>);
 }
 
-function SiteFooter({info,admin,pieno,onEdit,onPage,onSendNewsletter,onSpecial}){
+function SiteFooter({info,admin,pieno,onEdit,onPage,onSendNewsletter,onPromemoria,onSpecial}){
   const hasSocial=SOCIALS.some(s=>info[s.k]);
   const hasContact=info.email||info.phone;
   return (<footer style={{background:C.navy,color:"#fff",marginTop:28}}>
     <div style={{maxWidth:980,margin:"0 auto",padding:"32px 16px 24px"}}>
       {admin&&<div style={{display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap",marginBottom:8}}>
         {pieno&&<button onClick={onSendNewsletter} style={{display:"flex",alignItems:"center",gap:6,background:C.amber,color:C.navy,border:"none",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:700,cursor:"pointer"}}><Ic n="mail" s={14} c={C.navy}/> Invia newsletter</button>}
+        {pieno&&<button onClick={onPromemoria} title="Un solo promemoria a chi si è iscritto ma non ha mai confermato" style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,.12)",color:"#fff",border:"1px solid rgba(255,255,255,.25)",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}><Ic n="mail" s={14} c="#fff"/> Promemoria conferma</button>}
         <button onClick={onSpecial} style={{display:"flex",alignItems:"center",gap:6,background:"#fff",color:C.navy,border:"none",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:700,cursor:"pointer"}}><Ic n="play" s={13} c={C.navy}/> Invio speciale</button>
         {pieno&&<button onClick={onEdit} style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,.12)",color:"#fff",border:"1px solid rgba(255,255,255,.25)",borderRadius:9,padding:"7px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}><Ic n="set" s={14} c="#fff"/> Modifica social e contatti</button>}
       </div>}
