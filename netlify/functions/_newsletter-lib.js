@@ -192,7 +192,7 @@ function benvenutoHtml(entraUrl, unsubUrl){
     + emailHeader("Benvenuto tra i lettori &middot; non tifiamo per nessuno, verifichiamo")
     + '<tr><td style="padding:0 12px;font-family:Arial,Helvetica,sans-serif">'
     + p('Ciao,')
-    + p('grazie per esserti iscritto. Da oggi fai parte dei lettori di IAttualit&agrave;: notizie verificate con i dati, raccontate senza schierarsi. Ecco cosa ti arriva.')
+    + p('grazie per esserti iscritto. Da oggi fai parte dei lettori di IAttualit&agrave;: informazione indipendente, verificata con i dati. Ecco cosa ti arriva.')
     + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
     + voce('Tutti gli articoli interi sul sito', 'Sei gi&agrave; dentro: leggi tutto, senza limiti.')
     + voce('La newsletter, una volta a settimana', 'Il meglio della settimana in una sola email. I link agli articoli ti fanno entrare sul sito direttamente, senza codice.')

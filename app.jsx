@@ -31,7 +31,7 @@ const SERIE_META = {
   "Podcast":{
     title:"Podcast · Iattualità",
     desc:"Il podcast di Iattualità: ogni episodio raccontato per intero, con i dati verificati e le fonti in chiaro.",
-    intro:"Ogni episodio del podcast di Iattualità, raccontato per intero: i fatti, i numeri verificati e le fonti in chiaro. Nessuna appartenenza, il giudizio a chi legge."
+    intro:"Ogni episodio del podcast di Iattualità, raccontato per intero: i fatti, i numeri verificati e le fonti in chiaro. Informazione indipendente, il giudizio a chi legge."
   },
   "Ponte sullo Stretto":{
     title:"Ponte sullo Stretto · Iattualità",
@@ -1294,7 +1294,7 @@ function NumeriPage({info,pieno,token,note,onPage}){
   return (
     <main style={{maxWidth:820,margin:"0 auto",padding:"24px 16px 8px"}}>
       <h1 style={{fontFamily:"Anton",fontSize:"clamp(26px,6vw,38px)",color:C.navy,margin:"0 0 8px",fontWeight:400,letterSpacing:.3}}>I nostri numeri</h1>
-      <p style={{color:C.navySoft,fontSize:15.5,lineHeight:1.55,marginTop:0,maxWidth:680}}>Iattualità racconta l'attualità verificata con i dati, senza appartenenze politiche. Questi sono i numeri dei nostri canali: ogni dato porta la data dell'ultimo aggiornamento e il link al profilo, per verificarlo.</p>
+      <p style={{color:C.navySoft,fontSize:15.5,lineHeight:1.55,marginTop:0,maxWidth:680}}>Iattualità è informazione indipendente, verificata con i dati. Questi sono i numeri dei nostri canali: ogni dato porta la data dell'ultimo aggiornamento e il link al profilo, per verificarlo.</p>
       {righe===null
         ? <div style={{height:180,background:C.line,borderRadius:16,marginTop:18,opacity:.5}}/>
         : <React.Fragment>
@@ -1380,7 +1380,7 @@ function NewsletterPage({lettore,onEntrato,onSessioneScaduta,onPage}){
     document.title="Newsletter · Iattualità";
     const c=document.querySelector('link[rel="canonical"]'); if(c)c.setAttribute("href","https://iattualita.it/newsletter");
     const dm=document.querySelector('meta[name="description"]'); const prev=dm?dm.getAttribute("content"):null;
-    if(dm)dm.setAttribute("content","Iscriviti alla newsletter di Iattualità: gli articoli verificati della settimana in una sola email. Niente spam, nessuna appartenenza politica.");
+    if(dm)dm.setAttribute("content","Iscriviti alla newsletter di Iattualità: gli articoli verificati della settimana in una sola email. Informazione indipendente, niente spam.");
     return ()=>{ document.title="Iattualità · L'informazione intelligente e in tempo reale"; const cc=document.querySelector('link[rel="canonical"]'); if(cc)cc.setAttribute("href","https://iattualita.it/"); if(dm&&prev!=null)dm.setAttribute("content",prev); };
   },[]);
   // Chi e' gia' dentro: si chiede al server se e' anche iscritto, per non
@@ -1406,7 +1406,7 @@ function NewsletterPage({lettore,onEntrato,onSessioneScaduta,onPage}){
   return (
     <main id="top" style={{maxWidth:760,margin:"0 auto",padding:"24px 16px 8px"}}>
       <h1 style={{fontFamily:"Anton",fontSize:"clamp(26px,6vw,38px)",color:C.navy,margin:"0 0 8px",fontWeight:400,letterSpacing:.3}}>Newsletter</h1>
-      <p style={{color:C.navySoft,fontSize:15.5,lineHeight:1.5,marginTop:0}}>Gli articoli della settimana di Iattualità, raccolti in una sola email. Notizie verificate con i dati, senza appartenenze politiche. Niente spam: puoi disiscriverti quando vuoi.</p>
+      <p style={{color:C.navySoft,fontSize:15.5,lineHeight:1.5,marginTop:0}}>Gli articoli della settimana di Iattualità, raccolti in una sola email. Informazione indipendente, verificata con i dati. Niente spam: puoi disiscriverti quando vuoi.</p>
       <div style={{marginTop:18}}>
         {lettore
           ? <div style={{background:C.card,border:"1px solid "+C.line,borderRadius:16,padding:18}}>
@@ -1463,7 +1463,7 @@ function StaticPage({page,info,onPage}){
 function Newsletter({onPage}){
   return (<div style={{marginBottom:28,paddingBottom:26,borderBottom:"1px solid rgba(255,255,255,.12)"}}>
     <h3 style={{fontFamily:"Anton",fontSize:22,margin:"0 0 6px",color:"#fff",fontWeight:400}}>La newsletter di Iattualità</h3>
-    <p style={{color:"rgba(255,255,255,.8)",fontSize:14.5,lineHeight:1.5,margin:"0 0 14px",maxWidth:560}}>Gli articoli nuovi, raccolti in una sola email. Niente spam, niente appartenenze: solo i fatti verificati. Ti disiscrivi quando vuoi.</p>
+    <p style={{color:"rgba(255,255,255,.8)",fontSize:14.5,lineHeight:1.5,margin:"0 0 14px",maxWidth:560}}>Gli articoli nuovi, raccolti in una sola email. Informazione indipendente, solo fatti verificati. Niente spam. Ti disiscrivi quando vuoi.</p>
     <a href="/newsletter" onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage("newsletter"); }} style={{display:"inline-flex",alignItems:"center",gap:8,background:C.amber,color:C.navy,borderRadius:11,padding:"12px 20px",fontWeight:800,fontSize:15,textDecoration:"none"}}><Ic n="mail" s={17} c={C.navy}/> Iscriviti alla newsletter</a>
   </div>);
 }

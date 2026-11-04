@@ -607,7 +607,7 @@ export default async function handler(request, context) {
     const u = SITE + "/newsletter";
     const t = "Newsletter · Iattualità";
     const d =
-      "Iscriviti alla newsletter di Iattualità: il riepilogo delle notizie verificate con i dati, senza appartenenze politiche.";
+      "Iscriviti alla newsletter di Iattualità: il riepilogo delle notizie verificate con i dati, da una redazione indipendente.";
     const blk = "<!--OG_START-->\n" + pageOgBlock(t, d, u, webPageLd("Newsletter", d, u)) + "\n<!--OG_END-->";
     html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => blk);
     html = inject(
