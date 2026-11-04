@@ -276,14 +276,17 @@ async function newsletterIscrivi(email) {
   if (esiste && esiste.status === "confirmed") return "gia_iscritto";
   if (esiste) {
     await L.sbPatch(esiste.id, { status: "confirmed", confirmed_at: ora, unsubscribed_at: null, token: esiste.token || L.newToken() });
-    return "iscritto";
+  } else {
+    const r = await fetch(REST + "/subscribers", {
+      method: "POST",
+      headers: H({ Prefer: "return=minimal" }),
+      body: JSON.stringify({ email, status: "confirmed", token: L.newToken(), confirmed_at: ora })
+    });
+    if (!r.ok) throw await L.sbError("newsletter iscrivi", r);
   }
-  const r = await fetch(REST + "/subscribers", {
-    method: "POST",
-    headers: H({ Prefer: "return=minimal" }),
-    body: JSON.stringify({ email, status: "confirmed", token: L.newToken(), confirmed_at: ora })
-  });
-  if (!r.ok) throw await L.sbError("newsletter iscrivi", r);
+  // Benvenuto solo la prima volta (benvenuto_at, migrazione 009): chi si
+  // reiscrive dopo essersene andato non lo riceve di nuovo.
+  await L.inviaBenvenuto(email);
   return "iscritto";
 }
 

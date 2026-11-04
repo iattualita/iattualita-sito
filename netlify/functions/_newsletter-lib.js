@@ -173,6 +173,63 @@ function promemoriaEmailHtml(token){
 <p>La redazione di Iattualità</p>`;
 }
 
+// ================== MAIL DI BENVENUTO ==================
+// Parte una volta sola, la prima volta che un indirizzo diventa iscritto
+// confermato: da codice sul sito, da link di conferma, da "Iscrivimi" con un
+// clic. benvenuto_at (migrazione 009) lo garantisce: si "prenota" l'invio con
+// un aggiornamento che riesce solo se la colonna e' ancora vuota, quindi due
+// conferme simultanee non producono due mail.
+//
+// Non blocca mai chi la chiama: se qualcosa va storto si scrive nei log e
+// l'iscrizione resta valida.
+function benvenutoHtml(entraUrl, unsubUrl){
+  const p = (t) => '<p style="margin:0 0 14px;font-size:16px;line-height:1.6;color:#2A3A57">' + t + '</p>';
+  const voce = (titolo, testo) => '<tr><td style="padding:0 0 14px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#2A3A57">'
+    + '<b style="color:#16243F">' + titolo + '</b><br>' + testo + '</td></tr>';
+  return '<!doctype html><html lang="it">' + emailHead("Benvenuto in IAttualità") + '<body style="margin:0;background:#F4F2EC">'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4F2EC"><tr><td align="center" style="padding:26px 12px">'
+    + '<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%">'
+    + emailHeader("Benvenuto tra i lettori &middot; non tifiamo per nessuno, verifichiamo")
+    + '<tr><td style="padding:0 12px;font-family:Arial,Helvetica,sans-serif">'
+    + p('Ciao,')
+    + p('grazie per esserti iscritto. Da oggi fai parte dei lettori di IAttualit&agrave;: informazione indipendente, verificata con i dati. Ecco cosa ti arriva.')
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
+    + voce('Tutti gli articoli interi sul sito', 'Sei gi&agrave; dentro: leggi tutto, senza limiti.')
+    + voce('La newsletter, una volta a settimana', 'Il meglio della settimana in una sola email. I link agli articoli ti fanno entrare sul sito direttamente, senza codice.')
+    + voce('Il TG del venerd&igrave; e il meteo del luned&igrave;', 'Due appuntamenti fissi con Lorenzo, in video e per iscritto: <a href="' + SITE_URL + '/tg" style="color:#2C5AA0">iattualita.it/tg</a> e <a href="' + SITE_URL + '/meteo" style="color:#2C5AA0">iattualita.it/meteo</a>.')
+    + '</table>'
+    + '<p style="margin:6px 0 22px"><a href="' + entraUrl + '" style="display:inline-block;background:#16243F;color:#ffffff;text-decoration:none;font-weight:bold;font-size:16px;padding:13px 22px;border-radius:10px">Vai al sito</a></p>'
+    + p('Hai una notizia che vuoi farci verificare? Rispondi a questa email: leggiamo tutto.')
+    + p('A presto,<br>la redazione di IAttualit&agrave;')
+    + '</td></tr>'
+    + '<tr><td style="padding:14px 12px;border-top:1px solid #E3DFD6;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#7A8499;line-height:1.5">'
+    + 'Ricevi questa email perch&eacute; ti sei iscritto su iattualita.it. Il pulsante qui sopra ti fa entrare direttamente: meglio non inoltrare questa email.<br>'
+    + '<a href="' + unsubUrl + '" style="color:#7A8499">Disiscriviti</a> quando vuoi &middot; IAttualit&agrave; &middot; verificato con i dati'
+    + '</td></tr></table></td></tr></table></body></html>';
+}
+
+async function inviaBenvenuto(email){
+  try{
+    // Prenotazione atomica: riesce solo per un iscritto confermato che non
+    // l'ha ancora ricevuto. Se la colonna non esiste (009 non eseguita)
+    // Supabase risponde 400 e il benvenuto si salta, senza errori.
+    const r = await fetch(REST + "/subscribers?email=eq." + encodeURIComponent(email) + "&status=eq.confirmed&benvenuto_at=is.null&select=id,email,token", {
+      method: "PATCH",
+      headers: sbHeaders({ Prefer: "return=representation" }),
+      body: JSON.stringify({ benvenuto_at: new Date().toISOString() })
+    });
+    if(!r.ok){ console.warn("benvenuto: prenotazione non riuscita (" + r.status + "): migrazione 009 eseguita?"); return false; }
+    const s = (await r.json())[0];
+    if(!s) return false; // gia' accolto, o non confermato
+    const unsub = FN + "/unsubscribe?token=" + s.token;
+    await brevoSend(s.email, "Benvenuto in IAttualità", benvenutoHtml(linkEntra(s.id, "/"), unsub), null, null, unsub);
+    return true;
+  }catch(e){
+    console.warn("benvenuto: invio non riuscito:", e && e.message);
+    return false;
+  }
+}
+
 // --- Pagine HTML mostrate dopo il click (conferma / disiscrizione) ---
 //
 // action opzionale: { url, label }. Se c'e', la pagina mostra un pulsante che
@@ -480,6 +537,7 @@ module.exports = {
   rateHit, clientIp,
   runDigest, verifyRedazione, redazioneUser, isGiornalista,
   linkEntra, verificaEntra, sbSubscriberById, articlePath, digestHtml,
+  inviaBenvenuto, benvenutoHtml,
   // usati anche dagli invii speciali (_speciali-lib.js)
   sbHeaders, sbError, inPool, htmlToText, BATCH, CONCURRENCY,
   SUPABASE_URL, REST, FN, emailHead, emailHeader, LOGO_URL, TESTATA_URL, BLU_IA,
