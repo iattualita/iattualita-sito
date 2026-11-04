@@ -33,6 +33,7 @@ exports.handler = async (event) => {
       ));
 
     await L.sbPatch(sub.id, { status: "confirmed", confirmed_at: new Date().toISOString(), unsubscribed_at: null });
+    await L.inviaBenvenuto(sub.email);
 
     // Iscrizione confermata = accesso agli articoli interi. Chi ha confermato
     // da questo browser resta dentro, senza dover chiedere anche il codice.
