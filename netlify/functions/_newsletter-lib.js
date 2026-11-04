@@ -160,6 +160,19 @@ function confirmEmailHtml(token){
 <p>Se non sei stato tu, ignora questa email: senza conferma non riceverai nulla.</p>`;
 }
 
+// --- Promemoria di conferma (una volta sola, vedi send-promemoria.js) ---
+// Stesso stile spoglio della conferma: e' un messaggio di servizio, non una
+// newsletter. Nessun contenuto editoriale, solo il link per confermare.
+function promemoriaEmailHtml(token){
+  const link = FN + "/confirm?token=" + token;
+  return `<p>Ciao,</p>
+<p>qualche tempo fa hai chiesto di ricevere la newsletter di Iattualità, ma l'iscrizione non è stata completata.</p>
+<p>Se ti interessa ancora, conferma qui. Con la conferma ricevi la newsletter settimanale e puoi leggere gli articoli interi sul sito:<br>
+<a href="${link}">${link}</a></p>
+<p>Se non ti interessa più, ignora questa email: non ti scriveremo di nuovo.</p>
+<p>La redazione di Iattualità</p>`;
+}
+
 // --- Pagine HTML mostrate dopo il click (conferma / disiscrizione) ---
 //
 // action opzionale: { url, label }. Se c'e', la pagina mostra un pulsante che
@@ -463,7 +476,7 @@ async function runDigest(opts){
 
 module.exports = {
   sbSelectByEmail, sbSelectByToken, sbInsert, sbPatch,
-  brevoSend, newToken, confirmEmailHtml, page, html, json, validEmail,
+  brevoSend, newToken, confirmEmailHtml, promemoriaEmailHtml, page, html, json, validEmail,
   rateHit, clientIp,
   runDigest, verifyRedazione, redazioneUser, isGiornalista,
   linkEntra, verificaEntra, sbSubscriberById, articlePath, digestHtml,

@@ -10,6 +10,7 @@
 // nessuno ha voluto: il doppio consenso diventerebbe finto, e con lui la base
 // giuridica dichiarata nella privacy policy.
 const L = require("./_newsletter-lib");
+const A = require("./_lettori-lib");
 
 exports.handler = async (event) => {
   const token = (event.queryStringParameters || {}).token || "";
@@ -32,7 +33,19 @@ exports.handler = async (event) => {
       ));
 
     await L.sbPatch(sub.id, { status: "confirmed", confirmed_at: new Date().toISOString(), unsubscribed_at: null });
-    return L.html(200, L.page("Iscrizione confermata", "Benvenuto tra i lettori di Iattualità. Ogni settimana ti arriverà il meglio, raccolto in una sola email."));
+
+    // Iscrizione confermata = accesso agli articoli interi. Chi ha confermato
+    // da questo browser resta dentro, senza dover chiedere anche il codice.
+    // Se qualcosa va storto qui l'iscrizione resta valida: entrera' dai link
+    // della newsletter o con il codice.
+    let cookies = null;
+    if (A.config.SECRET) {
+      try { const lettore = await A.lettoreAccesso(sub.email); if (lettore && lettore.id) cookies = A.cookieAccesso(lettore.id); }
+      catch (e) { console.warn("confirm: accesso lettore non creato:", e && e.message); }
+    }
+    const r = L.html(200, L.page("Iscrizione confermata", "Benvenuto tra i lettori di Iattualità. Ogni settimana ti arriverà il meglio, raccolto in una sola email, e da ora puoi leggere tutti gli articoli interi sul sito."));
+    if (cookies) r.multiValueHeaders = { "Set-Cookie": cookies };
+    return r;
   } catch (e) {
     return L.html(500, L.page("Qualcosa è andato storto", "Riprova tra poco. Se il problema resta, scrivici."));
   }
