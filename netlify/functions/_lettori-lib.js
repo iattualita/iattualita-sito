@@ -27,10 +27,12 @@ const SESSIONE_GIORNI = 180;
 const SESSIONE_S = SESSIONE_GIORNI * 24 * 60 * 60;
 const RINNOVA_SOTTO_S = 60 * 24 * 60 * 60;
 
-// Il codice vale 15 minuti e si puo' sbagliare 5 volte. Un milione di
+// Il codice vale 30 minuti e si puo' sbagliare 5 volte. Era 15: su Gmail
+// la mail finisce in Aggiornamenti, senza notifica, e chi la cerca ci mette
+// di piu' (5 nov 2026). Un milione di
 // combinazioni e 5 tentativi: la probabilita' di indovinarlo a caso e' 1 su
 // 200.000 per ogni codice chiesto, e le richieste di codici sono limitate.
-const CODICE_VALIDO_S = 15 * 60;
+const CODICE_VALIDO_S = 30 * 60;
 const CODICE_TENTATIVI = 5;
 
 const COOKIE_SESSIONE = "iatt_sessione";
@@ -303,7 +305,7 @@ async function newsletterStato(email) {
 function emailCodiceHtml(codice) {
   return `<p>Ecco il tuo codice per entrare su IAttualità:</p>
 <p style="font-size:28px;font-weight:bold;letter-spacing:6px;font-family:Arial,Helvetica,sans-serif">${codice}</p>
-<p>Scrivilo nella pagina che hai aperto. Vale 15 minuti.</p>
+<p>Scrivilo nella pagina che hai aperto. Vale 30 minuti.</p>
 <p>Se non sei stato tu a chiederlo, ignora questa email: senza il codice nessuno può entrare con il tuo indirizzo.</p>`;
 }
 
