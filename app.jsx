@@ -1539,7 +1539,8 @@ function AccessoBox({variante,onEntrato,onPage,compatto}){
             </div>
           </React.Fragment>
         : <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            <p style={{fontSize:15,lineHeight:1.5,color:C.navySoft,margin:0}}>Ti abbiamo scritto a <b style={{color:C.navy,wordBreak:"break-all"}}>{email.trim().toLowerCase()}</b>. Inserisci qui il codice di 6 cifre: vale 15 minuti. Se non lo trovi, guarda in Promozioni o Spam.</p>
+            <p style={{fontSize:15,lineHeight:1.5,color:C.navySoft,margin:0}}>Ti abbiamo scritto a <b style={{color:C.navy,wordBreak:"break-all"}}>{email.trim().toLowerCase()}</b>. Inserisci qui il codice di 6 cifre: vale 30 minuti.</p>
+            <p style={{fontSize:14.5,lineHeight:1.5,color:C.navy,margin:0,background:C.cream,border:"1px solid "+C.line,borderRadius:8,padding:"10px 12px"}}><b>Non vedi la mail?</b> Su Gmail apri la scheda <b>Aggiornamenti</b>: arriva quasi sempre lì, senza notifica. Altrimenti guarda in Promozioni o Spam. Il mittente è <b>Redazione Iattualità</b>.</p>
             <div>
               <label htmlFor={idBase+"-codice"} style={labStyle}>Codice</label>
               <input id={idBase+"-codice"} ref={codiceRef} value={codice} onChange={e=>{ const v=e.target.value.replace(/\D/g,"").slice(0,6); setCodice(v); setErr(""); if(v.length===6&&!busy) verifica(v); }} onKeyDown={e=>e.key==="Enter"&&verifica()} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength={6} placeholder="000000" style={{...inStyle,fontSize:26,letterSpacing:8,textAlign:"center",fontWeight:700,padding:"12px 14px"}}/>
