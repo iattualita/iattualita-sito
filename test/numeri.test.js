@@ -37,7 +37,8 @@ function check(nome, cond, extra) {
   check("tutto configurato: tre piattaforme ok", e.youtube === "ok" && e.instagram === "ok" && e.facebook === "ok", e);
   check("YouTube: solo iscritti, visualizzazioni non mostrate", salvati.youtube.follower === 1700 && salvati.youtube.visualizzazioni === null && salvati.youtube.periodo === null, salvati.youtube);
   check("YouTube cercato per handle", chiamate.some((u) => u.includes("forHandle=%40iattualita")));
-  check("Instagram: follower e visualizzazioni 30 giorni", salvati.instagram.follower === 38652 && salvati.instagram.visualizzazioni === 1600000 && salvati.instagram.periodo === "ultimi 30 giorni", salvati.instagram);
+  check("Instagram: solo follower, visualizzazioni non mostrate", salvati.instagram.follower === 38652 && salvati.instagram.visualizzazioni === null && salvati.instagram.periodo === null, salvati.instagram);
+  check("  ^ e gli insights non vengono nemmeno chiesti", !chiamate.some((u) => u.includes("/insights")));
   check("Facebook: follower", salvati.facebook.follower === 13066, salvati.facebook);
   check("data e fonte registrate", salvati.facebook.fonte === "automatico" && !!salvati.facebook.aggiornato_at);
   check("TikTok non viene toccato (si aggiorna a mano)", !salvati.tiktok);
@@ -46,7 +47,7 @@ function check(nome, cond, extra) {
   e = await N.aggiornaTutto();
   check("YouTube in errore: il numero vecchio resta, si registra l'errore", salvati.youtube.follower === 1500 && /API key not valid/.test(salvati.youtube.errore), salvati.youtube);
   check("  ^ e le altre piattaforme si aggiornano lo stesso", salvati.facebook.follower === 13066);
-  check("insights Instagram rifiutati: i follower si salvano comunque", salvati.instagram.follower === 38652 && salvati.instagram.visualizzazioni === null && /visualizzazioni non lette/.test(salvati.instagram.errore), salvati.instagram);
+  check("Instagram senza permesso insights: nessun errore, follower salvati", salvati.instagram.follower === 38652 && salvati.instagram.visualizzazioni === null && salvati.instagram.errore === null, salvati.instagram);
 
   delete process.env.YOUTUBE_API_KEY;
   salvati = {}; youtubeRotto = false;
