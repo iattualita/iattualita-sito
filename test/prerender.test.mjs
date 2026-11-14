@@ -131,6 +131,15 @@ r = await chiedi("/social");
 h = await r.text();
 check("social: 200 e h1 Seguici", r.status === 200 && h.includes(">Seguici<"), r.status);
 
+// ---- produzioni video ----
+r = await chiedi("/produzioni");
+h = await r.text();
+check("produzioni: 200, titolo, servizi e indirizzo dal modulo condiviso",
+  r.status === 200 && h.includes("Le notizie della tua testata, in video") && h.includes("Reel di notizia") && h.includes("produzioni@iattualita.it"), r.status);
+check("  ^ con l'anteprima dei link dedicata (og-produzioni.jpg)", h.includes("/og-produzioni.jpg"));
+check("  ^ e niente durate scritte nella pagina", !/\d+\s*(secondi|sec)\b/.test(h));
+check("  ^ con la prova di 15 giorni nella sezione prezzi", h.includes("Prova di 15 giorni"));
+
 // ---- articolo, visitatore qualunque: anteprima e blocco ----
 r = await chiedi("/articolo/42/titolo-dell-articolo");
 h = await r.text();
@@ -253,7 +262,7 @@ console.log("");
 
 // ---- sitemap ----
 const xml = await (await sitemap()).text();
-for (const p of ["/chi-siamo", "/standard-editoriali", "/rettifiche", "/trasparenza-ia", "/privacy", "/contatti", "/social", "/newsletter", "/archivio", "/numeri"]) {
+for (const p of ["/chi-siamo", "/standard-editoriali", "/rettifiche", "/trasparenza-ia", "/privacy", "/contatti", "/social", "/newsletter", "/archivio", "/numeri", "/produzioni"]) {
   check("sitemap contiene " + p, xml.includes("<loc>https://iattualita.it" + p + "</loc>"));
 }
 check("sitemap: l'articolo ha lo stesso slug del link in home",

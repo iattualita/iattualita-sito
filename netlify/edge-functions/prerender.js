@@ -22,7 +22,7 @@
 // cloaking. Il testo sta in Supabase dietro la service_role (migrazione 006):
 // questa funzione lo chiede solo per il crawler verificato.
 
-import { slugify, SERIE_ALIAS, SOCIALS, STATIC_PAGES as PAGES, RUBRICHE, isRubrica, youtubeId } from "../../shared/site-pages.js";
+import { slugify, SERIE_ALIAS, SOCIALS, STATIC_PAGES as PAGES, RUBRICHE, isRubrica, youtubeId, PRODUZIONI, mailtoProduzioni } from "../../shared/site-pages.js";
 import { safeBody } from "../../shared/safe-body.js";
 import { paragrafiAnteprima } from "../../shared/anteprima.js";
 import { crawlerVerificato } from "../../shared/crawler.js";
@@ -31,6 +31,9 @@ const SUPABASE_URL = "https://wzkshpgakvasqwrrgkgd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_I3s4phA5Be9qnV4pLbWQMQ_8-IGUE-b";
 const SITE = "https://iattualita.it";
 const OG_DEFAULT = SITE + "/og-default.jpg";
+// Anteprima dei link a /produzioni: il logo ProduzionIAttualità, non quello
+// della testata, perche' quel link lo riceve un editore su WhatsApp o in mail.
+const OG_PRODUZIONI = SITE + "/og-produzioni.jpg";
 
 // Se le anteprime social si rompessero, metti false e rideploya: si torna
 // a servire og:image direttamente da Supabase, senza toccare altro codice.
@@ -415,7 +418,7 @@ ${altri.map((a) => card(a, false)).join("\n")}
 
 // Blocco <head> generico: titolo, descrizione, canonical, og. Nessun
 // article:* perche' queste non sono notizie: sono pagine stabili.
-function pageOgBlock(title, desc, url, ldObj) {
+function pageOgBlock(title, desc, url, ldObj, img = OG_DEFAULT) {
   return `<title>${esc(title)}</title>
 <meta name="description" content="${esc(desc)}">
 <link rel="canonical" href="${esc(url)}">
@@ -425,13 +428,13 @@ function pageOgBlock(title, desc, url, ldObj) {
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(desc)}">
 <meta property="og:url" content="${esc(url)}">
-<meta property="og:image" content="${esc(OG_DEFAULT)}">
+<meta property="og:image" content="${esc(img)}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${esc(title)}">
 <meta name="twitter:description" content="${esc(desc)}">
-<meta name="twitter:image" content="${esc(OG_DEFAULT)}">
+<meta name="twitter:image" content="${esc(img)}">
 ${ldObj ? `<script type="application/ld+json">${ld(ldObj)}</script>` : ""}`;
 }
 
@@ -584,6 +587,44 @@ export default async function handler(request, context) {
       /* in caso di errore si serve la shell originale */
     }
     return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=300") });
+  }
+
+  // ---- PRODUZIONI VIDEO ----
+  // La pagina dei servizi per altre testate. Il link lo riceve un editore:
+  // l'anteprima deve mostrare il logo ProduzionIAttualita' e il crawler deve
+  // trovare servizi, passaggi e domande gia' nell'HTML.
+  {
+    const segP = path.replace(/^\/+|\/+$/g, "");
+    if (segP === "produzioni") {
+      const p = PRODUZIONI;
+      const u = SITE + "/produzioni";
+      const blk =
+        "<!--OG_START-->\n" +
+        pageOgBlock(p.title, p.desc, u, webPageLd("Produzioni video", p.desc, u), OG_PRODUZIONI) +
+        "\n<!--OG_END-->";
+      html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => blk);
+      const voci = (arr) => "<ul>" + arr.map((x) => `<li><strong>${esc(x.h)}</strong>: ${esc(x.p)}</li>`).join("") + "</ul>";
+      html = inject(`${WRAP_OPEN}
+<p style="font-size:12px;color:#7A8499;margin:0 0 10px"><a href="/" style="color:#2C5AA0">Iattualità</a> · Produzioni video</p>
+<h1 ${H1}>${esc(p.h1)}</h1>
+<p style="font-size:19px;font-weight:700;color:#16243F">${esc(p.intro)}</p>
+<h2>Cosa facciamo</h2>
+${voci(p.servizi)}
+<h2>Come funziona</h2>
+<ol>${p.passi.map((x) => `<li><strong>${esc(x.h)}</strong>: ${esc(x.p)}</li>`).join("")}</ol>
+<h2>${esc(p.suMisura.h)}</h2>
+<p>${esc(p.suMisura.p)}</p>
+<h2>${esc(p.perche.h)}</h2>
+<p>${esc(p.perche.p)} <a href="/numeri" style="color:#2C5AA0">I nostri numeri</a> · <a href="/tg" style="color:#2C5AA0">Il TG</a></p>
+<h2>${esc(p.prezzi.h)}</h2>
+<p>${esc(p.prezzi.p)}</p>
+${p.prezzi.prova ? `<p><strong>${esc(p.prezzi.prova.h)}</strong>: ${esc(p.prezzi.prova.p)}</p>` : ""}
+<h2>Domande frequenti</h2>
+${p.faq.map((f) => `<h3>${esc(f.q)}</h3><p>${esc(f.a)}</p>`).join("")}
+<p><a href="${esc(mailtoProduzioni())}" style="color:#2C5AA0;font-weight:700">${esc(p.email)}</a></p>
+</div>`);
+      return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=3600") });
+    }
   }
 
   // ---- PAGINE ISTITUZIONALI ----
@@ -922,6 +963,7 @@ export const config = {
     "/favicon-192.png",
     "/apple-touch-icon.png",
     "/og-default.jpg",
+    "/og-produzioni.jpg",
     "/email-logo.png",
     "/email-testata.png",
     "/robots.txt",
