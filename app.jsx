@@ -1433,8 +1433,8 @@ function NewsletterPage({lettore,onEntrato,onSessioneScaduta,onPage}){
 // La vetrina dei servizi per altre testate: reel sulle singole notizie e TG
 // con il conduttore e i colori del cliente. I testi stanno in
 // shared/site-pages.js (PRODUZIONI), gli stessi che vede il crawler. Gli
-// esempi non sono scritti a mano: sono l'ultimo TG, l'ultimo meteo e l'ultimo
-// reel gia' pubblicati, cosi' la pagina resta aggiornata da sola.
+// esempi non sono scritti a mano: sono l'ultimo TG e l'ultimo meteo gia'
+// pubblicati, cosi' la pagina resta aggiornata da sola.
 const PROD_ACCENTI=["#1B9CD9","#3C96B7","#2C5AA0","#E8A33D"];
 
 function MarchioProduzioni({col}){
@@ -1451,15 +1451,11 @@ function ProduzioniPage({news,onOpen,onPage,onSerie}){
     return ()=>{ document.title="Iattualità · L'informazione intelligente e in tempo reale"; const cc=document.querySelector('link[rel="canonical"]'); if(cc)cc.setAttribute("href","https://iattualita.it/"); };
   },[]);
 
-  // Esempi: l'ultimo TG, l'ultimo meteo e l'ultimo reel di notizia, cioe'
-  // l'ultimo articolo fuori dalle rubriche con un "Link video" qualsiasi.
-  // YouTube si incorpora; Instagram, TikTok e gli altri escono come
-  // copertina che apre il video nell'app. Se uno manca, gli altri restano.
+  // Esempi: l'ultimo TG e l'ultimo meteo. Se uno manca, l'altro resta.
   const lista=news||[];
   const tg=lista.find(n=>n.serie==="TG"&&ytId(n.video));
   const meteo=lista.find(n=>n.serie==="Meteo"&&ytId(n.video));
-  const reel=lista.find(n=>!isRubrica(n.serie)&&n.video);
-  const esempi=[tg&&{tipo:"TG",col:RUBRICA_COL.TG,item:tg},meteo&&{tipo:"Meteo",col:RUBRICA_COL.Meteo,item:meteo},reel&&{tipo:"Reel di notizia",col:C.blueDeep,item:reel}].filter(Boolean);
+  const esempi=[tg&&{tipo:"TG",col:RUBRICA_COL.TG,item:tg},meteo&&{tipo:"Meteo",col:RUBRICA_COL.Meteo,item:meteo}].filter(Boolean);
 
   const mailto=mailtoProduzioni();
   const vai=(slug)=>(e)=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage(slug); };
@@ -1522,12 +1518,7 @@ function ProduzioniPage({news,onOpen,onPage,onSerie}){
           ? <div style={{display:"flex",flexWrap:"wrap",gap:18,justifyContent:"center"}}>
               {esempi.map(({tipo,col,item},i)=>(
                 <div key={i} style={{flex:"1 1 220px",maxWidth:280}}>
-                  {ytId(item.video)
-                    ? <PlayerVerticale yt={ytId(item.video)} title={item.title}/>
-                    : <a href={item.video} target="_blank" rel="noopener noreferrer" style={{display:"block",position:"relative",width:"100%",maxWidth:340,aspectRatio:"9/16",margin:"0 auto",borderRadius:16,overflow:"hidden",background:C.navy}}>
-                        {(item.image||item.og_image)&&<img src={imgCDN(item.image||item.og_image,600)} onError={e=>onImgErr(e,item.image||item.og_image)} alt="" loading="lazy" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>}
-                        <span style={{position:"absolute",left:"50%",bottom:16,transform:"translateX(-50%)",background:"rgba(14,17,23,.78)",color:"#fff",borderRadius:999,padding:"9px 15px",fontWeight:700,fontSize:14,display:"inline-flex",gap:6,alignItems:"center",whiteSpace:"nowrap"}}><Ic n="play" s={14} c="#fff"/> Guarda su {platform(item.video)}</span>
-                      </a>}
+                  <PlayerVerticale yt={ytId(item.video)} title={item.title}/>
                   <div style={{fontSize:12,fontWeight:800,color:col,letterSpacing:.5,textTransform:"uppercase",margin:"10px 0 4px"}}>{tipo}</div>
                   <a href={articlePath(item)} onClick={apri(item)} style={{fontSize:15,fontWeight:700,color:C.navy,textDecoration:"none",lineHeight:1.3}}>{item.title}</a>
                 </div>
