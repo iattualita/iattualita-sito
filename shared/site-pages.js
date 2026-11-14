@@ -145,3 +145,58 @@ export const STATIC_PAGES = {
     ]
   }
 };
+
+// ====== PRODUZIONI VIDEO (ProduzionIAttualità) ======
+// La pagina dei servizi per altre testate: reel sulle singole notizie e TG
+// con il conduttore, i colori e le grafiche del cliente. I testi stanno qui
+// perche' li usano sia app.jsx (il lettore) sia prerender.js (il crawler e
+// l'anteprima dei link condivisi). Niente durate e niente prezzi: si
+// concordano nel preventivo. La pagina e' libera, senza registrazione: la
+// guarda un editore che deve decidere, non un lettore.
+export const PRODUZIONI = {
+  title: "Produzioni video per testate e brand · ProduzionIAttualità",
+  desc: "Reel sulle singole notizie e TG su misura per testate, TV locali e brand: il vostro conduttore, i vostri colori, la produzione di Iattualità. Preventivo su richiesta.",
+  h1: "Le notizie della tua testata, in video. Ogni giorno.",
+  intro: "Reel sulla singola notizia e TG completi, su misura per testate, TV locali e brand. Il vostro conduttore, i vostri colori, la nostra produzione.",
+  email: "produzioni@iattualita.it",
+  oggetto: "Richiesta preventivo produzioni video",
+  corpo: "Testata:\nCosa vi serve (reel, TG, meteo, interviste):\nQuanti video a settimana:\n",
+  instagram: "https://www.instagram.com/produzioniattualita/",
+  servizi: [
+    { h: "Reel di notizia", p: "Un video per ogni articolo, pronto per Instagram, TikTok, Facebook e YouTube Shorts." },
+    { h: "TG", p: "Le notizie del giorno raccolte in un'unica edizione, con la sigla e i banner della vostra testata." },
+    { h: "Rubrica meteo", p: "Le previsioni della settimana in un appuntamento fisso, con il vostro conduttore." },
+    { h: "Interviste e approfondimenti", p: "Un ospite, un tema, le domande giuste: montati e pronti da pubblicare." }
+  ],
+  passi: [
+    { h: "Ci mandate la notizia", p: "L'articolo, oppure più articoli per il TG." },
+    { h: "La trasformiamo in video", p: "Scriviamo il testo, verifichiamo i dati e realizziamo voce, video e grafiche." },
+    { h: "La pubblicate", p: "Ricevete il video pronto, nei formati giusti per ogni social." }
+  ],
+  suMisura: {
+    h: "Il vostro marchio in primo piano",
+    p: "Un conduttore virtuale dedicato, con le grafiche, la sigla e i colori della vostra testata. Il vostro marchio resta in primo piano, noi lavoriamo dietro le quinte.",
+    punti: ["Conduttore virtuale dedicato", "Grafiche e colori della testata", "Sigla e banner su misura", "Formati per ogni social"]
+  },
+  perche: {
+    h: "Perché noi",
+    p: "Produciamo ogni giorno i video di Iattualità, testata indipendente verificata con i dati. Lo stesso metodo lo mettiamo al servizio della vostra redazione."
+  },
+  prezzi: {
+    h: "Quanto costa",
+    p: "Ogni testata ha esigenze diverse: prepariamo un preventivo su misura in base a quanti video vi servono e a quali formati."
+  },
+  faq: [
+    { q: "Quanto durano i video?", a: "Decidete voi: adattiamo durata e ritmo alla vostra testata e ai social dove pubblicate." },
+    { q: "In quanto tempo arriva un video?", a: "Lo concordiamo con voi, in base a quanti video vi servono e a quando volete pubblicarli." },
+    { q: "Possiamo mandarvi i nostri filmati?", a: "Sì: se avete immagini e video vostri li montiamo nel servizio, altrimenti alle immagini pensiamo noi." },
+    { q: "Lavorate anche su notizie locali?", a: "Sì: partiamo dagli articoli che ci mandate, qualunque sia il territorio che raccontate." },
+    { q: "Il conduttore è una persona reale?", a: "È un conduttore virtuale, realizzato con l'intelligenza artificiale e personalizzato per voi. Testi, verifica dei dati e scelte editoriali restano umani." },
+    { q: "Di chi sono i video?", a: "Sono realizzati per la vostra testata e pubblicati sui vostri canali. Le condizioni d'uso le mettiamo nero su bianco nel preventivo." }
+  ]
+};
+
+// Link "scrivici" della pagina produzioni, con oggetto e traccia gia' pronti.
+export function mailtoProduzioni() {
+  return "mailto:" + PRODUZIONI.email + "?subject=" + encodeURIComponent(PRODUZIONI.oggetto) + "&body=" + encodeURIComponent(PRODUZIONI.corpo);
+}

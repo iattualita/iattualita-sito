@@ -46,6 +46,8 @@
   Cache-Control: public, max-age=2592000
 /og-default.jpg
   Cache-Control: public, max-age=2592000
+/og-produzioni.jpg
+  Cache-Control: public, max-age=2592000
 /email-logo.png
   Cache-Control: public, max-age=2592000
 /email-testata.png

@@ -27,6 +27,10 @@ Gli articoli vivono su `/articolo/<id>/<titolo-abbreviato>`, le categorie su `/a
 - [Canali social](https://iattualita.it/social).
 - [Newsletter](https://iattualita.it/newsletter): riepilogo settimanale, iscrizione con doppia conferma.
 
+## Servizi
+
+- [Produzioni video](https://iattualita.it/produzioni): ProduzionIAttualità, reel sulle singole notizie e TG su misura per altre testate, TV locali e brand. Contatti: produzioni@iattualita.it.
+
 ## Note per chi indicizza
 
 I contenuti sono protetti dal diritto d'autore. Citazioni brevi con attribuzione e collegamento alla fonte sono benvenute; la riproduzione integrale non è autorizzata.

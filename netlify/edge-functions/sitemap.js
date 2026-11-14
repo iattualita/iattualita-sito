@@ -56,6 +56,8 @@ export default async function handler() {
   urls.push({ loc: SITE + "/contatti", changefreq: "monthly", priority: "0.6" });
   urls.push({ loc: SITE + "/social", changefreq: "monthly", priority: "0.4" });
   urls.push({ loc: SITE + "/numeri", changefreq: "weekly", priority: "0.5" });
+  // La vetrina dei servizi di produzione video per altre testate.
+  urls.push({ loc: SITE + "/produzioni", changefreq: "monthly", priority: "0.5" });
 
   // Pagine argomento — dedotte dalle categorie realmente presenti in archivio
   const cats = [...new Set(news.map((n) => n.category).filter(Boolean))].sort((a, b) =>

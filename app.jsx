@@ -2,7 +2,7 @@
 // file solo, condiviso con le edge function: prima erano duplicati qui e in
 // prerender.js, e bastava aggiornarne uno per far vedere a Google una
 // versione diversa da quella del lettore.
-import { slugify, SERIE_ALIAS, seriePath, SOCIALS, STATIC_PAGES, RUBRICHE, isRubrica } from "./shared/site-pages.js";
+import { slugify, SERIE_ALIAS, seriePath, SOCIALS, STATIC_PAGES, RUBRICHE, isRubrica, PRODUZIONI, mailtoProduzioni } from "./shared/site-pages.js";
 import { paragrafiAnteprima } from "./shared/anteprima.js";
 
 const { useState, useEffect } = React;
@@ -370,7 +370,7 @@ function topicFullUrl(cat){ return window.location.origin+topicPath(cat); }
 function serieFullUrl(s){ return window.location.origin+seriePath(s); }
 function serieFromSlug(slug){ return SERIES.find(s=>slugify(s)===slug)||null; }
 function serieFromAlias(seg){ return Object.keys(SERIE_ALIAS).find(s=>SERIE_ALIAS[s]==="/"+seg)||null; }
-function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } if(p.indexOf("/serie/")===0){ const s=serieFromSlug(decodeURIComponent(p.slice("/serie/".length).split("/")[0])); if(s) return {name:"serie",serie:s}; } const seg=p.replace(/^\/+|\/+$/g,""); const alias=seg?serieFromAlias(seg):null; if(alias){ return {name:"serie",serie:alias}; } if(seg==="archivio"){ return {name:"archivio"}; } if(seg==="newsletter"||seg==="contatti"||seg==="social"||seg==="numeri"){ return {name:"page",page:seg}; } if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
+function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } if(p.indexOf("/serie/")===0){ const s=serieFromSlug(decodeURIComponent(p.slice("/serie/".length).split("/")[0])); if(s) return {name:"serie",serie:s}; } const seg=p.replace(/^\/+|\/+$/g,""); const alias=seg?serieFromAlias(seg):null; if(alias){ return {name:"serie",serie:alias}; } if(seg==="archivio"){ return {name:"archivio"}; } if(seg==="newsletter"||seg==="contatti"||seg==="social"||seg==="numeri"||seg==="produzioni"){ return {name:"page",page:seg}; } if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
 function copyToClipboard(url,onOk,onFail){ (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(onOk).catch(()=>{ try{ window.prompt("Copia il link:",url); }catch(e){} if(onFail)onFail(); }); }
 
 // ====== TESTO FORMATTATO (rich text) ======
@@ -618,6 +618,7 @@ function App(){
                 condivisibili, invisibili a Google, e perse a ogni ricarica. */}
             <button onClick={()=>openPage("social")} style={menuItem}>Social</button>
             <button onClick={()=>openPage("numeri")} style={menuItem}>I nostri numeri</button>
+            <button onClick={()=>openPage("produzioni")} style={menuItem}>Produzioni video</button>
             <button onClick={()=>openPage("contatti")} style={menuItem}>Contatti</button>
             <button onClick={()=>openPage("newsletter")} style={menuItem}>Newsletter</button>
             {!admin&&(lettore
@@ -635,7 +636,7 @@ function App(){
           raggiungibile dal focus via programma senza inserirlo nel giro del
           tab: chi salta qui riprende a tabulare dal contenuto, non da capo. */}
       <div id="contenuto" tabIndex={-1} style={{outline:"none"}}>
-      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic} lettore={lettore} onEntrato={entrato} onRiprova={()=>setTentativo(t=>t+1)} onPage={openPage} onSerie={openSerie} onEdit={article&&admin&&puoModificare(article)?()=>openEditor(article):null}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="numeri" ? <NumeriPage info={info} pieno={pieno} token={token} note={note} onPage={openPage}/> : view==="newsletter" ? <NewsletterPage lettore={lettore} onEntrato={entrato} onSessioneScaduta={()=>setLettore(false)} onPage={openPage}/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
+      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic} lettore={lettore} onEntrato={entrato} onRiprova={()=>setTentativo(t=>t+1)} onPage={openPage} onSerie={openSerie} onEdit={article&&admin&&puoModificare(article)?()=>openEditor(article):null}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="numeri" ? <NumeriPage info={info} pieno={pieno} token={token} note={note} onPage={openPage}/> : view==="produzioni" ? <ProduzioniPage news={news} onOpen={openArticle} onPage={openPage} onSerie={openSerie}/> : view==="newsletter" ? <NewsletterPage lettore={lettore} onEntrato={entrato} onSessioneScaduta={()=>setLettore(false)} onPage={openPage}/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
       <main id="top" style={{maxWidth:980,margin:"0 auto",padding:"16px"}}>
         {view==="archivio"&&<div style={{marginBottom:14}}><div style={{fontFamily:"Anton",fontSize:26,color:C.navy}}>Archivio</div><div style={{fontSize:14,color:C.gray}}>Tutti gli articoli di Iattualità. Cerca o filtra per argomento.</div></div>}
         {view==="serie"&&activeSerie&&<div style={{marginBottom:16,background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"14px 16px"}}>
@@ -1428,6 +1429,147 @@ function NewsletterPage({lettore,onEntrato,onSessioneScaduta,onPage}){
 }
 
 
+// ====== PRODUZIONI VIDEO (ProduzionIAttualità) ======
+// La vetrina dei servizi per altre testate: reel sulle singole notizie e TG
+// con il conduttore e i colori del cliente. I testi stanno in
+// shared/site-pages.js (PRODUZIONI), gli stessi che vede il crawler. Gli
+// esempi non sono scritti a mano: sono gli ultimi reel e l'ultimo TG gia'
+// pubblicati, cosi' la pagina resta aggiornata da sola.
+const PROD_ACCENTI=["#1B9CD9","#3C96B7","#2C5AA0","#E8A33D"];
+
+function MarchioProduzioni({col}){
+  return <React.Fragment>PRODUZION<span style={{color:"#3C96B7"}}>IA</span><span style={{color:col}}>TTUALITÀ</span></React.Fragment>;
+}
+
+function ProduzioniPage({news,onOpen,onPage,onSerie}){
+  const d=PRODUZIONI;
+  useEffect(()=>{
+    document.title=d.title;
+    const setN=(n,v)=>{ let m=document.querySelector('meta[name="'+n+'"]'); if(!m){ m=document.createElement("meta"); m.setAttribute("name",n); document.head.appendChild(m);} m.setAttribute("content",v||""); };
+    setN("description",d.desc);
+    const c=document.querySelector('link[rel="canonical"]'); if(c)c.setAttribute("href","https://iattualita.it/produzioni");
+    return ()=>{ document.title="Iattualità · L'informazione intelligente e in tempo reale"; const cc=document.querySelector('link[rel="canonical"]'); if(cc)cc.setAttribute("href","https://iattualita.it/"); };
+  },[]);
+
+  // Esempi: due reel di notizia (Shorts fuori dalle rubriche) e l'ultimo TG.
+  const lista=news||[];
+  const reel=lista.filter(n=>!isRubrica(n.serie)&&ytId(n.video)&&isShortUrl(n.video)).slice(0,2);
+  const tg=lista.find(n=>n.serie==="TG"&&ytId(n.video));
+  const esempi=[reel[0]&&{tipo:"Reel di notizia",item:reel[0]},tg&&{tipo:"TG",item:tg},reel[1]&&{tipo:"Reel di notizia",item:reel[1]}].filter(Boolean);
+
+  const mailto=mailtoProduzioni();
+  const vai=(slug)=>(e)=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage(slug); };
+  const vaiSerie=(k)=>(e)=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onSerie&&onSerie(k); };
+  const apri=(item)=>(e)=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onOpen&&onOpen(item); };
+  const h2={fontFamily:"Anton",fontSize:"clamp(22px,5vw,28px)",color:C.navy,fontWeight:400,letterSpacing:.2,margin:"0 0 12px",lineHeight:1.1};
+  const testo={color:C.navySoft,fontSize:16,lineHeight:1.6,margin:"0 0 12px"};
+  const sezione={marginTop:40};
+  const chip={fontSize:14,fontWeight:700,color:C.navy,textDecoration:"none",background:C.card,border:"1px solid "+C.line,borderRadius:999,padding:"8px 15px",display:"inline-flex",alignItems:"center",gap:6};
+  const ctaPrimaria={display:"inline-flex",alignItems:"center",gap:8,background:C.amber,color:C.navy,borderRadius:11,padding:"13px 22px",fontWeight:800,fontSize:15.5,textDecoration:"none"};
+
+  return (
+    <main style={{maxWidth:960,margin:"0 auto",padding:"20px 16px 8px",fontFamily:"Barlow,system-ui,sans-serif"}}>
+      <section style={{background:C.navy,borderRadius:20,padding:"clamp(24px,6vw,48px)",color:"#fff"}}>
+        <div style={{fontSize:13,fontWeight:800,letterSpacing:1.6,color:"rgba(255,255,255,.75)",marginBottom:14}}><MarchioProduzioni col="rgba(255,255,255,.75)"/></div>
+        <h1 style={{fontFamily:"Anton",fontSize:"clamp(32px,8vw,56px)",fontWeight:400,lineHeight:1.02,margin:"0 0 16px",letterSpacing:.3,maxWidth:720}}>{d.h1}</h1>
+        <p style={{fontSize:"clamp(16px,3.6vw,19px)",lineHeight:1.5,color:"rgba(255,255,255,.85)",margin:"0 0 24px",maxWidth:640}}>{d.intro}</p>
+        <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
+          <a href={mailto} style={ctaPrimaria}><Ic n="mail" s={18} c={C.navy}/> Richiedi un preventivo</a>
+          <a href="#esempi" style={{display:"inline-flex",alignItems:"center",gap:8,color:"#fff",border:"1px solid rgba(255,255,255,.4)",borderRadius:11,padding:"12px 20px",fontWeight:700,fontSize:15.5,textDecoration:"none"}}><Ic n="play" s={16} c="#fff"/> Guarda gli esempi</a>
+        </div>
+      </section>
+
+      <section style={sezione}>
+        <h2 style={h2}>Cosa facciamo</h2>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:12}}>
+          {d.servizi.map((s,i)=>(
+            <div key={i} style={{background:C.card,border:"1px solid "+C.line,borderTop:"4px solid "+PROD_ACCENTI[i%PROD_ACCENTI.length],borderRadius:14,padding:"16px 16px 14px"}}>
+              <h3 style={{fontFamily:"Anton",fontSize:20,color:C.navy,fontWeight:400,margin:"0 0 6px",letterSpacing:.2}}>{s.h}</h3>
+              <p style={{...testo,fontSize:15,margin:0}}>{s.p}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section style={sezione}>
+        <h2 style={h2}>Come funziona</h2>
+        <ol style={{listStyle:"none",padding:0,margin:0,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12}}>
+          {d.passi.map((p,i)=>(
+            <li key={i} style={{display:"flex",gap:14,alignItems:"flex-start",background:C.card,border:"1px solid "+C.line,borderRadius:14,padding:16}}>
+              <span aria-hidden="true" style={{flexShrink:0,width:36,height:36,borderRadius:"50%",background:C.amber,color:C.navy,display:"inline-flex",alignItems:"center",justifyContent:"center",fontFamily:"Anton",fontSize:19}}>{i+1}</span>
+              <div><h3 style={{fontFamily:"Anton",fontSize:19,color:C.navy,fontWeight:400,margin:"4px 0 4px"}}>{p.h}</h3><p style={{...testo,fontSize:15,margin:0}}>{p.p}</p></div>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section style={{...sezione,background:C.card,border:"1px solid "+C.line,borderRadius:18,padding:"clamp(18px,4vw,28px)"}}>
+        <h2 style={h2}>{d.suMisura.h}</h2>
+        <p style={testo}>{d.suMisura.p}</p>
+        <ul style={{listStyle:"none",padding:0,margin:"6px 0 0",display:"flex",flexWrap:"wrap",gap:8}}>
+          {d.suMisura.punti.map((t,i)=><li key={i} style={{fontSize:14,fontWeight:700,color:C.navy,background:C.cream,borderRadius:999,padding:"8px 14px"}}>{t}</li>)}
+        </ul>
+      </section>
+
+      <section id="esempi" style={{...sezione,scrollMarginTop:20}}>
+        <h2 style={h2}>Esempi</h2>
+        {esempi.length>0
+          ? <div style={{display:"flex",flexWrap:"wrap",gap:18,justifyContent:"center"}}>
+              {esempi.map(({tipo,item},i)=>(
+                <div key={i} style={{flex:"1 1 220px",maxWidth:280}}>
+                  <PlayerVerticale yt={ytId(item.video)} title={item.title}/>
+                  <div style={{fontSize:12,fontWeight:800,color:tipo==="TG"?RUBRICA_COL.TG:C.blueDeep,letterSpacing:.5,textTransform:"uppercase",margin:"10px 0 4px"}}>{tipo}</div>
+                  <a href={articlePath(item)} onClick={apri(item)} style={{fontSize:15,fontWeight:700,color:C.navy,textDecoration:"none",lineHeight:1.3}}>{item.title}</a>
+                </div>
+              ))}
+            </div>
+          : <p style={testo}>Trovi i nostri video nelle pagine del TG e del meteo.</p>}
+        <div style={{display:"flex",flexWrap:"wrap",gap:10,marginTop:18,justifyContent:"center"}}>
+          <a href={seriePath("TG")} onClick={vaiSerie("TG")} style={chip}>Tutti i TG</a>
+          <a href={seriePath("Meteo")} onClick={vaiSerie("Meteo")} style={chip}>Tutti i meteo</a>
+        </div>
+      </section>
+
+      <section style={sezione}>
+        <h2 style={h2}>{d.perche.h}</h2>
+        <p style={testo}>{d.perche.p}</p>
+        <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+          <a href="/numeri" onClick={vai("numeri")} style={chip}>I nostri numeri</a>
+          <a href="/standard-editoriali" onClick={vai("standard-editoriali")} style={chip}>Come verifichiamo</a>
+          <a href="/trasparenza-ia" onClick={vai("trasparenza-ia")} style={chip}>Come usiamo l'IA</a>
+        </div>
+      </section>
+
+      <section style={sezione}>
+        <h2 style={h2}>{d.prezzi.h}</h2>
+        <p style={testo}>{d.prezzi.p}</p>
+        <a href={mailto} style={{...ctaPrimaria,background:C.navy,color:"#fff"}}><Ic n="mail" s={18} c="#fff"/> Chiedi il preventivo</a>
+      </section>
+
+      <section style={sezione}>
+        <h2 style={h2}>Domande frequenti</h2>
+        <div style={{display:"grid",gap:10}}>
+          {d.faq.map((f,i)=>(
+            <details key={i} style={{background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"14px 16px"}}>
+              <summary style={{cursor:"pointer",fontWeight:700,fontSize:16,color:C.navy}}>{f.q}</summary>
+              <p style={{...testo,fontSize:15.5,margin:"10px 0 0"}}>{f.a}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      <section style={{...sezione,background:C.navy,borderRadius:20,padding:"clamp(22px,5vw,36px)",color:"#fff",textAlign:"center"}}>
+        <h2 style={{...h2,color:"#fff"}}>Raccontateci cosa vi serve</h2>
+        <p style={{fontSize:16,lineHeight:1.55,color:"rgba(255,255,255,.85)",margin:"0 auto 20px",maxWidth:560}}>Scriveteci la testata, i formati e quanti video vi servono: vi rispondiamo con una proposta su misura.</p>
+        <div style={{display:"flex",flexWrap:"wrap",gap:12,justifyContent:"center"}}>
+          <a href={mailto} style={ctaPrimaria}><Ic n="mail" s={18} c={C.navy}/> {d.email}</a>
+          <a href={d.instagram} target="_blank" rel="noopener noreferrer" style={{display:"inline-flex",alignItems:"center",gap:8,color:"#fff",border:"1px solid rgba(255,255,255,.4)",borderRadius:11,padding:"12px 20px",fontWeight:700,fontSize:15.5,textDecoration:"none"}}><Ic n="ig" s={17} c="#fff"/> Instagram</a>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function StaticPage({page,info,onPage}){
   const d=STATIC_PAGES[page];
   useEffect(()=>{ if(!d)return;
@@ -1832,7 +1974,7 @@ function SiteFooter({info,admin,pieno,onEdit,onPage,onSendNewsletter,onPromemori
         {/* Contatti e Social in fondo alla lista: sono veri <a href>, quindi
             danno al crawler un collegamento da seguire verso due pagine che
             altrimenti si raggiungono solo dal menu. */}
-        {[...Object.keys(STATIC_PAGES).map(k=>[k,STATIC_PAGES[k].h1]),["contatti","Contatti"],["social","Seguici"],["numeri","I nostri numeri"]].map(([k,label])=>(
+        {[...Object.keys(STATIC_PAGES).map(k=>[k,STATIC_PAGES[k].h1]),["contatti","Contatti"],["social","Seguici"],["numeri","I nostri numeri"],["produzioni","Produzioni video"]].map(([k,label])=>(
           <a key={k} href={"/"+k} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage(k); }} style={{color:"rgba(255,255,255,.8)",textDecoration:"none",fontSize:13,fontWeight:600}}>{label}</a>
         ))}
       </div>
