@@ -1,5 +1,5 @@
 // netlify/functions/_numeri-lib.js
-// Legge follower e visualizzazioni dalle API ufficiali e li salva nella
+// Legge i follower dalle API ufficiali e li salva nella
 // tabella numeri_social (migrazione 007), da cui li prende la pagina /numeri.
 //
 // Usato da numeri-cron.mjs (ogni notte) e da numeri-aggiorna.js (pulsante
@@ -15,7 +15,10 @@
 //   YOUTUBE_API_KEY     chiave di Google Cloud con "YouTube Data API v3" attiva
 //   YOUTUBE_CHANNEL     handle del canale (@iattualita) oppure id (UC...)
 //   META_PAGE_ID        id della pagina Facebook
-//   META_PAGE_TOKEN     token di accesso della pagina (permanente)
+//   META_PAGE_TOKEN     token permanente dell'utente di sistema "sito-iattualita"
+//                       (Business Manager), con pages_show_list,
+//                       pages_read_engagement, instagram_basic. Non dipende
+//                       dalla sessione Facebook di nessuno (14 nov 2026).
 //   META_IG_USER_ID     facoltativo: se manca si ricava dalla pagina
 //   META_GRAPH_VERSION  facoltativo, default v26.0
 // Una piattaforma senza le sue variabili viene saltata, senza errori: si
@@ -82,23 +85,15 @@ async function leggiInstagram() {
   const pagina = env("META_PAGE_ID"), token = env("META_PAGE_TOKEN");
   if (!pagina || !token) return null;
   const ig = await idInstagram(pagina, token);
-  const t = encodeURIComponent(token);
-  const d = await getJson(GRAPH + "/" + ig + "?fields=followers_count&access_token=" + t);
-  const out = { follower: numero(d.followers_count), visualizzazioni: null, periodo: null };
-
-  // Visualizzazioni degli ultimi 30 giorni. Se Meta rifiuta (permesso
-  // insights mancante, metrica rinominata) si tengono comunque i follower.
-  try {
-    const fine = Math.floor(Date.now() / 1000);
-    const inizio = fine - 30 * 86400;
-    const v = await getJson(GRAPH + "/" + ig + "/insights?metric=views&period=day&metric_type=total_value&since=" + inizio + "&until=" + fine + "&access_token=" + t);
-    const voce = (v.data || []).find((x) => x.name === "views");
-    const tot = voce && voce.total_value ? numero(voce.total_value.value) : null;
-    if (tot != null) { out.visualizzazioni = tot; out.periodo = "ultimi 30 giorni"; }
-  } catch (e) {
-    out.avviso = "visualizzazioni non lette: " + e.message;
-  }
-  return out;
+  const d = await getJson(GRAPH + "/" + ig + "?fields=followers_count&access_token=" + encodeURIComponent(token));
+  return {
+    follower: numero(d.followers_count),
+    // Le visualizzazioni di Instagram non si mostrano: scelta della
+    // redazione (14 nov 2026), come per YouTube. Restano solo i follower,
+    // e il valore null cancella dalla pagina il numero letto in precedenza.
+    visualizzazioni: null,
+    periodo: null
+  };
 }
 
 const LETTORI = { youtube: leggiYoutube, instagram: leggiInstagram, facebook: leggiFacebook };
