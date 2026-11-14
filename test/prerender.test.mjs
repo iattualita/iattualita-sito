@@ -138,6 +138,7 @@ check("produzioni: 200, titolo, servizi e indirizzo dal modulo condiviso",
   r.status === 200 && h.includes("Le notizie della tua testata, in video") && h.includes("Reel di notizia") && h.includes("produzioni@iattualita.it"), r.status);
 check("  ^ con l'anteprima dei link dedicata (og-produzioni.jpg)", h.includes("/og-produzioni.jpg"));
 check("  ^ e niente durate scritte nella pagina", !/\d+\s*(secondi|sec)\b/.test(h));
+check("  ^ con la prova di 15 giorni nella sezione prezzi", h.includes("Prova di 15 giorni"));
 
 // ---- articolo, visitatore qualunque: anteprima e blocco ----
 r = await chiedi("/articolo/42/titolo-dell-articolo");

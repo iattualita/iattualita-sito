@@ -184,7 +184,11 @@ export const PRODUZIONI = {
   },
   prezzi: {
     h: "Quanto costa",
-    p: "Ogni testata ha esigenze diverse: prepariamo un preventivo su misura in base a quanti video vi servono e a quali formati."
+    p: "Ogni testata ha esigenze diverse: prepariamo un preventivo su misura in base a quanti video vi servono e a quali formati.",
+    prova: {
+      h: "Prova di 15 giorni",
+      p: "Per 15 giorni ricevete i video come se foste già clienti e li pubblicate sui vostri canali. Poi decidete se continuare."
+    }
   },
   faq: [
     { q: "Quanto durano i video?", a: "Decidete voi: adattiamo durata e ritmo alla vostra testata e ai social dove pubblicate." },

@@ -1477,6 +1477,7 @@ function ProduzioniPage({news,onOpen,onPage,onSerie}){
           <a href={mailto} style={ctaPrimaria}><Ic n="mail" s={18} c={C.navy}/> Richiedi un preventivo</a>
           <a href="#esempi" style={{display:"inline-flex",alignItems:"center",gap:8,color:"#fff",border:"1px solid rgba(255,255,255,.4)",borderRadius:11,padding:"12px 20px",fontWeight:700,fontSize:15.5,textDecoration:"none"}}><Ic n="play" s={16} c="#fff"/> Guarda gli esempi</a>
         </div>
+        {d.prezzi.prova&&<p style={{margin:"16px 0 0",fontSize:14.5,fontWeight:700,color:C.amber}}>{d.prezzi.prova.h} prima di decidere</p>}
       </section>
 
       <section style={sezione}>
@@ -1543,6 +1544,10 @@ function ProduzioniPage({news,onOpen,onPage,onSerie}){
       <section style={sezione}>
         <h2 style={h2}>{d.prezzi.h}</h2>
         <p style={testo}>{d.prezzi.p}</p>
+        {d.prezzi.prova&&<div style={{background:C.card,border:"1px solid "+C.line,borderLeft:"5px solid "+C.amber,borderRadius:12,padding:"14px 16px",margin:"4px 0 16px"}}>
+          <h3 style={{fontFamily:"Anton",fontSize:20,color:C.navy,fontWeight:400,margin:"0 0 4px",letterSpacing:.2}}>{d.prezzi.prova.h}</h3>
+          <p style={{...testo,fontSize:15.5,margin:0}}>{d.prezzi.prova.p}</p>
+        </div>}
         <a href={mailto} style={{...ctaPrimaria,background:C.navy,color:"#fff"}}><Ic n="mail" s={18} c="#fff"/> Chiedi il preventivo</a>
       </section>
 

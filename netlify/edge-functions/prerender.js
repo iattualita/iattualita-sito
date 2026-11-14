@@ -618,6 +618,7 @@ ${voci(p.servizi)}
 <p>${esc(p.perche.p)} <a href="/numeri" style="color:#2C5AA0">I nostri numeri</a> · <a href="/tg" style="color:#2C5AA0">Il TG</a></p>
 <h2>${esc(p.prezzi.h)}</h2>
 <p>${esc(p.prezzi.p)}</p>
+${p.prezzi.prova ? `<p><strong>${esc(p.prezzi.prova.h)}</strong>: ${esc(p.prezzi.prova.p)}</p>` : ""}
 <h2>Domande frequenti</h2>
 ${p.faq.map((f) => `<h3>${esc(f.q)}</h3><p>${esc(f.a)}</p>`).join("")}
 <p><a href="${esc(mailtoProduzioni())}" style="color:#2C5AA0;font-weight:700">${esc(p.email)}</a></p>
