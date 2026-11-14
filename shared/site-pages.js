@@ -164,6 +164,7 @@ export const PRODUZIONI = {
   instagram: "https://www.instagram.com/produzioniattualita/",
   servizi: [
     { h: "Reel di notizia", p: "Un video per ogni articolo, pronto per Instagram, TikTok, Facebook e YouTube Shorts." },
+    { h: "Montaggio video", p: "Ci mandate i vostri filmati, li trasformiamo in video notizie pronte da pubblicare, con titoli, grafiche e sottotitoli." },
     { h: "TG", p: "Le notizie del giorno raccolte in un'unica edizione, con la sigla e i banner della vostra testata." },
     { h: "Rubrica meteo", p: "Le previsioni della settimana in un appuntamento fisso, con il vostro conduttore." },
     { h: "Interviste e approfondimenti", p: "Un ospite, un tema, le domande giuste: montati e pronti da pubblicare." }

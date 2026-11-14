@@ -1435,7 +1435,7 @@ function NewsletterPage({lettore,onEntrato,onSessioneScaduta,onPage}){
 // shared/site-pages.js (PRODUZIONI), gli stessi che vede il crawler. Gli
 // esempi non sono scritti a mano: sono l'ultimo TG e l'ultimo meteo gia'
 // pubblicati, cosi' la pagina resta aggiornata da sola.
-const PROD_ACCENTI=["#1B9CD9","#3C96B7","#2C5AA0","#E8A33D"];
+const PROD_ACCENTI=["#1B9CD9","#1B7A3D","#3C96B7","#2C5AA0","#E8A33D"];
 
 function MarchioProduzioni({col}){
   return <React.Fragment>PRODUZION<span style={{color:"#3C96B7"}}>IA</span><span style={{color:col}}>TTUALITÀ</span></React.Fragment>;
@@ -1482,7 +1482,7 @@ function ProduzioniPage({news,onOpen,onPage,onSerie}){
 
       <section style={sezione}>
         <h2 style={h2}>Cosa facciamo</h2>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(175px,1fr))",gap:12}}>
           {d.servizi.map((s,i)=>(
             <div key={i} style={{background:C.card,border:"1px solid "+C.line,borderTop:"4px solid "+PROD_ACCENTI[i%PROD_ACCENTI.length],borderRadius:14,padding:"16px 16px 14px"}}>
               <h3 style={{fontFamily:"Anton",fontSize:20,color:C.navy,fontWeight:400,margin:"0 0 6px",letterSpacing:.2}}>{s.h}</h3>

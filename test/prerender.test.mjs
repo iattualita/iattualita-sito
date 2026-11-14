@@ -139,6 +139,7 @@ check("produzioni: 200, titolo, servizi e indirizzo dal modulo condiviso",
 check("  ^ con l'anteprima dei link dedicata (og-produzioni.jpg)", h.includes("/og-produzioni.jpg"));
 check("  ^ e niente durate scritte nella pagina", !/\d+\s*(secondi|sec)\b/.test(h));
 check("  ^ con la prova di 15 giorni nella sezione prezzi", h.includes("Prova di 15 giorni"));
+check("  ^ con il montaggio dei filmati del cliente tra i servizi", h.includes("Montaggio video"));
 
 // ---- articolo, visitatore qualunque: anteprima e blocco ----
 r = await chiedi("/articolo/42/titolo-dell-articolo");
