@@ -1433,8 +1433,8 @@ function NewsletterPage({lettore,onEntrato,onSessioneScaduta,onPage}){
 // La vetrina dei servizi per altre testate: reel sulle singole notizie e TG
 // con il conduttore e i colori del cliente. I testi stanno in
 // shared/site-pages.js (PRODUZIONI), gli stessi che vede il crawler. Gli
-// esempi non sono scritti a mano: sono gli ultimi reel e l'ultimo TG gia'
-// pubblicati, cosi' la pagina resta aggiornata da sola.
+// esempi non sono scritti a mano: sono l'ultimo TG, l'ultimo meteo e l'ultimo
+// reel gia' pubblicati, cosi' la pagina resta aggiornata da sola.
 const PROD_ACCENTI=["#1B9CD9","#3C96B7","#2C5AA0","#E8A33D"];
 
 function MarchioProduzioni({col}){
@@ -1451,11 +1451,13 @@ function ProduzioniPage({news,onOpen,onPage,onSerie}){
     return ()=>{ document.title="Iattualità · L'informazione intelligente e in tempo reale"; const cc=document.querySelector('link[rel="canonical"]'); if(cc)cc.setAttribute("href","https://iattualita.it/"); };
   },[]);
 
-  // Esempi: due reel di notizia (Shorts fuori dalle rubriche) e l'ultimo TG.
+  // Esempi: l'ultimo TG, l'ultimo meteo e l'ultimo reel di notizia (uno
+  // Short fuori dalle rubriche). Se uno manca, gli altri restano.
   const lista=news||[];
-  const reel=lista.filter(n=>!isRubrica(n.serie)&&ytId(n.video)&&isShortUrl(n.video)).slice(0,2);
   const tg=lista.find(n=>n.serie==="TG"&&ytId(n.video));
-  const esempi=[reel[0]&&{tipo:"Reel di notizia",item:reel[0]},tg&&{tipo:"TG",item:tg},reel[1]&&{tipo:"Reel di notizia",item:reel[1]}].filter(Boolean);
+  const meteo=lista.find(n=>n.serie==="Meteo"&&ytId(n.video));
+  const reel=lista.find(n=>!isRubrica(n.serie)&&ytId(n.video)&&isShortUrl(n.video));
+  const esempi=[tg&&{tipo:"TG",col:RUBRICA_COL.TG,item:tg},meteo&&{tipo:"Meteo",col:RUBRICA_COL.Meteo,item:meteo},reel&&{tipo:"Reel di notizia",col:C.blueDeep,item:reel}].filter(Boolean);
 
   const mailto=mailtoProduzioni();
   const vai=(slug)=>(e)=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0)return; e.preventDefault(); onPage&&onPage(slug); };
@@ -1516,10 +1518,10 @@ function ProduzioniPage({news,onOpen,onPage,onSerie}){
         <h2 style={h2}>Esempi</h2>
         {esempi.length>0
           ? <div style={{display:"flex",flexWrap:"wrap",gap:18,justifyContent:"center"}}>
-              {esempi.map(({tipo,item},i)=>(
+              {esempi.map(({tipo,col,item},i)=>(
                 <div key={i} style={{flex:"1 1 220px",maxWidth:280}}>
                   <PlayerVerticale yt={ytId(item.video)} title={item.title}/>
-                  <div style={{fontSize:12,fontWeight:800,color:tipo==="TG"?RUBRICA_COL.TG:C.blueDeep,letterSpacing:.5,textTransform:"uppercase",margin:"10px 0 4px"}}>{tipo}</div>
+                  <div style={{fontSize:12,fontWeight:800,color:col,letterSpacing:.5,textTransform:"uppercase",margin:"10px 0 4px"}}>{tipo}</div>
                   <a href={articlePath(item)} onClick={apri(item)} style={{fontSize:15,fontWeight:700,color:C.navy,textDecoration:"none",lineHeight:1.3}}>{item.title}</a>
                 </div>
               ))}
