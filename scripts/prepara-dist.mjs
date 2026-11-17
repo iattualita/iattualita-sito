@@ -16,6 +16,7 @@ import path from "node:path";
 const DA_PUBBLICARE = [
   "index.html",
   "app.js",
+  "metricool.js",     // statistiche Metricool (fuori da index.html per la CSP)
   "_headers",
   "robots.txt",
   "llms.txt",

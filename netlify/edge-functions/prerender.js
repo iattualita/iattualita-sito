@@ -958,6 +958,7 @@ export const config = {
   path: "/*",
   excludedPath: [
     "/app.js",
+    "/metricool.js", // statistiche Metricool, caricato da index.html
     "/vendor/*",
     "/favicon.ico",
     "/favicon-192.png",
