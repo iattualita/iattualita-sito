@@ -14,23 +14,26 @@
   # un tag pericoloso passasse, lo script non partirebbe.
   #
   # Ogni voce corrisponde a qualcosa che il sito usa davvero:
-  #   script  'self' = React (ora in vendor/) e app.js, cloud.umami.is =
-  #           statistiche, l'hash = lo script inline che fissa il viewport
+  #   script  'self' = React (ora in vendor/), app.js e metricool.js,
+  #           cloud.umami.is e tracker.metricool.com = statistiche,
+  #           l'hash = lo script inline che fissa il viewport
   #   style   'unsafe-inline' e' inevitabile: React e il prerender scrivono
   #           gli stili dentro l'attributo style di ogni elemento
   #   img     supabase = le copertine, img.youtube = le anteprime dei video,
   #           data: = le immagini incorporate, blob: = l'anteprima della
-  #           copertina ricavata dal video in redazione (invio speciale)
+  #           copertina ricavata dal video in redazione (invio speciale),
+  #           tracker.metricool.com = il pixel con cui Metricool conta la visita
   #   media   blob: = il video appena scelto in redazione, da cui si
   #           ricava la copertina; supabase = i video riservati
-  #   connect supabase = articoli e iscrizioni, umami = invio statistiche
+  #   connect supabase = articoli e iscrizioni, umami e metricool = invio
+  #           statistiche
   #   frame   solo gli embed YouTube
   #   form-action 'self' impedisce che un modulo iniettato spedisca altrove
   #   object-src 'none' chiude plugin e <embed>
   #
   # Se un giorno aggiungi un servizio esterno e "non funziona", la console
   # del browser dice esattamente quale riga lo sta bloccando.
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://cloud.umami.is 'sha256-3sgerl2LYMr70k+UBpH5ueGZWg1sxL6wqOdJnINkSmI='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://wzkshpgakvasqwrrgkgd.supabase.co https://img.youtube.com; media-src 'self' blob: https://wzkshpgakvasqwrrgkgd.supabase.co; connect-src 'self' https://wzkshpgakvasqwrrgkgd.supabase.co https://cloud.umami.is https://gateway.umami.is; frame-src https://www.youtube.com https://www.youtube-nocookie.com; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://cloud.umami.is https://tracker.metricool.com 'sha256-3sgerl2LYMr70k+UBpH5ueGZWg1sxL6wqOdJnINkSmI='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://wzkshpgakvasqwrrgkgd.supabase.co https://img.youtube.com https://tracker.metricool.com; media-src 'self' blob: https://wzkshpgakvasqwrrgkgd.supabase.co; connect-src 'self' https://wzkshpgakvasqwrrgkgd.supabase.co https://cloud.umami.is https://gateway.umami.is https://tracker.metricool.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'self'
 
 # app.js non ha un hash nel nome: cache breve lato browser,
 # ma la CDN puo' tenerlo piu' a lungo e rivalidare in background.
