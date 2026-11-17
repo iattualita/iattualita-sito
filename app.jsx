@@ -2003,7 +2003,7 @@ function InfoModal({initial,onClose,onSave}){
         <textarea style={{...inStyle,minHeight:90,resize:"vertical"}} value={f.about||""} onChange={e=>set("about",e.target.value)} placeholder="Iattualità è una testata digitale indipendente…"/>
         <div style={{fontSize:12.5,fontWeight:800,color:C.gray,letterSpacing:.5,textTransform:"uppercase"}}>Social</div>
         <div><label style={labStyle}>TikTok</label><input style={inStyle} value={f.tiktok||""} onChange={e=>set("tiktok",e.target.value)} placeholder="https://tiktok.com/@iattualita"/></div>
-        <div><label style={labStyle}>Instagram</label><input style={inStyle} value={f.instagram||""} onChange={e=>set("instagram",e.target.value)} placeholder="https://instagram.com/iattualita"/></div>
+        <div><label style={labStyle}>Instagram</label><input style={inStyle} value={f.instagram||""} onChange={e=>set("instagram",e.target.value)} placeholder="https://www.instagram.com/ia.ttualita/"/></div>
         <div><label style={labStyle}>Facebook</label><input style={inStyle} value={f.facebook||""} onChange={e=>set("facebook",e.target.value)} placeholder="https://facebook.com/iattualita"/></div>
         <div><label style={labStyle}>YouTube</label><input style={inStyle} value={f.youtube||""} onChange={e=>set("youtube",e.target.value)} placeholder="https://youtube.com/@iattualita"/></div>
         <div><label style={labStyle}>Threads</label><input style={inStyle} value={f.threads||""} onChange={e=>set("threads",e.target.value)} placeholder="https://threads.net/@iattualita"/></div>
