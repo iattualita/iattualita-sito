@@ -25,5 +25,6 @@
  [images]
   remote_images = [
     "https://wzkshpgakvasqwrrgkgd.supabase.co/.*",
-    "https://img.youtube.com/.*"
+    "https://img.youtube.com/.*",
+    "https://d2ol7oe51mr4n9.cloudfront.net/user_3FaPrapyfvJYgvN4UgFTwXAVFfV/.*"
   ]
