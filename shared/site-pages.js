@@ -62,13 +62,15 @@ export const RUBRICHE = {
     intro: "Le cinque notizie che contano della settimana, raccontate in due minuti da Lorenzo. Ogni edizione ha il video e il testo completo, con le fonti."
   },
   "Meteo": {
-    // Dal 27/11/2026 /meteo e' l'hub del meteo giornaliero (meteo.jsx): questo
-    // nome resta solo nel link in fondo alle vecchie edizioni, che porta li'.
+    // Dal 27/11/2026 /meteo e' l'hub del meteo giornaliero (meteo.jsx), non piu'
+    // la pagina dei reel settimanali; /serie/meteo rimanda li'. Questa voce resta
+    // perche' le vecchie edizioni della serie restano libere, e il link in fondo
+    // a ciascuna porta all'hub.
     nome: "Il meteo di IAttualità",
-    giorno: "Ogni lunedì",
-    title: "Meteo della settimana · Iattualità",
-    desc: "Il meteo della settimana di Iattualità: com'è il tempo in Italia giorno per giorno, in un minuto. Ogni lunedì, con Lorenzo.",
-    intro: "Che tempo farà in Italia nei prossimi sette giorni, giorno per giorno, in un minuto. Ogni lunedì un nuovo video, con il testo completo."
+    giorno: "Ogni giorno",
+    title: "Meteo di oggi in Italia · Iattualità",
+    desc: "Il meteo di oggi in Italia regione per regione: mappa, 110 capoluoghi, allerte della Protezione Civile e tendenza dei prossimi giorni. Aggiornato ogni mattina.",
+    intro: "Il meteo di oggi in Italia regione per regione, aggiornato ogni mattina."
   }
 };
 

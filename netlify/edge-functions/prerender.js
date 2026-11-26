@@ -810,6 +810,11 @@ ${socialHtml}
     return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=900") });
   }
 
+  // Vecchio indirizzo della pagina dei reel settimanali: ora c'e' l'hub /meteo.
+  if (/^\/serie\/meteo\/?$/i.test(path)) {
+    return new Response(null, { status: 301, headers: { Location: SITE + "/meteo", "Cache-Control": "public, max-age=3600" } });
+  }
+
   // ---- METEO: /meteo, /meteo/gg-mm-aa, /meteo/<regione> ----
   // Dal 27/11/2026 /meteo non e' piu' l'elenco della serie "Meteo": e' l'hub
   // che si aggiorna ogni mattina dalla tabella meteo_giorni (edge function
