@@ -77,9 +77,13 @@ function chiudiSessione(){ SESSION=null; salvaSessione(); }
 // Prima valeva solo per quella pagina: su /tg o su un articolo il lucchetto
 // non c'era e non si poteva entrare. Ora il dispositivo se lo ricorda.
 const REDAZIONE_KEY="iatt_redazione";
+// Il lucchetto della redazione compare SOLO con ?admin nell'indirizzo (Andre', 26/11/2026).
+// Prima il browser se lo ricordava e lo mostrava su tutte le pagine: il segno vecchio si cancella.
+// Chi ha gia' fatto l'accesso continua a vedere il pulsante per uscire (admin).
 function dispositivoRedazione(){
   const inUrl=(window.location.search+window.location.hash).toLowerCase().includes("admin");
-  try{ if(inUrl) localStorage.setItem(REDAZIONE_KEY,"1"); return inUrl||localStorage.getItem(REDAZIONE_KEY)==="1"; }catch(e){ return inUrl; }
+  try{ localStorage.removeItem(REDAZIONE_KEY); }catch(e){}
+  return inUrl;
 }
 async function refreshSession(){
   if(!SESSION||!SESSION.refresh_token){ chiudiSessione(); throw new Error(SESSION_DEAD); }
