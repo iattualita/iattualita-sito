@@ -7,7 +7,7 @@
 - [Home](https://iattualita.it/): gli articoli più recenti.
 - [Archivio](https://iattualita.it/archivio): tutti gli articoli, dal più recente.
 - [TG del venerdì](https://iattualita.it/tg): il telegiornale settimanale in video, con il testo completo di ogni edizione.
-- [Meteo della settimana](https://iattualita.it/meteo): il meteo del lunedì in video, giorno per giorno.
+- [Meteo](https://iattualita.it/meteo): il meteo di oggi in Italia, aggiornato ogni mattina: mappa delle regioni, 110 capoluoghi, allerte della Protezione Civile, tendenza; pagine per giorno (/meteo/gg-mm-aa) e per regione (/meteo/marche).
 - [Feed RSS](https://iattualita.it/rss.xml): aggiornamenti in formato RSS.
 - [Sitemap](https://iattualita.it/sitemap.xml) e [sitemap Google News](https://iattualita.it/news-sitemap.xml).
 

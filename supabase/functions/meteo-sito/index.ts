@@ -10,8 +10,8 @@ import { PUNTI, REGIONI } from "./punti.ts";
 // Calcola KPI, aggregati per regione, testi automatici delle regioni, differenze tra modelli,
 // e fa upsert in public.meteo_giorni. I campi editoriali (titolo, zone, reel...) vengono dal routine;
 // se mancano si tengono quelli già salvati. Reel e cover vengono copiati nello storage "media".
-// Accesso: header x-iattualita-token valido in public.tts_token (lo stesso di meteo-dati).
-// POST {giorno:"AAAA-MM-GG", titolo?, sottotitolo?, zone?:{nord,centro,sud}, reel_url?, cover_url?,
+// Accesso: header x-iattualita-token valido in public.tts_token (il token del routine), oppure x-meteo-cron (pg_cron, 6:15 e 16:30).
+// POST {giorno?:"AAAA-MM-GG" (default oggi), titolo?, sottotitolo?, zone?:{nord,centro,sud}, reel_url?, cover_url?,
 //       allerte?:{bollettino, testo, regioni:[...]}, solo_testi?:bool}
 
 // La chiave Open-Meteo sta solo in meteo-dati: qui si passa da lei con lo stesso token della richiesta.
@@ -154,16 +154,32 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return j({ errore: "usa POST" }, 405);
   const SU = Deno.env.get("SUPABASE_URL")!;
   const db = createClient(SU, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  // Due modi di entrare: il token di sessione del routine (x-iattualita-token, in tts_token)
+  // oppure la chiave dell'aggiornamento automatico (x-meteo-cron, impronta in meteo_cron, testo nel Vault).
+  // Con la chiave si crea un token di 10 minuti solo per chiamare meteo-dati, e lo si cancella alla fine.
+  let tempHash: string | null = null;
+  const cron = req.headers.get("x-meteo-cron") ?? "";
   const tok = req.headers.get("x-iattualita-token") ?? "";
-  if (tok.length < 20) return j({ errore: "non autorizzato" }, 401);
-  const { data: valido } = await db.from("tts_token").select("hash").eq("hash", await sha256(tok)).gt("scade", new Date().toISOString()).maybeSingle();
-  if (!valido) return j({ errore: "non autorizzato" }, 401);
-  TOKEN = tok;
+  if (cron.length >= 20) {
+    const { data: ok } = await db.from("meteo_cron").select("hash").eq("hash", await sha256(cron)).maybeSingle();
+    if (!ok) return j({ errore: "non autorizzato" }, 401);
+    TOKEN = crypto.randomUUID() + crypto.randomUUID();
+    tempHash = await sha256(TOKEN);
+    const { error: e } = await db.from("tts_token").insert({ hash: tempHash, scade: new Date(Date.now() + 10 * 60000).toISOString() });
+    if (e) return j({ errore: "token temporaneo", dettaglio: e.message }, 500);
+  } else {
+    if (tok.length < 20) return j({ errore: "non autorizzato" }, 401);
+    const { data: valido } = await db.from("tts_token").select("hash").eq("hash", await sha256(tok)).gt("scade", new Date().toISOString()).maybeSingle();
+    if (!valido) return j({ errore: "non autorizzato" }, 401);
+    TOKEN = tok;
+  }
+  const pulisci = async () => { if (tempHash) await db.from("tts_token").delete().eq("hash", tempHash); };
 
   let body: any;
-  try { body = await req.json(); } catch { return j({ errore: "json non valido" }, 400); }
-  const giorno = String(body.giorno ?? "");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(giorno)) return j({ errore: "giorno AAAA-MM-GG obbligatorio" }, 400);
+  try { body = await req.json(); } catch { body = {}; }
+  // senza giorno: oggi, ora italiana
+  const giorno = String(body.giorno ?? new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome" }).format(new Date()));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(giorno)) { await pulisci(); return j({ errore: "giorno AAAA-MM-GG" }, 400); }
 
   try {
   const { data: prima } = await db.from("meteo_giorni").select("*").eq("giorno", giorno).maybeSingle();
@@ -248,5 +264,7 @@ Deno.serve(async (req) => {
   return j({ ok: true, giorno, avvisi, punti: punti.length, senza_icon: citta.filter((p) => !p.icon_ok).map((p) => p.nome), kpi, url: `https://iattualita.it/meteo/${giorno.slice(8, 10)}-${giorno.slice(5, 7)}-${giorno.slice(2, 4)}` });
   } catch (e) {
     return j({ errore: "elaborazione", dettaglio: String((e as Error)?.message ?? e) }, 502);
+  } finally {
+    await pulisci();
   }
 });

@@ -116,6 +116,8 @@ check("/meteo/<giorno senza dati>: 404", r.status === 404, r.status);
 r = await chiedi("/meteo/marche");
 h = await r.text();
 check("/meteo/marche: 200 con titolo e testo della regione", r.status === 200 && h.includes("Marche: piogge diffuse in serata") && h.includes("Meteo Marche oggi"), r.status);
+r = await chiedi("/serie/meteo");
+check("/serie/meteo (vecchia pagina dei reel): 301 verso /meteo", r.status === 301 && r.headers.get("location") === "https://iattualita.it/meteo", r.status);
 r = await chiedi("/meteo/atlantide");
 check("/meteo/<regione inesistente>: 404", r.status === 404, r.status);
 
