@@ -160,6 +160,35 @@ function Stato({testo,errore,onRiprova}){
   </div>;
 }
 
+
+// Condividi: sul telefono il menu nativo (WhatsApp, Instagram, Telegram...), sul
+// computer WhatsApp, Facebook e "Copia link". Si condivide sempre un indirizzo che
+// non cambia (il giorno o la regione), non /meteo che domani mostra un altro meteo.
+function Condividi({url,testo,scuro}){
+  const [aperto,setAperto]=useState(false);
+  const [copiato,setCopiato]=useState(false);
+  const pieno="https://iattualita.it"+url;
+  const btn={display:"inline-flex",alignItems:"center",gap:8,background:scuro?"rgba(255,255,255,.12)":"#fff",color:scuro?"#fff":M.navy,border:"2px solid "+(scuro?"rgba(255,255,255,.5)":M.navy),borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:16,cursor:"pointer",fontFamily:"Barlow"};
+  const copia=()=>{ const ok=()=>{ setCopiato(true); setTimeout(()=>setCopiato(false),2000); };
+    try{ navigator.clipboard.writeText(pieno).then(ok,ok); }catch(e){ ok(); } };
+  const clic=()=>{
+    if(navigator.share&&/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)){ navigator.share({title:testo,text:testo,url:pieno}).catch(()=>{}); return; }
+    setAperto(a=>!a);
+  };
+  const voce={display:"flex",alignItems:"center",gap:8,padding:"10px 14px",borderRadius:8,textDecoration:"none",color:M.navy,fontWeight:600,fontSize:15,background:"none",border:"none",cursor:"pointer",fontFamily:"Barlow",width:"100%",textAlign:"left"};
+  return <span style={{position:"relative",display:"inline-block"}}>
+    <button onClick={clic} aria-expanded={aperto} style={btn}>
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+      Condividi
+    </button>
+    {aperto&&<span role="menu" style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:30,background:"#fff",borderRadius:12,boxShadow:"0 6px 24px rgba(15,26,46,.18)",padding:6,minWidth:200,display:"flex",flexDirection:"column"}}>
+      <a role="menuitem" href={"https://wa.me/?text="+encodeURIComponent(testo+" "+pieno)} target="_blank" rel="noopener" style={voce} onClick={()=>setAperto(false)}>WhatsApp</a>
+      <a role="menuitem" href={"https://www.facebook.com/sharer/sharer.php?u="+encodeURIComponent(pieno)} target="_blank" rel="noopener" style={voce} onClick={()=>setAperto(false)}>Facebook</a>
+      <button role="menuitem" onClick={copia} style={voce}>{copiato?"Link copiato ✓":"Copia link"}</button>
+    </span>}
+  </span>;
+}
+
 // ---------- mappa d'Italia ----------
 function MappaItalia({riga,geo,onNav}){
   const box=useRef(null); const s=useScala(box,540);
@@ -209,6 +238,7 @@ function Hub({riga,archivio,geo,onNav}){
         <div style={{display:"flex",flexWrap:"wrap",gap:12,marginTop:4}}>
           <Link href={urlDaGiorno(g)} onNav={onNav} style={{background:M.blue,color:"#fff",textDecoration:"none",fontWeight:700,fontSize:17,padding:"14px 24px",borderRadius:10}}>Tutti i dati di oggi</Link>
           <a href={INSTAGRAM} target="_blank" rel="noopener" style={{background:"#fff",color:M.navy,textDecoration:"none",fontWeight:700,fontSize:17,padding:"12px 22px",borderRadius:10,border:"2px solid "+M.navy}}>Segui MeteoIAttualità</a>
+          <Condividi url={urlDaGiorno(g)} testo={"Il meteo di "+dataLunga(g)+": "+titolo}/>
         </div>
         <span style={{fontSize:14,color:M.gray}}>Dati ItaliaMeteo-ARPAE ICON-2I ed ECMWF via Open-Meteo, aggiornati ogni mattina</span>
       </div>
@@ -293,6 +323,7 @@ function Giorno({riga,archivio,onNav}){
       <span style={kicker}>Previsione del mattino · {dataLunga(g)}</span>
       <h1 style={{...h1,fontSize:"clamp(34px,6vw,58px)"}}>{riga.titolo||("Il meteo di "+dataLunga(g))}</h1>
       {riga.sottotitolo? <p style={lead}>{riga.sottotitolo}</p> : zone.length>0&&<p style={lead}>{zone.map(z=>z.testo).join(" ")}</p>}
+      <div><Condividi url={urlDaGiorno(g)} testo={"Il meteo di "+dataLunga(g)+": "+(riga.titolo||"tutte le città")}/></div>
     </section>
 
     <section style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:14}}>
@@ -385,6 +416,7 @@ function Regione({riga,slug,geo,onNav}){
       <span style={kicker}>{r.nome} · {dataLunga(g)}</span>
       <h1 style={{...h1,fontSize:"clamp(34px,6vw,58px)"}}>{x.titolo||("Meteo "+r.nome)}</h1>
       {x.testo&&<p style={lead}>{x.testo}</p>}
+      <div><Condividi url={"/meteo/"+slug} testo={"Il meteo di oggi · "+(x.titolo||r.nome)}/></div>
     </section>
 
     <section style={{display:"flex",flexWrap:"wrap",gap:24,alignItems:"flex-start"}}>
