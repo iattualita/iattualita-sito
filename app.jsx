@@ -4,6 +4,7 @@
 // versione diversa da quella del lettore.
 import { slugify, SERIE_ALIAS, seriePath, SOCIALS, STATIC_PAGES, RUBRICHE, isRubrica, PRODUZIONI, mailtoProduzioni } from "./shared/site-pages.js";
 import { paragrafiAnteprima } from "./shared/anteprima.js";
+import { MeteoPage, meteoRoute } from "./meteo.jsx";
 
 const { useState, useEffect } = React;
 
@@ -370,7 +371,7 @@ function topicFullUrl(cat){ return window.location.origin+topicPath(cat); }
 function serieFullUrl(s){ return window.location.origin+seriePath(s); }
 function serieFromSlug(slug){ return SERIES.find(s=>slugify(s)===slug)||null; }
 function serieFromAlias(seg){ return Object.keys(SERIE_ALIAS).find(s=>SERIE_ALIAS[s]==="/"+seg)||null; }
-function parsePath(){ const p=(window.location.pathname||"/"); if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } if(p.indexOf("/serie/")===0){ const s=serieFromSlug(decodeURIComponent(p.slice("/serie/".length).split("/")[0])); if(s) return {name:"serie",serie:s}; } const seg=p.replace(/^\/+|\/+$/g,""); const alias=seg?serieFromAlias(seg):null; if(alias){ return {name:"serie",serie:alias}; } if(seg==="archivio"){ return {name:"archivio"}; } if(seg==="newsletter"||seg==="contatti"||seg==="social"||seg==="numeri"||seg==="produzioni"){ return {name:"page",page:seg}; } if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
+function parsePath(){ const p=(window.location.pathname||"/"); if(meteoRoute(p)) return {name:"meteo"}; if(p.indexOf("/articolo/")===0){ const id=decodeURIComponent(p.slice("/articolo/".length).split("/")[0]); return {name:"article",id:id}; } if(p.indexOf("/argomento/")===0){ const cat=decodeURIComponent(p.slice("/argomento/".length).split("/")[0]); return {name:"topic",cat:cat}; } if(p.indexOf("/serie/")===0){ const s=serieFromSlug(decodeURIComponent(p.slice("/serie/".length).split("/")[0])); if(s) return {name:"serie",serie:s}; } const seg=p.replace(/^\/+|\/+$/g,""); const alias=seg?serieFromAlias(seg):null; if(alias){ return {name:"serie",serie:alias}; } if(seg==="archivio"){ return {name:"archivio"}; } if(seg==="newsletter"||seg==="contatti"||seg==="social"||seg==="numeri"||seg==="produzioni"){ return {name:"page",page:seg}; } if(seg&&STATIC_PAGES[seg]){ return {name:"page",page:seg}; } return {name:"home"}; }
 function copyToClipboard(url,onOk,onFail){ (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(onOk).catch(()=>{ try{ window.prompt("Copia il link:",url); }catch(e){} if(onFail)onFail(); }); }
 
 // ====== TESTO FORMATTATO (rich text) ======
@@ -401,6 +402,7 @@ function App(){
   const [showSpecial,setShowSpecial]=useState(false);
   const [toast,setToast]=useState("");
   const [view,setView]=useState("home");
+  const [meteoPath,setMeteoPath]=useState(()=>window.location.pathname);
   const [menuOpen,setMenuOpen]=useState(false);
   const [articleId,setArticleId]=useState(null);
   const [full,setFull]=useState(null);
@@ -558,12 +560,13 @@ function App(){
   const openArticle=(item)=>{ history.pushState(null,"",articlePath(item)); setArticleId(item.id); setView("article"); window.scrollTo(0,0); };
   const openPage=(slug)=>{ setMenuOpen(false); history.pushState(null,"","/"+slug); setArticleId(null); setActiveSerie(null); setView(slug); window.scrollTo(0,0); };
   const openTopic=(cat)=>{ setMenuOpen(false); if(cat==="Tutte"){ if(window.location.pathname!=="/"){ history.pushState(null,"","/"+(window.location.search||"")); } setActiveCat("Tutte"); } else { history.pushState(null,"",topicPath(cat)); setActiveCat(cat); } setArticleId(null); setActiveSerie(null); setView("home"); window.scrollTo(0,0); };
-  const openSerie=(s)=>{ setMenuOpen(false); history.pushState(null,"",seriePath(s)); setArticleId(null); setActiveCat("Tutte"); setQuery(""); setActiveSerie(s); setView("serie"); window.scrollTo(0,0); };
+  const navMeteo=(href)=>{ setMenuOpen(false); if(window.location.pathname!==href) history.pushState(null,"",href); setArticleId(null); setActiveSerie(null); setMeteoPath(href); setView("meteo"); window.scrollTo(0,0); };
+  const openSerie=(s)=>{ if(s==="Meteo") return navMeteo("/meteo"); setMenuOpen(false); history.pushState(null,"",seriePath(s)); setArticleId(null); setActiveCat("Tutte"); setQuery(""); setActiveSerie(s); setView("serie"); window.scrollTo(0,0); };
   const openArchive=()=>{ setMenuOpen(false); history.pushState(null,"","/archivio"); setArticleId(null); setActiveSerie(null); setActiveCat("Tutte"); setQuery(""); setView("archivio"); window.scrollTo(0,0); };
   const copyArticleLink=(item)=>copyToClipboard(articleFullUrl(item),()=>note("Link articolo copiato negli appunti."));
   const copyTopicLink=(cat)=>copyToClipboard(topicFullUrl(cat),()=>note("Link argomento copiato negli appunti."));
   const copySerieLink=(s)=>copyToClipboard(serieFullUrl(s),()=>note("Link serie copiato negli appunti."));
-  useEffect(()=>{ if(window.location.hash && /^#\/(articolo|argomento|serie)\//.test(window.location.hash)){ try{ history.replaceState(null,"",window.location.hash.slice(1)); }catch(e){} } const apply=()=>{ const r=parsePath(); const back=(v)=>(v==="article"||v==="serie")?"home":v; if(r.name==="article"){ setArticleId(r.id); setView("article"); } else if(r.name==="serie"){ const cp=seriePath(r.serie); if(window.location.pathname!==cp){ try{ history.replaceState(null,"",cp); }catch(e){} } setArticleId(null); setActiveCat("Tutte"); setActiveSerie(r.serie); setView("serie"); } else if(r.name==="topic"){ setArticleId(null); setActiveSerie(null); setActiveCat(r.cat); setView(back); } else if(r.name==="page"){ setArticleId(null); setActiveSerie(null); setView(r.page); } else if(r.name==="archivio"){ setArticleId(null); setActiveSerie(null); setActiveCat("Tutte"); setView("archivio"); } else { setArticleId(null); setActiveSerie(null); setActiveCat("Tutte"); setView(back); } }; apply(); window.addEventListener("popstate",apply); return ()=>window.removeEventListener("popstate",apply); },[]);
+  useEffect(()=>{ if(window.location.hash && /^#\/(articolo|argomento|serie)\//.test(window.location.hash)){ try{ history.replaceState(null,"",window.location.hash.slice(1)); }catch(e){} } const apply=()=>{ const r=parsePath(); const back=(v)=>(v==="article"||v==="serie")?"home":v; if(r.name==="meteo"){ setArticleId(null); setActiveSerie(null); setMeteoPath(window.location.pathname); setView("meteo"); } else if(r.name==="article"){ setArticleId(r.id); setView("article"); } else if(r.name==="serie"){ const cp=seriePath(r.serie); if(window.location.pathname!==cp){ try{ history.replaceState(null,"",cp); }catch(e){} } setArticleId(null); setActiveCat("Tutte"); setActiveSerie(r.serie); setView("serie"); } else if(r.name==="topic"){ setArticleId(null); setActiveSerie(null); setActiveCat(r.cat); setView(back); } else if(r.name==="page"){ setArticleId(null); setActiveSerie(null); setView(r.page); } else if(r.name==="archivio"){ setArticleId(null); setActiveSerie(null); setActiveCat("Tutte"); setView("archivio"); } else { setArticleId(null); setActiveSerie(null); setActiveCat("Tutte"); setView(back); } }; apply(); window.addEventListener("popstate",apply); return ()=>window.removeEventListener("popstate",apply); },[]);
 
   // SEO delle pagine serie: titolo, description e canonical dedicati, come per
   // le pagine statiche. Senza questo /podcast erediterebbe i meta della home.
@@ -609,7 +612,7 @@ function App(){
           {menuOpen&&<nav style={{flexBasis:"100%",display:"flex",flexDirection:"column",gap:2,paddingTop:6,marginTop:6,borderTop:"1px solid "+C.line}}>
             <button onClick={()=>go("home","top")} style={menuItem}>News</button>
             <button onClick={()=>openSerie("TG")} style={menuItem}>TG del venerdì</button>
-            <button onClick={()=>openSerie("Meteo")} style={menuItem}>Meteo della settimana</button>
+            <button onClick={()=>navMeteo("/meteo")} style={menuItem}>Meteo</button>
             <button onClick={()=>openSerie("Podcast")} style={menuItem}>Podcast</button>
             <button onClick={openArchive} style={menuItem}>Archivio</button>
             <button onClick={()=>openPage("chi-siamo")} style={menuItem}>Chi siamo</button>
@@ -636,7 +639,8 @@ function App(){
           raggiungibile dal focus via programma senza inserirlo nel giro del
           tab: chi salta qui riprende a tabulare dal contenuto, non da capo. */}
       <div id="contenuto" tabIndex={-1} style={{outline:"none"}}>
-      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic} lettore={lettore} onEntrato={entrato} onRiprova={()=>setTentativo(t=>t+1)} onPage={openPage} onSerie={openSerie} onEdit={article&&admin&&puoModificare(article)?()=>openEditor(article):null}/> : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="numeri" ? <NumeriPage info={info} pieno={pieno} token={token} note={note} onPage={openPage}/> : view==="produzioni" ? <ProduzioniPage news={news} onOpen={openArticle} onPage={openPage} onSerie={openSerie}/> : view==="newsletter" ? <NewsletterPage lettore={lettore} onEntrato={entrato} onSessioneScaduta={()=>setLettore(false)} onPage={openPage}/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
+      {view==="article" ? <ArticlePage item={article} news={news} onOpen={openArticle} loading={loading} onBack={()=>go("home","top")} onCopy={copyArticleLink} note={note} onTopic={openTopic} lettore={lettore} onEntrato={entrato} onRiprova={()=>setTentativo(t=>t+1)} onPage={openPage} onSerie={openSerie} onEdit={article&&admin&&puoModificare(article)?()=>openEditor(article):null}/> : view==="meteo" ? <MeteoPage path={meteoPath} onNav={navMeteo}/>
+ : view==="contatti" ? <ContactPage info={info}/> : view==="social" ? <SocialPage info={info}/> : view==="numeri" ? <NumeriPage info={info} pieno={pieno} token={token} note={note} onPage={openPage}/> : view==="produzioni" ? <ProduzioniPage news={news} onOpen={openArticle} onPage={openPage} onSerie={openSerie}/> : view==="newsletter" ? <NewsletterPage lettore={lettore} onEntrato={entrato} onSessioneScaduta={()=>setLettore(false)} onPage={openPage}/> : STATIC_PAGES[view] ? <StaticPage page={view} info={info} onPage={openPage}/> : (
       <main id="top" style={{maxWidth:980,margin:"0 auto",padding:"16px"}}>
         {view==="archivio"&&<div style={{marginBottom:14}}><div style={{fontFamily:"Anton",fontSize:26,color:C.navy}}>Archivio</div><div style={{fontSize:14,color:C.gray}}>Tutti gli articoli di Iattualità. Cerca o filtra per argomento.</div></div>}
         {view==="serie"&&activeSerie&&<div style={{marginBottom:16,background:C.card,border:"1px solid "+C.line,borderRadius:12,padding:"14px 16px"}}>

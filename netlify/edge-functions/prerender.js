@@ -22,6 +22,7 @@
 // cloaking. Il testo sta in Supabase dietro la service_role (migrazione 006):
 // questa funzione lo chiede solo per il crawler verificato.
 
+import { METEO_REGIONI, regioneDaSlug, giornoDaUrl, urlDaGiorno } from "../../shared/meteo-geo.js";
 import { slugify, SERIE_ALIAS, SOCIALS, STATIC_PAGES as PAGES, RUBRICHE, isRubrica, youtubeId, PRODUZIONI, mailtoProduzioni } from "../../shared/site-pages.js";
 import { safeBody } from "../../shared/safe-body.js";
 import { paragrafiAnteprima } from "../../shared/anteprima.js";
@@ -809,6 +810,59 @@ ${socialHtml}
     return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=900") });
   }
 
+  // ---- METEO: /meteo, /meteo/gg-mm-aa, /meteo/<regione> ----
+  // Dal 27/11/2026 /meteo non e' piu' l'elenco della serie "Meteo": e' l'hub
+  // che si aggiorna ogni mattina dalla tabella meteo_giorni (edge function
+  // Supabase meteo-sito). Viene prima del blocco SERIE, che altrimenti
+  // prenderebbe /meteo come alias della serie. Gli articoli della vecchia
+  // serie restano ai loro indirizzi /articolo/...
+  const mm = path.match(/^\/meteo(?:\/([^/]+))?\/?$/);
+  if (mm) {
+    const seg = mm[1] ? decodeURIComponent(mm[1]).toLowerCase() : "";
+    const giorno = seg ? giornoDaUrl(seg) : null;
+    const reg = seg && !giorno ? regioneDaSlug(seg) : null;
+    if (seg && !giorno && !reg) return notFound(res, html);
+    let righe = [];
+    try {
+      righe = await sb("meteo_giorni?select=giorno,titolo,sottotitolo,zone,kpi,regioni,cover_url&" +
+        (giorno ? "giorno=eq." + giorno : "order=giorno.desc&limit=1"));
+    } catch {
+      return shell(res, html);
+    }
+    const r = righe[0];
+    if (giorno && !r) return notFound(res, html);
+    const dataIt = (g) => new Date(g + "T12:00:00Z").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Rome" });
+    const zone = r && Array.isArray(r.zone) ? r.zone : [];
+    let t, d, u, h1, corpo;
+    if (reg) {
+      const x = (r && r.regioni && r.regioni[reg.slug]) || {};
+      u = SITE + "/meteo/" + reg.slug;
+      t = "Meteo " + reg.nome + " oggi · Iattualità";
+      d = x.testo || "Le previsioni del giorno per i capoluoghi di provincia della regione " + reg.nome + ": minime, massime, pioggia ora per ora e tendenza.";
+      h1 = x.titolo || "Meteo " + reg.nome;
+      corpo = `<p style="font-size:17px">${esc(d)}</p><p>Capoluoghi: ${esc(reg.citta.join(", "))}.</p>`;
+    } else {
+      u = SITE + (giorno ? urlDaGiorno(giorno) : "/meteo");
+      const quando = r ? dataIt(r.giorno) : "";
+      t = giorno ? "Meteo di " + quando + " · Iattualità" : "Meteo di oggi in Italia · Iattualità";
+      d = (r && r.titolo ? r.titolo + ". " : "") + (r && r.sottotitolo ? r.sottotitolo : "Previsioni per tutte le regioni e 110 capoluoghi, con mappa, allerte della Protezione Civile e tendenza dei prossimi giorni. Dati ICON-2I ed ECMWF.");
+      h1 = r && r.titolo ? r.titolo : "Il meteo di oggi";
+      corpo = (quando ? `<p style="font-weight:700">${esc(quando)}</p>` : "") +
+        zone.map((z) => `<h2>${esc(z.nome)}</h2><p>${esc(z.range || "")}. ${esc(z.testo || "")}</p>`).join("") +
+        `<p>Meteo per regione: ${METEO_REGIONI.map((x) => `<a href="/meteo/${x.slug}">${esc(x.nome)}</a>`).join(", ")}.</p>`;
+    }
+    const img = r && r.cover_url && r.cover_url.indexOf(SUPABASE_URL) === 0 ? r.cover_url : OG_DEFAULT;
+    const blk = "<!--OG_START-->\n" + pageOgBlock(t, clip(d), u, webPageLd(h1, clip(d), u), img) + "\n<!--OG_END-->";
+    html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => blk);
+    html = inject(`${WRAP_OPEN}
+<p style="font-size:12px;color:#7A8499;margin:0 0 10px"><a href="/" style="color:#2C5AA0">Iattualità</a> / <a href="/meteo" style="color:#2C5AA0">Meteo</a></p>
+<h1 ${H1}>${esc(h1)}</h1>
+${corpo}
+<p style="font-size:13px;color:#7A8499">Dati ItaliaMeteo-ARPAE ICON-2I ed ECMWF (CC BY 4.0) via Open-Meteo; allerte del Dipartimento della Protezione Civile.</p>
+</div>`);
+    return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=600") });
+  }
+
   // ---- SERIE (compreso l'alias /podcast) ----
   const ms = path.match(/^\/serie\/([^/]+)/);
   const serieWanted = ms ? decodeURIComponent(ms[1]) : ALIAS_TO_SERIE[segRaw] ? "" : null;
@@ -967,6 +1021,7 @@ export const config = {
     "/og-produzioni.jpg",
     "/email-logo.png",
     "/email-testata.png",
+    "/meteo-mappe.json", // contorni delle regioni per /meteo
     "/robots.txt",
     "/llms.txt",
     "/*.xml",        // sitemap.xml, news-sitemap.xml, rss.xml: edge function proprie

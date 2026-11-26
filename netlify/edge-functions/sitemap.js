@@ -3,6 +3,7 @@
 // Aggiungendo una nuova categoria alle news, la sitemap si aggiorna da sola.
 
 import { seriePath, slugify, STATIC_PAGES } from "../../shared/site-pages.js";
+import { METEO_REGIONI, urlDaGiorno } from "../../shared/meteo-geo.js";
 
 const SUPABASE_URL = "https://wzkshpgakvasqwrrgkgd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_I3s4phA5Be9qnV4pLbWQMQ_8-IGUE-b";
@@ -24,7 +25,13 @@ function iso(d) {
 }
 
 export default async function handler() {
-  let news = [];
+  let news = [], meteo = [];
+  try {
+    const rm = await fetch(SUPABASE_URL + "/rest/v1/meteo_giorni?select=giorno,aggiornato_il&order=giorno.desc&limit=60", { headers: { apikey: SUPABASE_KEY } });
+    if (rm.ok) meteo = await rm.json();
+  } catch (_) {
+    // senza meteo la sitemap esce lo stesso
+  }
   try {
     const res = await fetch(
       SUPABASE_URL +
@@ -77,7 +84,15 @@ export default async function handler() {
   const series = [...new Set(news.map((n) => n.serie).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b, "it")
   );
+  // /meteo e' l'hub del meteo giornaliero (non piu' la pagina della serie
+  // "Meteo"): si aggiorna ogni mattina, con le 20 pagine regione e i giorni.
+  const oggiMeteo = meteo[0] ? iso(meteo[0].aggiornato_il || meteo[0].giorno) : "";
+  urls.push({ loc: SITE + "/meteo", lastmod: oggiMeteo, changefreq: "daily", priority: "0.8" });
+  for (const r of METEO_REGIONI) urls.push({ loc: SITE + "/meteo/" + r.slug, lastmod: oggiMeteo, changefreq: "daily", priority: "0.6" });
+  for (const m of meteo) urls.push({ loc: SITE + urlDaGiorno(m.giorno), lastmod: iso(m.aggiornato_il || m.giorno), changefreq: "monthly", priority: "0.4" });
+
   for (const s of series) {
+    if (s === "Meteo") continue; // il suo indirizzo, /meteo, e' l'hub qui sopra
     urls.push({
       loc: SITE + seriePath(s),
       changefreq: "weekly",

@@ -1,4 +1,4 @@
-// Rubriche video (TG del venerdi', meteo del lunedi'): pagine /tg e /meteo,
+// Rubriche video (TG del venerdi', meteo del lunedi'): pagine /tg e /meteo (hub del meteo giornaliero dal 27/11/2026),
 // testo libero per tutti, player verticale e VideoObject. Le funzioni girano
 // davvero, con un finto Supabase al posto di quello vero.
 import fs from "node:fs";
@@ -28,6 +28,9 @@ const TESTI = {
   [ART_ID]: { id: ART_ID, body: "<p>TESTO-RISERVATO</p>", summary: "", serie: null }
 };
 
+const METEO = { giorno: "2026-11-27", titolo: "Arriva la Bora, poi il freddo", sottotitolo: "Bora a Trieste.",
+  zone: [{ nome: "Nord", range: "massime da 5 a 15 °C", testo: "Nebbie al mattino." }],
+  regioni: { marche: { titolo: "Marche: piogge diffuse in serata", testo: "Piove in tutti i 5 capoluoghi." } } };
 const ok = (d) => new Response(JSON.stringify(d), { status: 200, headers: { "content-type": "application/json" } });
 global.fetch = async (url) => {
   const u = String(url);
@@ -36,6 +39,7 @@ global.fetch = async (url) => {
   // Testo integrale: prerender (select=body,summary) e articolo-completo (con serie)
   if (u.includes("select=body,summary") || u.includes("select=id,body,summary")) return ok(TESTI[id] ? [TESTI[id]] : []);
   if (id) return ok(id === TG_ID ? [TG] : id === ART_ID ? [ARTICOLO] : []);
+  if (u.includes("meteo_giorni")) return ok(u.includes("giorno=eq.2026-11-27") || u.includes("order=giorno.desc") ? [METEO] : []);
   if (u.includes("serie=not.is.null")) return ok([{ id: TG_ID, title: TG.title, subtitle: TG.subtitle, serie: "TG" }]);
   if (u.includes("/news")) return ok([TG, ARTICOLO]);
   return ok([]);
@@ -98,11 +102,22 @@ h = await r.text();
 check("/tg: 200, titolo e descrizione della rubrica, link all'edizione",
   r.status === 200 && h.includes("TG Iattualità · Il telegiornale del venerdì") && h.includes(TG_ID), r.status);
 
+// /meteo dal 27/11/2026 e' l'hub del meteo giornaliero (tabella meteo_giorni),
+// non piu' la pagina della serie "Meteo".
 r = await chiedi("/meteo");
 h = await r.text();
-check("/meteo senza edizioni: 200 (ci porta il menu), non 404", r.status === 200, r.status);
-check("  ^ con noindex finche' e' vuota, e il messaggio d'attesa",
-  h.includes('name="robots" content="noindex"') && !h.includes('content="index, follow') && h.includes("La prima edizione è in arrivo"));
+check("/meteo: 200, hub del giorno con titolo, zone e link alle regioni",
+  r.status === 200 && h.includes("Meteo di oggi in Italia") && h.includes("Arriva la Bora, poi il freddo") && h.includes('href="/meteo/marche"') && !h.includes("La prima edizione è in arrivo"), r.status);
+r = await chiedi("/meteo/27-11-26");
+h = await r.text();
+check("/meteo/27-11-26: 200 con la data per esteso", r.status === 200 && h.includes("27 novembre 2026") && h.includes("https://iattualita.it/meteo/27-11-26"), r.status);
+r = await chiedi("/meteo/01-01-20");
+check("/meteo/<giorno senza dati>: 404", r.status === 404, r.status);
+r = await chiedi("/meteo/marche");
+h = await r.text();
+check("/meteo/marche: 200 con titolo e testo della regione", r.status === 200 && h.includes("Marche: piogge diffuse in serata") && h.includes("Meteo Marche oggi"), r.status);
+r = await chiedi("/meteo/atlantide");
+check("/meteo/<regione inesistente>: 404", r.status === 404, r.status);
 
 r = await chiedi("/serie/inesistente");
 check("serie che non esiste: resta un 404 vero", r.status === 404, r.status);
