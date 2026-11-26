@@ -62,7 +62,9 @@ export const RUBRICHE = {
     intro: "Le cinque notizie che contano della settimana, raccontate in due minuti da Lorenzo. Ogni edizione ha il video e il testo completo, con le fonti."
   },
   "Meteo": {
-    nome: "Il meteo della settimana",
+    // Dal 27/11/2026 /meteo e' l'hub del meteo giornaliero (meteo.jsx): questo
+    // nome resta solo nel link in fondo alle vecchie edizioni, che porta li'.
+    nome: "Il meteo di IAttualità",
     giorno: "Ogni lunedì",
     title: "Meteo della settimana · Iattualità",
     desc: "Il meteo della settimana di Iattualità: com'è il tempo in Italia giorno per giorno, in un minuto. Ogni lunedì, con Lorenzo.",

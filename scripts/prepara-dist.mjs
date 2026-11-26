@@ -27,6 +27,7 @@ const DA_PUBBLICARE = [
   "og-produzioni.jpg", // anteprima dei link a /produzioni
   "email-logo.png",    // logo della pagina riservata
   "email-testata.png", // testata delle email: logo + marchio IAttualità
+  "meteo-mappe.json",  // contorni delle regioni per /meteo (scripts/meteo-mappe.py)
   "vendor" // cartella intera: React e ReactDOM
 ];
 

@@ -1,0 +1,496 @@
+// ====== METEO: /meteo, /meteo/gg-mm-aa, /meteo/<regione> ======
+// Dal 27/11/2026 la pagina meteo non e' piu' l'elenco degli articoli "Meteo
+// della settimana": e' un hub che si aggiorna da solo ogni mattina. I dati li
+// scrive la edge function Supabase "meteo-sito" nella tabella meteo_giorni
+// (una riga per giorno), chiamata dal routine del reel dopo la pubblicazione.
+// Qui si legge soltanto (RLS: lettura pubblica). Mockup approvato da Andre'.
+import { METEO_REGIONI, regioneDaSlug, giornoDaUrl, urlDaGiorno } from "./shared/meteo-geo.js";
+
+// Contorni delle regioni e posizioni delle etichette: ~70 KB che servono solo
+// qui, quindi stanno in un file a parte e non nel bundle di tutto il sito.
+let GEO=null, GEO_P=null;
+function caricaGeo(){ if(GEO) return Promise.resolve(GEO); if(!GEO_P) GEO_P=fetch("/meteo-mappe.json").then(r=>{ if(!r.ok) throw new Error("mappe "+r.status); return r.json(); }).then(j=>(GEO=j)).catch(e=>{ GEO_P=null; throw e; }); return GEO_P; }
+
+const { useState, useEffect, useRef } = React;
+
+const SUPA = "https://wzkshpgakvasqwrrgkgd.supabase.co";
+const KEY = "sb_publishable_I3s4phA5Be9qnV4pLbWQMQ_8-IGUE-b";
+const M = { bg:"#F4F6FA", navy:"#16243F", ink:"#0F1A2E", soft:"#33415C", gray:"#5B6880", blue:"#0047AB", rain:"#2F6FD0", gold:"#D8B472", line:"#E3E8F1", green:"#E8F1E8", greenInk:"#1B5E32", yellow:"#FFF6D6", yellowInk:"#7A5A00" };
+const INSTAGRAM = "https://www.instagram.com/meteo.iattualita/";
+const ZONE = ["Nord","Centro","Sud e isole"];
+const GIORNI = ["domenica","lunedì","martedì","mercoledì","giovedì","venerdì","sabato"];
+const MESI = ["gennaio","febbraio","marzo","aprile","maggio","giugno","luglio","agosto","settembre","ottobre","novembre","dicembre"];
+const BUSSOLA = ["Nord","Nord-Est","Est","Sud-Est","Sud","Sud-Ovest","Ovest","Nord-Ovest"];
+const DESC = {0:"Sereno",1:"Poco nuvoloso",2:"Nuvoloso",3:"Coperto",45:"Nebbia",48:"Nebbia gelata",51:"Pioviggine debole",53:"Pioviggine",55:"Pioviggine forte",56:"Pioviggine gelata",57:"Pioviggine gelata",61:"Pioggia debole",63:"Pioggia",65:"Pioggia forte",66:"Pioggia gelata",67:"Pioggia gelata",71:"Neve debole",73:"Neve",75:"Neve forte",77:"Granelli di neve",80:"Rovesci deboli",81:"Rovesci",82:"Rovesci forti",85:"Rovesci di neve",86:"Rovesci di neve",95:"Temporale",96:"Temporale con grandine",99:"Temporale con grandine"};
+
+const cap = (s)=>s? s.charAt(0).toUpperCase()+s.slice(1):s;
+const dt = (g)=>new Date(g+"T12:00:00");
+const dataLunga = (g)=>{ const d=dt(g); return GIORNI[d.getDay()]+" "+d.getDate()+" "+MESI[d.getMonth()]+" "+d.getFullYear(); };
+const dataBreve = (g)=>{ const d=dt(g); return d.getDate()+" "+MESI[d.getMonth()]; };
+const nomeGiorno = (g)=>cap(GIORNI[dt(g).getDay()]);
+const breve = (g)=>g.slice(8,10)+"-"+g.slice(5,7)+"-"+g.slice(2,4);
+const virg = (x,d=1)=>x==null?"–":(Math.round(x*Math.pow(10,d))/Math.pow(10,d)).toFixed(Math.abs(x)>=10&&d===1&&Math.round(x)===x?0:d).replace(".",",").replace("-","−");
+const int = (x)=>x==null?"–":String(Math.round(x)).replace("-","−");
+const mm = (x)=>x>=0.1? virg(x)+" mm" : "asciutto";
+const bussola = (d)=>d==null?"":BUSSOLA[Math.round(d/45)%8];
+const pioggiaCol = (x)=> x<0.5?"#DCE6F5": x<=2?"#BFD3EE": x<=10?"#8FB2E3":"#3F77C8";
+const regNome = (slug)=>(regioneDaSlug(slug)||{}).nome||slug;
+
+async function leggi(q){
+  const r=await fetch(SUPA+"/rest/v1/meteo_giorni?"+q,{headers:{apikey:KEY}});
+  if(!r.ok) throw new Error("meteo "+r.status);
+  return r.json();
+}
+
+// ---------- pezzi grafici ----------
+function Icona({cod,s=24}){
+  const c=cod==null?-1:cod;
+  const sun=c===0, part=c===1, cloud=c===2||c===3, fog=c===45||c===48, snow=(c>=71&&c<=77)||c===85||c===86;
+  const storm=c>=95, rain=!snow&&((c>=51&&c<=67)||(c>=80&&c<=82));
+  return <svg viewBox="0 0 24 24" width={s} height={s} aria-hidden="true" style={{flexShrink:0}}>
+    {sun&&<circle cx="12" cy="12" r="5.5" fill="#F2B01E"/>}
+    {part&&<g><circle cx="9" cy="9" r="4.5" fill="#F2B01E"/><path d="M8 19h9a3.6 3.6 0 0 0 .4-7.2A5 5 0 0 0 8.2 11 4 4 0 0 0 8 19z" fill="#AEB9CC"/></g>}
+    {cloud&&<path d="M7 18h10a4 4 0 0 0 .5-7.97A5.5 5.5 0 0 0 7 9.5 4.25 4.25 0 0 0 7 18z" fill="#97A4BC"/>}
+    {fog&&<path d="M4 8h16M3 12h18M5 16h14M8 20h8" stroke="#8D9BB5" strokeWidth="2" strokeLinecap="round"/>}
+    {(rain||storm)&&<g><path d="M7 14h10a3.6 3.6 0 0 0 .4-7.2A5 5 0 0 0 7.2 6 4 4 0 0 0 7 14z" fill="#6F7F9C"/>{storm?<path d="M12 14l-2 4h3l-2 4" stroke="#F2B01E" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>:<path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3" stroke="#2F6FD0" strokeWidth="2" strokeLinecap="round"/>}</g>}
+    {snow&&<g><path d="M7 14h10a3.6 3.6 0 0 0 .4-7.2A5 5 0 0 0 7.2 6 4 4 0 0 0 7 14z" fill="#97A4BC"/><circle cx="8" cy="18" r="1.4" fill="#2F6FD0"/><circle cx="12" cy="20" r="1.4" fill="#2F6FD0"/><circle cx="16" cy="18" r="1.4" fill="#2F6FD0"/></g>}
+    {c<0&&<circle cx="12" cy="12" r="3" fill="#CBD3E1"/>}
+  </svg>;
+}
+
+// Le etichette sono disegnate per una mappa larga ~540 px: sotto quella
+// misura si rimpiccioliscono insieme alla mappa, invece di accavallarsi.
+function useScala(ref,base){
+  const [s,setS]=useState(1);
+  useEffect(()=>{ const el=ref.current; if(!el) return; const f=()=>setS(Math.min(1.15,Math.max(.62,el.clientWidth/base)));
+    f(); if(typeof ResizeObserver==="undefined"){ window.addEventListener("resize",f); return ()=>window.removeEventListener("resize",f); }
+    const o=new ResizeObserver(f); o.observe(el); return ()=>o.disconnect(); },[]);
+  return s;
+}
+
+function Link({href,onNav,style,children,title}){
+  return <a href={href} title={title} onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0) return; e.preventDefault(); onNav(href); }} style={style}>{children}</a>;
+}
+
+const h2 = {margin:0,fontFamily:"Anton",fontWeight:400,fontSize:"clamp(26px,4.2vw,36px)",color:M.navy,letterSpacing:.2};
+const card = {background:"#fff",borderRadius:16,padding:"20px 22px",boxSizing:"border-box"};
+const kicker = {fontSize:13.5,fontWeight:700,letterSpacing:".12em",color:M.blue,textTransform:"uppercase"};
+const h1 = {margin:0,fontFamily:"Anton",fontWeight:400,fontSize:"clamp(36px,6.4vw,64px)",lineHeight:1.05,color:M.navy};
+const lead = {margin:0,fontSize:"clamp(17px,2.2vw,20px)",lineHeight:1.5,color:M.soft,maxWidth:760};
+const pill = (on,col=M.blue)=>({border:"2px solid "+col,borderRadius:999,padding:"8px 16px",fontSize:15,fontWeight:700,cursor:"pointer",background:on?col:"#fff",color:on?"#fff":col,fontFamily:"Barlow"});
+
+function Intestazione({titolo,sotto,children}){
+  return <div style={{display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"baseline",gap:"6px 16px"}}><h2 style={h2}>{titolo}</h2>{sotto&&<span style={{fontSize:15,color:M.gray}}>{sotto}</span>}{children}</div>;
+}
+
+function Allerte({riga,slug}){
+  const a=(riga.allerte&&riga.allerte.regioni)||[];
+  const lista=slug? a.filter(x=>x.slug===slug) : a;
+  if(riga.allerte&&riga.allerte.errore&&!a.length) return null;
+  if(!lista.length) return <div style={{background:M.green,borderRadius:16,padding:"16px 22px",display:"flex",flexDirection:"column",gap:4}}>
+    <span style={{fontSize:13.5,fontWeight:700,letterSpacing:".08em",color:M.greenInk}}>ALLERTE DELLA PROTEZIONE CIVILE</span>
+    <span style={{fontSize:17,color:"#1F3326"}}>{slug?"Nessuna allerta per oggi in questa regione.":"Nessuna regione in allerta oggi."}</span>
+  </div>;
+  const liv=(x)=>x.livello||"gialla";
+  const col={gialla:"#E8B500",arancione:"#E07B00",rossa:"#E2231A"};
+  return <div style={{background:M.yellow,borderRadius:16,padding:"16px 22px",display:"flex",flexDirection:"column",gap:8}}>
+    <span style={{fontSize:13.5,fontWeight:700,letterSpacing:".08em",color:M.yellowInk}}>ALLERTE DELLA PROTEZIONE CIVILE</span>
+    <span style={{fontSize:17,color:"#3D2E00"}}>{slug? "Allerta "+liv(lista[0])+" per oggi." : (lista.length===1?"Una regione":lista.length+" regioni")+" in allerta oggi:"}</span>
+    {!slug&&<div style={{display:"flex",flexWrap:"wrap",gap:8}}>{lista.map(x=><span key={x.regione} style={{display:"inline-flex",alignItems:"center",gap:6,background:"#fff",borderRadius:999,padding:"5px 12px",fontSize:15,fontWeight:600,color:M.navy}}><span style={{width:10,height:10,borderRadius:"50%",background:col[liv(x)]||col.gialla}}/>{x.regione}</span>)}</div>}
+    {slug&&lista[0].testo&&<span style={{fontSize:15,color:"#3D2E00",lineHeight:1.5}}>{lista[0].testo}</span>}
+    <span style={{fontSize:13,color:M.yellowInk}}>Fonte: bollettino di criticità del Dipartimento della Protezione Civile. Per gli aggiornamenti seguite i canali ufficiali della vostra Regione.</span>
+  </div>;
+}
+
+function Grafico({punti,scelte,iniziale,nota}){
+  const [c,setC]=useState(iniziale);
+  const p=punti.find(x=>x.nome===c)||punti[0];
+  if(!p) return null;
+  const arr=(p.ore||[]).map(v=>v||0);
+  const mx=Math.max(0,...arr), tot=arr.reduce((a,b)=>a+b,0);
+  const altri=punti.filter(x=>scelte.indexOf(x.nome)<0);
+  return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <Intestazione titolo="Quando piove, ora per ora">
+      <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
+        {scelte.map(n=><button key={n} onClick={()=>setC(n)} style={pill(c===n)}>{n}</button>)}
+        {altri.length>0&&<select value={scelte.indexOf(c)<0?c:""} onChange={e=>e.target.value&&setC(e.target.value)} aria-label="Scegli un'altra città" style={{border:"2px solid "+M.blue,borderRadius:999,padding:"8px 12px",fontSize:15,fontWeight:700,color:M.blue,background:"#fff",fontFamily:"Barlow"}}>
+          <option value="">Altra città…</option>
+          {altri.map(x=><option key={x.nome} value={x.nome}>{x.nome}</option>)}
+        </select>}
+      </div>
+    </Intestazione>
+    <div style={{...card,padding:24,display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"flex",flexWrap:"wrap",gap:"6px 22px",alignItems:"baseline"}}>
+        <span style={{fontFamily:"Anton",fontSize:30,color:M.navy}}>{p.nome}</span>
+        <span style={{fontSize:17,color:M.soft}}>Totale della giornata: <b>{mm(tot)}</b>{mx>0&&<React.Fragment> · picco alle <b>{String(arr.indexOf(mx)).padStart(2,"0")}:00</b> ({virg(mx)} mm)</React.Fragment>}</span>
+      </div>
+      <div role="img" aria-label={"Pioggia ora per ora a "+p.nome+": totale "+mm(tot)} style={{display:"flex",alignItems:"flex-end",gap:"clamp(1px,.4vw,4px)",height:190,borderBottom:"2px solid #CBD3E1"}}>
+        {arr.map((v,i)=><div key={i} title={String(i).padStart(2,"0")+":00 · "+virg(v)+" mm"} style={{flex:"1 1 0",minWidth:0,height:"100%",display:"flex",alignItems:"flex-end"}}>
+          <div style={{width:"100%",borderRadius:"4px 4px 0 0",background:M.rain,height:(mx>0?Math.max(v/mx*100,v>0?3:0):0)+"%"}}/>
+        </div>)}
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:13,color:M.gray,fontWeight:600}}>{["00","04","08","12","16","20","23"].map(x=><span key={x}>{x}</span>)}</div>
+      {mx===0&&<span style={{fontSize:15,color:M.soft}}>Nessuna pioggia prevista a {p.nome}.</span>}
+      <span style={{fontSize:13.5,color:M.gray}}>{nota||"Millimetri di pioggia per ora, modello ICON-2I."}</span>
+    </div>
+  </div>;
+}
+
+function Fonti({riga}){
+  const ora=riga.aggiornato_il? new Date(riga.aggiornato_il).toLocaleString("it-IT",{timeZone:"Europe/Rome",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"}):null;
+  return <footer style={{borderTop:"1px solid #CBD3E1",paddingTop:18,fontSize:14,lineHeight:1.6,color:M.gray,maxWidth:820}}>
+    Fonti: ItaliaMeteo-ARPAE ICON-2I ed ECMWF IFS (CC BY 4.0) via Open-Meteo; Dipartimento della Protezione Civile, bollettino di criticità (CC BY 4.0).{ora&&" Dati elaborati il "+ora+"."} Le previsioni oltre le 48 ore sono una tendenza e possono cambiare: per le decisioni di sicurezza seguite sempre gli avvisi ufficiali.
+  </footer>;
+}
+
+function Segui(){
+  return <section style={{display:"flex",flexWrap:"wrap",gap:16,alignItems:"center",background:M.navy,color:"#fff",borderRadius:16,padding:"24px 28px"}}>
+    <div style={{flex:"1 1 320px",display:"flex",flexDirection:"column",gap:6}}>
+      <span style={{fontFamily:"Anton",fontSize:26}}>Il meteo di ogni mattina, in un video</span>
+      <span style={{fontSize:17,lineHeight:1.5,opacity:.9}}>Ogni giorno alle 7:30 su Instagram e Facebook, con Lorenzo. Questa pagina si aggiorna da sola con i dati del mattino.</span>
+    </div>
+    <a href={INSTAGRAM} target="_blank" rel="noopener" style={{background:M.gold,color:M.navy,textDecoration:"none",fontWeight:700,fontSize:17,padding:"14px 24px",borderRadius:10}}>Segui MeteoIAttualità</a>
+  </section>;
+}
+
+function Stato({testo,errore,onRiprova}){
+  return <div style={{...card,textAlign:"center",padding:"36px 20px"}}>
+    <div style={{fontFamily:"Anton",fontSize:24,color:M.navy,marginBottom:8}}>{testo}</div>
+    {errore&&<button onClick={onRiprova} style={pill(false)}>Riprova</button>}
+  </div>;
+}
+
+// ---------- mappa d'Italia ----------
+function MappaItalia({riga,geo,onNav}){
+  const box=useRef(null); const s=useScala(box,540);
+  const R=riga.regioni||{};
+  return <div style={{...card,flex:"1 1 440px",maxWidth:600,padding:18,margin:"0 auto"}}>
+    <div ref={box} style={{position:"relative",width:"100%",aspectRatio:"567/666"}}>
+      <svg viewBox="0 0 567 666" style={{position:"absolute",inset:0,width:"100%",height:"100%"}} role="img" aria-label="Mappa dell'Italia con la pioggia massima prevista oggi per regione">
+        {METEO_REGIONI.map(r=><path key={r.slug} d={geo.mappe[r.slug].d} fill={pioggiaCol((R[r.slug]||{}).mm||0)} stroke="#fff" strokeWidth="1.5" strokeLinejoin="round" style={{cursor:"pointer"}} onClick={()=>onNav("/meteo/"+r.slug)}><title>{r.nome}</title></path>)}
+      </svg>
+      {METEO_REGIONI.map(r=>{ const x=R[r.slug]; const pos=geo.pos[r.capoluogo]; if(!x||!pos) return null; const l=pos.itl||pos.it;
+        return <Link key={r.slug} href={"/meteo/"+r.slug} onNav={onNav} title={"Meteo "+r.nome} style={{position:"absolute",left:l[0]+"%",top:l[1]+"%",transform:"translate(-50%,-50%) scale("+s+")",display:"flex",flexDirection:"column",alignItems:"center",background:"#fff",borderRadius:10,padding:"2px 7px 3px",boxShadow:"0 1px 6px rgba(15,26,46,.28)",textDecoration:"none"}}>
+          <span style={{fontSize:10,fontWeight:700,color:M.gray,whiteSpace:"nowrap",lineHeight:1.3}}>{r.capoluogo}</span>
+          <span style={{display:"flex",alignItems:"center",gap:2}}><Icona cod={x.cod} s={20}/><span style={{fontSize:15,fontWeight:700,color:M.ink}}>{int(x.max)}°</span></span>
+        </Link>; })}
+    </div>
+    <div style={{display:"flex",flexWrap:"wrap",gap:"6px 14px",alignItems:"center",marginTop:12,fontSize:13,color:M.soft}}>
+      <span style={{fontWeight:700}}>Pioggia massima nella regione</span>
+      {[["#DCE6F5","asciutto"],["#BFD3EE","fino a 2 mm"],["#8FB2E3","2-10 mm"],["#3F77C8","oltre 10 mm"]].map(([c,t])=><span key={t} style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:18,height:12,borderRadius:3,background:c}}/>{t}</span>)}
+    </div>
+    <div style={{fontSize:13,color:M.gray,marginTop:6}}>Sulle etichette: tempo e massima del capoluogo di regione. Tocca una regione per i suoi capoluoghi.</div>
+  </div>;
+}
+
+function Reel({riga}){
+  const su=(u)=>u&&u.indexOf(SUPA)===0;
+  const video=su(riga.reel_url)?riga.reel_url:null, cover=su(riga.cover_url)?riga.cover_url:null;
+  const box={flex:"1 1 260px",maxWidth:340,minWidth:240,aspectRatio:"9/16",borderRadius:16,overflow:"hidden",margin:"0 auto",position:"relative",background:"linear-gradient(180deg,#1E2F52 0%,#2C4A7C 55%,#16243F 100%)"};
+  if(video) return <div style={box}><video src={video} poster={cover||undefined} controls playsInline preload="none" style={{width:"100%",height:"100%",objectFit:"cover",display:"block",background:"#000"}} aria-label="Reel del giorno con Lorenzo"/></div>;
+  return <a href={INSTAGRAM} target="_blank" rel="noopener" style={{...box,display:"flex",flexDirection:"column",justifyContent:"space-between",padding:20,color:"#fff",textDecoration:"none",backgroundImage:cover?"url("+cover+")":box.background,backgroundSize:"cover",backgroundPosition:"center"}}>
+    <span style={{fontSize:13,fontWeight:700,letterSpacing:".12em",color:M.gold}}>REEL DEL GIORNO</span>
+    <span style={{alignSelf:"center",width:72,height:72,borderRadius:"50%",background:"rgba(255,255,255,.92)",display:"flex",alignItems:"center",justifyContent:"center"}}><svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M8 5v14l11-7z" fill={M.navy}/></svg></span>
+    <span style={{fontSize:15,fontWeight:600}}>Guarda il video su Instagram</span>
+  </a>;
+}
+
+// ---------- /meteo ----------
+function Hub({riga,archivio,geo,onNav}){
+  const g=riga.giorno;
+  const titolo=riga.titolo||("Il meteo di "+dataLunga(g));
+  const zone=Array.isArray(riga.zone)?riga.zone:[];
+  return <React.Fragment>
+    <section style={{display:"flex",flexWrap:"wrap",gap:32,alignItems:"stretch"}}>
+      <div style={{flex:"999 1 480px",minWidth:0,display:"flex",flexDirection:"column",gap:18,justifyContent:"center"}}>
+        <span style={kicker}>Meteo · {dataLunga(g)}</span>
+        <h1 style={h1}>{titolo}</h1>
+        {riga.sottotitolo&&<p style={lead}>{riga.sottotitolo}</p>}
+        <div style={{display:"flex",flexWrap:"wrap",gap:12,marginTop:4}}>
+          <Link href={urlDaGiorno(g)} onNav={onNav} style={{background:M.blue,color:"#fff",textDecoration:"none",fontWeight:700,fontSize:17,padding:"14px 24px",borderRadius:10}}>Tutti i dati di oggi</Link>
+          <a href={INSTAGRAM} target="_blank" rel="noopener" style={{background:"#fff",color:M.navy,textDecoration:"none",fontWeight:700,fontSize:17,padding:"12px 22px",borderRadius:10,border:"2px solid "+M.navy}}>Segui MeteoIAttualità</a>
+        </div>
+        <span style={{fontSize:14,color:M.gray}}>Dati ItaliaMeteo-ARPAE ICON-2I ed ECMWF via Open-Meteo, aggiornati ogni mattina</span>
+      </div>
+      <Reel riga={riga}/>
+    </section>
+
+    <section style={{display:"flex",flexDirection:"column",gap:18}}>
+      <Intestazione titolo="L'Italia oggi" sotto="Tutte le regioni: tempo, massima e pioggia prevista"/>
+      <div style={{display:"flex",flexWrap:"wrap",gap:24,alignItems:"flex-start"}}>
+        <MappaItalia riga={riga} geo={geo} onNav={onNav}/>
+        <div style={{flex:"1 1 360px",minWidth:0,display:"flex",flexDirection:"column",gap:14}}>
+          {zone.map(z=><article key={z.nome} style={{...card,display:"flex",flexDirection:"column",gap:8,borderLeft:"6px solid "+M.blue}}>
+            <div style={{display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+              <h3 style={{margin:0,fontFamily:"Anton",fontWeight:400,fontSize:25,letterSpacing:".02em",color:M.navy}}>{z.nome}</h3>
+              <span style={{fontSize:17,fontWeight:700,color:M.blue}}>{z.range}</span>
+            </div>
+            <p style={{margin:0,fontSize:17,lineHeight:1.5,color:M.soft}}>{z.testo}</p>
+          </article>)}
+          <Allerte riga={riga}/>
+        </div>
+      </div>
+      <nav aria-label="Meteo per regione" style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        {METEO_REGIONI.map(r=><Link key={r.slug} href={"/meteo/"+r.slug} onNav={onNav} style={{background:"#fff",borderRadius:999,padding:"8px 14px",textDecoration:"none",fontWeight:600,fontSize:15,color:M.navy}}>{r.nome}</Link>)}
+      </nav>
+    </section>
+
+    {(riga.tendenza||[]).length>0&&<section style={{display:"flex",flexDirection:"column",gap:18}}>
+      <Intestazione titolo="I prossimi giorni" sotto="Tendenza ECMWF: massime di Milano, Roma e Palermo. Oltre domani può cambiare."/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:14}}>
+        {riga.tendenza.map(t=><div key={t.d} style={{...card,padding:18,display:"flex",flexDirection:"column",gap:10,borderTop:"4px solid "+M.gold}}>
+          <div style={{display:"flex",flexDirection:"column"}}><span style={{fontFamily:"Anton",fontSize:23,color:M.navy}}>{nomeGiorno(t.d)}</span><span style={{fontSize:14,color:M.gray}}>{dataBreve(t.d)}</span></div>
+          {t.righe.map(x=><div key={x.zona} title={x.citta+": "+(DESC[x.cod]||"")} style={{display:"flex",alignItems:"center",gap:8,fontSize:16}}>
+            <span style={{width:54,color:M.gray,fontSize:14,fontWeight:600}}>{x.zona}</span><Icona cod={x.cod}/><span style={{fontWeight:700}}>{int(x.max)}°</span>
+            {x.mm>=0.5&&<span style={{fontSize:13,color:M.rain,fontWeight:600,whiteSpace:"nowrap"}}>{virg(x.mm)} mm</span>}
+          </div>)}
+        </div>)}
+      </div>
+    </section>}
+
+    {archivio.length>0&&<section style={{display:"flex",flexDirection:"column",gap:14,maxWidth:720}}>
+      <h2 style={{...h2,fontSize:30}}>Archivio dei giorni</h2>
+      {archivio.slice(0,14).map(a=><Link key={a.giorno} href={urlDaGiorno(a.giorno)} onNav={onNav} style={{...card,padding:"14px 20px",textDecoration:"none",color:M.ink,display:"flex",flexDirection:"column",gap:2}}>
+        <span style={{fontSize:14,color:M.gray}}>{cap(dataLunga(a.giorno))}</span>
+        <span style={{fontSize:18,fontWeight:600}}>{a.titolo||("Il meteo di "+dataLunga(a.giorno))}</span>
+      </Link>)}
+    </section>}
+    <Fonti riga={riga}/>
+  </React.Fragment>;
+}
+
+// ---------- /meteo/gg-mm-aa ----------
+function Giorno({riga,archivio,onNav}){
+  const g=riga.giorno;
+  const [tab,setTab]=useState("Regioni");
+  const [reg,setReg]=useState("");
+  const punti=(riga.punti||[]).filter(p=>!p.mont);
+  const mont=(riga.punti||[]).filter(p=>p.mont);
+  const k=riga.kpi||{};
+  const lista=archivio.map(a=>a.giorno).sort();
+  const i=lista.indexOf(g), prev=i>0?lista[i-1]:null, next=i>=0&&i<lista.length-1?lista[i+1]:null;
+  const ordine=METEO_REGIONI.map(r=>r.slug);
+  const righe=punti.filter(p=>(reg? p.regione===reg : tab==="Tutte"||(tab==="Regioni"?p.cap:p.zona===tab))).sort((a,b)=>ordine.indexOf(a.regione)-ordine.indexOf(b.regione)||(b.cap?1:0)-(a.cap?1:0));
+  const piovose=[...punti].sort((a,b)=>b.mm-a.mm).filter(p=>p.mm>=0.5).slice(0,3).map(p=>p.nome);
+  const scelte=[...piovose,...["Roma","Milano","Napoli"].filter(n=>piovose.indexOf(n)<0)].slice(0,4);
+  const zone=Array.isArray(riga.zone)?riga.zone:[];
+  const zt=["Milano","Roma","Palermo"].map(n=>punti.find(p=>p.nome===n)).filter(Boolean);
+  const kc=(t,v,u,sotto,col)=><div style={{...card,padding:20,display:"flex",flexDirection:"column",gap:4,borderTop:"4px solid "+col}}>
+    <span style={{fontSize:14,fontWeight:600,color:M.gray}}>{t}</span>
+    <span style={{fontFamily:"Anton",fontSize:"clamp(34px,5vw,44px)",color:M.navy,lineHeight:1.1}}>{v} <span style={{fontSize:20}}>{u}</span></span>
+    <span style={{fontSize:15,color:M.soft}}>{sotto}</span>
+  </div>;
+  const nav={background:"#fff",borderRadius:8,padding:"9px 14px",textDecoration:"none",fontWeight:700,color:M.navy,fontSize:15};
+  return <React.Fragment>
+    <section style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{display:"flex",flexWrap:"wrap",justifyContent:"space-between",gap:12,alignItems:"center",fontSize:15}}>
+        <span style={{color:M.gray}}><Link href="/meteo" onNav={onNav} style={{fontWeight:600,color:M.blue}}>Meteo</Link> / {breve(g)}</span>
+        <span style={{display:"flex",gap:10}}>
+          {prev&&<Link href={urlDaGiorno(prev)} onNav={onNav} style={nav}>← {breve(prev)}</Link>}
+          {next&&<Link href={urlDaGiorno(next)} onNav={onNav} style={nav}>{breve(next)} →</Link>}
+        </span>
+      </div>
+      <span style={kicker}>Previsione del mattino · {dataLunga(g)}</span>
+      <h1 style={{...h1,fontSize:"clamp(34px,6vw,58px)"}}>{riga.titolo||("Il meteo di "+dataLunga(g))}</h1>
+      {riga.sottotitolo? <p style={lead}>{riga.sottotitolo}</p> : zone.length>0&&<p style={lead}>{zone.map(z=>z.testo).join(" ")}</p>}
+    </section>
+
+    <section style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:14}}>
+      {k.raffica&&kc("Raffica più forte",int(k.raffica.valore),"km/h",k.raffica.citta+(k.raffica.dir?", vento da "+k.raffica.dir:""),M.blue)}
+      {k.pioggia&&kc("Pioggia massima",virg(k.pioggia.valore),"mm",k.pioggia.citta+(k.pioggia.quando?", "+k.pioggia.quando:""),M.blue)}
+      {k.massima&&kc("Massima più alta",int(k.massima.valore),"°C",k.massima.citta,M.gold)}
+      {k.minima&&kc("Minima più bassa",virg(k.minima.valore),"°C",k.minima.citta+(k.minima.neve?", "+virg(k.minima.neve)+" cm di neve":""),M.gold)}
+    </section>
+
+    <Allerte riga={riga}/>
+
+    {zone.length>0&&<section style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
+      {zone.map(z=><article key={z.nome} style={{...card,display:"flex",flexDirection:"column",gap:6,borderLeft:"6px solid "+M.blue}}>
+        <div style={{display:"flex",flexWrap:"wrap",justifyContent:"space-between",gap:8,alignItems:"baseline"}}><h3 style={{margin:0,fontFamily:"Anton",fontWeight:400,fontSize:23,color:M.navy}}>{z.nome}</h3><span style={{fontSize:15,fontWeight:700,color:M.blue}}>{z.range}</span></div>
+        <p style={{margin:0,fontSize:16,lineHeight:1.5,color:M.soft}}>{z.testo}</p>
+      </article>)}
+    </section>}
+
+    <section style={{display:"flex",flexDirection:"column",gap:14}}>
+      <Intestazione titolo="Città per città">
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
+          {[["Regioni","Capoluoghi di regione"],...ZONE.map(z=>[z,z]),["Tutte","Tutti i 110"]].map(([n,t])=><button key={n} onClick={()=>{setTab(n);setReg("");}} style={pill(tab===n&&!reg,M.navy)}>{t}</button>)}
+          <select value={reg} onChange={e=>{setReg(e.target.value);setTab("Tutte");}} aria-label="Filtra per regione" style={{border:"2px solid "+M.navy,borderRadius:999,padding:"8px 12px",fontSize:15,fontWeight:700,color:M.navy,background:"#fff",fontFamily:"Barlow"}}>
+            <option value="">Regione…</option>{METEO_REGIONI.map(r=><option key={r.slug} value={r.slug}>{r.nome}</option>)}
+          </select>
+        </div>
+      </Intestazione>
+      <div style={{...card,padding:8,overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:16,minWidth:680}}>
+          <thead><tr style={{textAlign:"left",color:M.gray,fontSize:12.5,letterSpacing:".06em"}}>
+            {["CITTÀ","TEMPO","MIN","MAX","PIOGGIA","RAFFICA","VENTO DA"].map((t,i)=><th key={t} scope="col" style={{padding:"12px 14px",fontWeight:700,textAlign:i>=2&&i<=5?"right":"left"}}>{t}</th>)}
+          </tr></thead>
+          <tbody>{righe.map(p=><tr key={p.nome} style={{borderTop:"1px solid "+M.line}}>
+            <td style={{padding:"11px 14px",fontWeight:700,color:M.navy}}><Link href={"/meteo/"+p.regione} onNav={onNav} style={{color:M.navy,textDecoration:"none"}}>{p.nome}</Link><div style={{fontSize:12.5,fontWeight:500,color:M.gray}}>{regNome(p.regione)}</div></td>
+            <td style={{padding:"11px 14px"}}><span style={{display:"flex",alignItems:"center",gap:8}}><Icona cod={p.cod}/><span style={{fontSize:15,color:M.soft}}>{DESC[p.cod]||""}</span></span></td>
+            <td style={{padding:"11px 14px",textAlign:"right",color:M.soft}}>{int(p.min)}°</td>
+            <td style={{padding:"11px 14px",textAlign:"right",fontWeight:700}}>{int(p.max)}°</td>
+            <td style={{padding:"11px 14px",textAlign:"right",color:M.rain,fontWeight:600}}>{p.mm>=0.1?virg(p.mm)+" mm":"–"}</td>
+            <td style={{padding:"11px 14px",textAlign:"right"}}>{int(p.raff)} km/h</td>
+            <td style={{padding:"11px 14px",color:M.soft}}>{bussola(p.dir)}</td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+    </section>
+
+    <Grafico punti={punti} scelte={scelte} iniziale={scelte[0]}/>
+
+    <section style={{display:"flex",flexWrap:"wrap",gap:22,alignItems:"stretch"}}>
+      <div style={{...card,flex:"1 1 420px",minWidth:0,padding:24,display:"flex",flexDirection:"column",gap:14}}>
+        <h2 style={{...h2,fontSize:28}}>Neve e quota dello zero termico</h2>
+        <div style={{display:"flex",flexDirection:"column",gap:10,fontSize:17,lineHeight:1.5,color:M.soft}}>
+          {mont.map(p=><span key={p.nome}><b style={{color:M.navy}}>{p.nome}</b>: da {virg(p.min)} a {virg(p.max)} °C, {p.neve>=0.1?virg(p.neve)+" cm di neve":"nessuna neve prevista"}.</span>)}
+          {punti.filter(p=>p.neve>=0.5).slice(0,4).map(p=><span key={p.nome}><b style={{color:M.navy}}>{p.nome}</b>: {virg(p.neve)} cm di neve.</span>)}
+        </div>
+        {zt.some(p=>p.zt&&p.zt.some(x=>x!=null))&&<div style={{display:"grid",gridTemplateColumns:"auto repeat(3,1fr)",gap:"8px 16px",fontSize:16,alignItems:"center",marginTop:4}}>
+          <span/>{["ORE 6","ORE 12","ORE 18"].map(t=><span key={t} style={{fontSize:12.5,fontWeight:700,color:M.gray,textAlign:"right"}}>{t}</span>)}
+          {zt.map(p=><React.Fragment key={p.nome}><span style={{fontWeight:700,color:M.navy}}>{p.nome}</span>{(p.zt||[]).map((v,j)=><span key={j} style={{textAlign:"right"}}>{v==null?"–":Number(v).toLocaleString("it-IT")+" m"}</span>)}</React.Fragment>)}
+        </div>}
+      </div>
+      <div style={{...card,flex:"1 1 360px",minWidth:0,padding:24,display:"flex",flexDirection:"column",gap:14,borderTop:"4px solid "+M.gold}}>
+        <h2 style={{...h2,fontSize:28}}>Dove i modelli non concordano</h2>
+        <p style={{margin:0,fontSize:17,lineHeight:1.5,color:M.soft}}>Confrontiamo ICON-2I (ItaliaMeteo-ARPAE) con ECMWF. Dove le due previsioni divergono lo diciamo, e nel video usiamo il condizionale.</p>
+        <div style={{display:"flex",flexDirection:"column",gap:8,fontSize:16,color:M.soft}}>
+          {(riga.differenze||[]).length? riga.differenze.map(d=><span key={d.citta} style={{background:M.bg,borderRadius:10,padding:"10px 14px"}}><b style={{color:M.navy}}>{d.citta}</b>: {d.testo}</span>)
+            : <span style={{background:M.bg,borderRadius:10,padding:"10px 14px"}}>Oggi i due modelli sono d'accordo su tutti i capoluoghi.</span>}
+        </div>
+      </div>
+    </section>
+    <Segui/>
+    <Fonti riga={riga}/>
+  </React.Fragment>;
+}
+
+// ---------- /meteo/<regione> ----------
+function Regione({riga,slug,geo,onNav}){
+  const r=regioneDaSlug(slug);
+  const x=(riga.regioni||{})[slug]||{};
+  const punti=(riga.punti||[]).filter(p=>!p.mont&&p.regione===slug);
+  const ord=r.citta; punti.sort((a,b)=>ord.indexOf(a.nome)-ord.indexOf(b.nome));
+  const box=useRef(null); const s=useScala(box,520);
+  const capo=punti.find(p=>p.nome===r.capoluogo)||punti[0];
+  const g=riga.giorno;
+  const mp=geo.mappe[slug]; const [vb0,vb1]=mp.vb;
+  return <React.Fragment>
+    <section style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{display:"flex",flexWrap:"wrap",justifyContent:"space-between",gap:12,alignItems:"center",fontSize:15}}>
+        <span style={{color:M.gray}}><Link href="/meteo" onNav={onNav} style={{fontWeight:600,color:M.blue}}>Meteo</Link> / <Link href={urlDaGiorno(g)} onNav={onNav} style={{fontWeight:600,color:M.blue}}>{breve(g)}</Link> / {r.nome}</span>
+        <Link href="/meteo" onNav={onNav} style={{background:"#fff",borderRadius:8,padding:"9px 14px",textDecoration:"none",fontWeight:700,color:M.navy}}>← Tutta l'Italia</Link>
+      </div>
+      <span style={kicker}>{r.nome} · {dataLunga(g)}</span>
+      <h1 style={{...h1,fontSize:"clamp(34px,6vw,58px)"}}>{x.titolo||("Meteo "+r.nome)}</h1>
+      {x.testo&&<p style={lead}>{x.testo}</p>}
+    </section>
+
+    <section style={{display:"flex",flexWrap:"wrap",gap:24,alignItems:"flex-start"}}>
+      <div style={{...card,flex:"1 1 420px",maxWidth:560,padding:18,margin:"0 auto"}}>
+        <div ref={box} style={{position:"relative",width:"100%",aspectRatio:vb0+"/"+vb1}}>
+          <svg viewBox={"0 0 "+vb0+" "+vb1} style={{position:"absolute",inset:0,width:"100%",height:"100%"}} role="img" aria-label={"Mappa della regione "+r.nome+" con i capoluoghi di provincia"}>
+            <path d={mp.mappa} fill={pioggiaCol(x.mm||0)} stroke="#fff" strokeWidth="2" strokeLinejoin="round"/>
+          </svg>
+          {punti.map(p=>{ const pos=(geo.pos[p.nome]||{}).rg; if(!pos) return null;
+            return <div key={p.nome} style={{position:"absolute",left:pos[0]+"%",top:pos[1]+"%",transform:"translate(-50%,-50%) scale("+s+")",display:"flex",flexDirection:"column",alignItems:"center",background:"#fff",borderRadius:10,padding:"3px 9px 4px",boxShadow:"0 1px 6px rgba(15,26,46,.3)"}}>
+              <span style={{fontSize:12,fontWeight:700,color:M.gray,whiteSpace:"nowrap",lineHeight:1.3}}>{p.nome}</span>
+              <span style={{display:"flex",alignItems:"center",gap:3}}><Icona cod={p.cod} s={22}/><span style={{fontSize:17,fontWeight:700,color:M.ink}}>{int(p.max)}°</span>{p.mm>=0.5&&<span style={{fontSize:13,fontWeight:700,color:M.rain}}>{virg(p.mm)}</span>}</span>
+            </div>; })}
+        </div>
+        <div style={{fontSize:13,color:M.gray,marginTop:10}}>Tempo, massima e pioggia prevista (mm) nei capoluoghi di provincia. Colore: pioggia massima nella regione.</div>
+      </div>
+      <div style={{flex:"1 1 380px",minWidth:0,display:"flex",flexDirection:"column",gap:12}}>
+        {punti.map(p=><article key={p.nome} style={{...card,padding:"16px 20px",display:"flex",flexDirection:"column",gap:6,borderLeft:"6px solid "+(p.cap?M.gold:M.blue)}}>
+          <div style={{display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+            <h3 style={{margin:0,fontFamily:"Anton",fontWeight:400,fontSize:23,letterSpacing:".02em",color:M.navy}}>{p.nome}</h3>
+            <span style={{fontSize:17,fontWeight:700,color:M.blue}}>{int(p.min)}° / {int(p.max)}°</span>
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:"4px 18px",fontSize:16,color:M.soft,alignItems:"center"}}>
+            <span style={{display:"flex",alignItems:"center",gap:6}}><Icona cod={p.cod} s={22}/>{DESC[p.cod]||""}</span>
+            <span style={{color:M.rain,fontWeight:600}}>{mm(p.mm)}</span>
+            {p.raff!=null&&<span>Raffica {int(p.raff)} km/h{p.dir!=null?" da "+bussola(p.dir):""}</span>}
+            {p.neve>=0.1&&<span>Neve {virg(p.neve)} cm</span>}
+          </div>
+        </article>)}
+      </div>
+    </section>
+
+    <Allerte riga={riga} slug={slug}/>
+
+    {punti.length>0&&<Grafico key={slug} punti={punti} scelte={punti.slice(0,6).map(p=>p.nome)} iniziale={([...punti].sort((a,b)=>b.mm-a.mm)[0]||capo).nome}/>}
+
+    {capo&&(capo.tend||[]).length>0&&<section style={{display:"flex",flexDirection:"column",gap:14}}>
+      <Intestazione titolo={"I prossimi giorni a "+capo.nome} sotto="Tendenza ECMWF. Oltre domani può cambiare."/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
+        {capo.tend.map(t=><div key={t.d} style={{...card,padding:16,display:"flex",flexDirection:"column",gap:6,borderTop:"4px solid "+M.gold}}>
+          <span style={{fontFamily:"Anton",fontSize:21,color:M.navy}}>{nomeGiorno(t.d)}</span>
+          <span style={{fontSize:13,color:M.gray}}>{dataBreve(t.d)}</span>
+          <span style={{display:"flex",alignItems:"center",gap:8}}><Icona cod={t.cod} s={26}/><span style={{fontSize:18,fontWeight:700}}>{int(t.min)}° / {int(t.max)}°</span></span>
+          <span style={{fontSize:14,color:M.soft}}>{(DESC[t.cod]||"")+(t.mm>=0.5?", "+virg(t.mm)+" mm":"")}</span>
+        </div>)}
+      </div>
+    </section>}
+
+    <section style={{display:"flex",flexWrap:"wrap",gap:10,alignItems:"center"}}>
+      <span style={{fontSize:16,fontWeight:700,color:M.navy,marginRight:6}}>Regioni vicine</span>
+      {r.vicine.map(v=><Link key={v} href={"/meteo/"+v} onNav={onNav} style={{background:"#fff",borderRadius:999,padding:"9px 16px",textDecoration:"none",fontWeight:700,color:M.blue}}>{regNome(v)}</Link>)}
+    </section>
+    <Fonti riga={riga}/>
+  </React.Fragment>;
+}
+
+// ---------- pagina ----------
+export function meteoRoute(path){
+  const m=/^\/meteo(?:\/([^/]+))?\/?$/.exec(path||"");
+  if(!m) return null;
+  if(!m[1]) return {tipo:"hub"};
+  const s=decodeURIComponent(m[1]).toLowerCase();
+  const g=giornoDaUrl(s); if(g) return {tipo:"giorno",giorno:g};
+  if(regioneDaSlug(s)) return {tipo:"regione",regione:s};
+  return {tipo:"nessuna"};
+}
+
+const SITO="https://iattualita.it";
+function seo(titolo,desc,url){
+  document.title=titolo;
+  let m=document.querySelector('meta[name="description"]'); if(!m){ m=document.createElement("meta"); m.setAttribute("name","description"); document.head.appendChild(m); }
+  m.setAttribute("content",desc);
+  const c=document.querySelector('link[rel="canonical"]'); if(c) c.setAttribute("href",SITO+url);
+}
+
+export function MeteoPage({path,onNav}){
+  const rt=meteoRoute(path)||{tipo:"hub"};
+  const [stato,setStato]=useState({carica:true});
+  const [tent,setTent]=useState(0);
+  const chiave=rt.tipo==="giorno"?rt.giorno:"ultimo";
+  useEffect(()=>{
+    let vivo=true; setStato(s=>({...s,carica:true,errore:null}));
+    const q= rt.tipo==="giorno" ? "select=*&giorno=eq."+rt.giorno : "select=*&order=giorno.desc&limit=1";
+    Promise.all([leggi(q), leggi("select=giorno,titolo&order=giorno.desc&limit=60"), rt.tipo==="giorno"?Promise.resolve(null):caricaGeo()])
+      .then(([r,a,geo])=>{ if(vivo) setStato({carica:false,riga:r[0]||null,archivio:a,geo}); })
+      .catch(e=>{ if(vivo) setStato({carica:false,errore:String(e)}); });
+    return ()=>{ vivo=false; };
+  },[chiave,tent]);
+  const riga=stato.riga;
+  useEffect(()=>{
+    if(!riga) return;
+    if(rt.tipo==="hub") seo("Meteo di oggi in Italia · "+cap(dataLunga(riga.giorno))+" · Iattualità",(riga.titolo?riga.titolo+". ":"")+"Previsioni per tutte le regioni e 110 capoluoghi, con mappa, allerte della Protezione Civile e tendenza dei prossimi giorni. Dati ICON-2I ed ECMWF.","/meteo");
+    else if(rt.tipo==="giorno") seo("Meteo di "+dataLunga(riga.giorno)+" · Iattualità",(riga.titolo?riga.titolo+". ":"")+"Città per città: minime, massime, pioggia ora per ora, raffiche, neve e zero termico.",urlDaGiorno(riga.giorno));
+    else if(rt.tipo==="regione"){ const r=regioneDaSlug(rt.regione); const x=(riga.regioni||{})[rt.regione]||{}; seo("Meteo "+r.nome+" oggi · Iattualità",(x.testo||("Previsioni per i capoluoghi di provincia della regione "+r.nome+"."))+"","/meteo/"+rt.regione); }
+    return ()=>{ document.title="Iattualità · L'informazione intelligente e in tempo reale"; const c=document.querySelector('link[rel="canonical"]'); if(c)c.setAttribute("href",SITO+"/"); };
+  },[riga,path]);
+
+  let corpo;
+  if(rt.tipo==="nessuna") corpo=<Stato testo="Questa pagina del meteo non esiste"/>;
+  else if((stato.carica&&!riga)||(rt.tipo!=="giorno"&&riga&&!(stato.geo||GEO)&&!stato.errore)) corpo=<Stato testo="Carico le previsioni…"/>;
+  else if(stato.errore) corpo=<Stato testo="Non riesco a caricare il meteo" errore onRiprova={()=>setTent(t=>t+1)}/>;
+  else if(!riga) corpo=<Stato testo={rt.tipo==="giorno"?"Nessuna previsione salvata per questo giorno":"Le previsioni di oggi stanno arrivando"}/>;
+  else if(rt.tipo==="giorno") corpo=<Giorno riga={riga} archivio={stato.archivio||[]} onNav={onNav}/>;
+  else if(rt.tipo==="regione") corpo=<Regione riga={riga} slug={rt.regione} geo={stato.geo||GEO} onNav={onNav}/>;
+  else corpo=<Hub riga={riga} archivio={stato.archivio||[]} geo={stato.geo||GEO} onNav={onNav}/>;
+  return <div style={{background:M.bg,color:M.ink,fontFamily:"Barlow",minHeight:"70vh"}}>
+    <main id="top" style={{maxWidth:1200,margin:"0 auto",padding:"28px 18px 56px",display:"flex",flexDirection:"column",gap:44,boxSizing:"border-box"}}>{corpo}</main>
+  </div>;
+}
