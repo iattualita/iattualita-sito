@@ -928,7 +928,8 @@ function RubricaHero({item,onOpen}){
 
 // In home, sotto le schede: l'ultimo TG e l'ultimo meteo, se esistono.
 function RubricheStrip({news,onSerie}){
-  const ultime=Object.keys(RUBRICHE).map(k=>({k,item:(news||[]).find(n=>n.serie===k)})).filter(x=>x.item);
+  // Il meteo non sta qui dal 27/11/2026: /meteo e' l'hub giornaliero, non piu' l'ultima edizione settimanale.
+  const ultime=Object.keys(RUBRICHE).filter(k=>k!=="Meteo").map(k=>({k,item:(news||[]).find(n=>n.serie===k)})).filter(x=>x.item);
   if(!ultime.length) return null;
   return (<div style={{display:"flex",flexWrap:"wrap",gap:12,marginTop:22}}>
     {ultime.map(({k,item})=>{ const yt=ytId(item.video); const img=item.image?imgCDN(item.image,200):(yt?"https://img.youtube.com/vi/"+yt+"/hqdefault.jpg":null); return (
