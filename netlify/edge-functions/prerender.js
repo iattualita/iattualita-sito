@@ -1042,6 +1042,8 @@ export const config = {
     "/email-logo.png",
     "/email-testata.png",
     "/meteo-mappe.json", // contorni delle regioni per /meteo
+    "/meteo-comuni.json",
+    "/meteo-comuni-punti.json",
     "/robots.txt",
     "/llms.txt",
     "/*.xml",        // sitemap.xml, news-sitemap.xml, rss.xml: edge function proprie
