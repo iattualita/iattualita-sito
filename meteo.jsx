@@ -119,7 +119,30 @@ function Allerte({riga,slug}){
   </div>;
 }
 
-function Grafico({punti,scelte,iniziale,nota,onCambia}){
+// Previsioni ora per ora: 24 colonne con ora, icona, temperatura e pioggia (barretta + mm).
+// Si apre sull'ora attuale; se il giorno e' oggi, le ore passate sono attenuate.
+// I giorni salvati prima del 27/11/2026 non hanno "orario": resta il grafico della sola pioggia.
+const oggiIt=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Rome"}).format(new Date());
+const oraIt=()=>Number(new Intl.DateTimeFormat("it-IT",{timeZone:"Europe/Rome",hour:"2-digit",hour12:false}).format(new Date()));
+function Orario({p,giorno}){
+  const box=useRef(null);
+  const oggi=giorno===oggiIt(), adesso=oggi?oraIt():-1;
+  const mx=Math.max(1,...p.orario.map(x=>x.mm||0));
+  useEffect(()=>{ const el=box.current; if(!el||adesso<0) return; const c=el.querySelector('[data-ora="'+adesso+'"]'); if(c) el.scrollLeft=Math.max(0,c.offsetLeft-el.offsetLeft-8); },[p.nome,giorno]);
+  return <div ref={box} role="list" aria-label={"Previsioni ora per ora a "+p.nome} style={{display:"flex",overflowX:"auto",gap:6,paddingBottom:6,scrollbarWidth:"thin"}}>
+    {p.orario.map(x=>{ const passata=oggi&&x.h<adesso, ora=x.h===adesso, notte=x.h<7||x.h>=17, piove=(x.mm||0)>=0.1;
+      return <div key={x.h} data-ora={x.h} role="listitem" title={String(x.h).padStart(2,"0")+":00 · "+(DESC[x.cod]||"")+(x.t!=null?", "+x.t+"°":"")+(piove?", "+virg(x.mm)+" mm":"")}
+        style={{flex:"0 0 64px",display:"flex",flexDirection:"column",alignItems:"center",gap:6,padding:"10px 4px",borderRadius:12,background:ora?M.navy:M.bg,color:ora?"#fff":M.ink,opacity:passata?.45:1}}>
+        <span style={{fontSize:13,fontWeight:700,color:ora?"#fff":M.gray}}>{ora?"Ora":String(x.h).padStart(2,"0")+":00"}</span>
+        <Icona cod={x.cod} s={28} notte={notte}/>
+        <span style={{fontSize:18,fontWeight:700}}>{x.t!=null?x.t+"°":"–"}</span>
+        <span style={{height:34,width:14,display:"flex",alignItems:"flex-end",background:ora?"rgba(255,255,255,.15)":"#E3E8F1",borderRadius:4}}><span style={{width:"100%",borderRadius:4,background:ora?"#9CC0F5":M.rain,height:(piove?Math.max(x.mm/mx*100,8):0)+"%"}}/></span>
+        <span style={{fontSize:12.5,fontWeight:700,color:piove?(ora?"#9CC0F5":M.rain):(ora?"#C9D4E8":M.gray)}}>{piove?virg(x.mm)+" mm":"0 mm"}</span>
+      </div>; })}
+  </div>;
+}
+
+function Grafico({punti,scelte,iniziale,nota,onCambia,giorno}){
   const [c,setC0]=useState(iniziale);
   const setC=(n)=>{ setC0(n); onCambia&&onCambia(n); };
   const p=punti.find(x=>x.nome===c)||punti[0];
@@ -127,21 +150,23 @@ function Grafico({punti,scelte,iniziale,nota,onCambia}){
   const arr=(p.ore||[]).map(v=>v||0);
   const mx=Math.max(0,...arr), tot=arr.reduce((a,b)=>a+b,0);
   const altri=punti.filter(x=>scelte.indexOf(x.nome)<0);
+  const conOrario=Array.isArray(p.orario)&&p.orario.length===24;
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <Intestazione titolo="Quando piove, ora per ora">
-      <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
+    <Intestazione titolo={conOrario?"Previsioni ora per ora":"Quando piove, ora per ora"}>
+      {(scelte.length>1||altri.length>0)&&<div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
         {scelte.map(n=><button key={n} onClick={()=>setC(n)} style={pill(c===n)}>{n}</button>)}
         {altri.length>0&&<select value={scelte.indexOf(c)<0?c:""} onChange={e=>e.target.value&&setC(e.target.value)} aria-label="Scegli un'altra città" style={{border:"2px solid "+M.blue,borderRadius:999,padding:"8px 12px",fontSize:15,fontWeight:700,color:M.blue,background:"#fff",fontFamily:"Barlow"}}>
           <option value="">Altra città…</option>
           {altri.map(x=><option key={x.nome} value={x.nome}>{x.nome}</option>)}
         </select>}
-      </div>
+      </div>}
     </Intestazione>
     <div style={{...card,padding:24,display:"flex",flexDirection:"column",gap:12}}>
       <div style={{display:"flex",flexWrap:"wrap",gap:"6px 22px",alignItems:"baseline"}}>
         <span style={{fontFamily:"Anton",fontSize:30,color:M.navy}}>{p.nome}</span>
-        <span style={{fontSize:17,color:M.soft}}>Totale della giornata: <b>{mm(tot)}</b>{mx>0&&<React.Fragment> · picco alle <b>{String(arr.indexOf(mx)).padStart(2,"0")}:00</b> ({virg(mx)} mm)</React.Fragment>}</span>
+        <span style={{fontSize:17,color:M.soft}}>Pioggia nella giornata: <b>{mm(tot)}</b>{mx>0&&<React.Fragment> · picco alle <b>{String(arr.indexOf(mx)).padStart(2,"0")}:00</b> ({virg(mx)} mm)</React.Fragment>}</span>
       </div>
+      {conOrario? <Orario p={p} giorno={giorno||p.giorno}/> : <React.Fragment>
       <div role="img" aria-label={"Pioggia ora per ora a "+p.nome+": totale "+mm(tot)} style={{display:"flex",alignItems:"flex-end",gap:"clamp(1px,.4vw,4px)",height:190,borderBottom:"2px solid #CBD3E1"}}>
         {arr.map((v,i)=><div key={i} title={String(i).padStart(2,"0")+":00 · "+virg(v)+" mm"} style={{flex:"1 1 0",minWidth:0,height:"100%",display:"flex",alignItems:"flex-end"}}>
           <div style={{width:"100%",borderRadius:"4px 4px 0 0",background:M.rain,height:(mx>0?Math.max(v/mx*100,v>0?3:0):0)+"%"}}/>
@@ -149,7 +174,8 @@ function Grafico({punti,scelte,iniziale,nota,onCambia}){
       </div>
       <div style={{display:"flex",justifyContent:"space-between",fontSize:13,color:M.gray,fontWeight:600}}>{["00","04","08","12","16","20","23"].map(x=><span key={x}>{x}</span>)}</div>
       {mx===0&&<span style={{fontSize:15,color:M.soft}}>Nessuna pioggia prevista a {p.nome}.</span>}
-      <span style={{fontSize:13.5,color:M.gray}}>{nota||"Millimetri di pioggia per ora, modello ICON-2I."}</span>
+      </React.Fragment>}
+      <span style={{fontSize:13.5,color:M.gray}}>{conOrario?"Cielo dal consenso dei modelli, temperatura e pioggia ora per ora (ICON-2I). Scorri di lato per tutte le ore.":(nota||"Millimetri di pioggia per ora, modello ICON-2I.")}</span>
     </div>
   </div>;
 }
@@ -463,7 +489,7 @@ function Giorno({riga,archivio,onNav}){
       </div>
     </section>
 
-    <Grafico punti={punti} scelte={scelte} iniziale={scelte[0]}/>
+    <Grafico giorno={riga.giorno} punti={punti} scelte={scelte} iniziale={scelte[0]}/>
 
     <section style={{display:"flex",flexWrap:"wrap",gap:22,alignItems:"stretch"}}>
       <div style={{...card,flex:"1 1 420px",minWidth:0,padding:24,display:"flex",flexDirection:"column",gap:14}}>
@@ -558,7 +584,7 @@ function Regione({riga,slug,geo,onNav}){
 
     <Allerte riga={riga} slug={slug}/>
 
-    {punti.length>0&&<Grafico key={slug+"|"+(scelta?scelta.nome:"")} punti={punti} scelte={punti.slice(0,6).map(p=>p.nome)} iniziale={scelta?scelta.nome:iniziale} onCambia={(n)=>setSc({slug,nome:n})}/>}
+    {punti.length>0&&<Grafico key={slug+"|"+(scelta?scelta.nome:"")} giorno={riga.giorno} punti={punti} scelte={punti.slice(0,6).map(p=>p.nome)} iniziale={scelta?scelta.nome:iniziale} onCambia={(n)=>setSc({slug,nome:n})}/>}
 
     {scelta&&(scelta.tend||[]).length>0&&<section style={{display:"flex",flexDirection:"column",gap:14}}>
       <Intestazione titolo={"I prossimi giorni "+a_(scelta.nome)} sotto="Tendenza ECMWF. Oltre domani può cambiare."/>
@@ -622,7 +648,7 @@ function Citta({riga,slug,nome,onNav}){
       <Fasce p={p}/>
     </section>
 
-    <Grafico punti={[p]} scelte={[p.nome]} iniziale={p.nome}/>
+    <Grafico giorno={g} punti={[p]} scelte={[p.nome]} iniziale={p.nome}/>
 
     {(p.tend||[]).length>0&&<section style={{display:"flex",flexDirection:"column",gap:14}}>
       <Intestazione titolo={"I prossimi giorni "+a_(nome)} sotto="Tendenza ECMWF. Oltre domani può cambiare."/>
@@ -740,7 +766,7 @@ function Comune({slug,cs,onNav}){
       <Fasce p={p}/>
     </section>
 
-    <Grafico punti={[pp]} scelte={[c.nome]} iniziale={c.nome}/>
+    <Grafico giorno={p.giorno} punti={[pp]} scelte={[c.nome]} iniziale={c.nome}/>
 
     {(p.tend||[]).length>0&&<section style={{display:"flex",flexDirection:"column",gap:14}}>
       <Intestazione titolo={"I prossimi giorni "+a_(c.nome)} sotto="Tendenza ECMWF. Oltre domani può cambiare."/>

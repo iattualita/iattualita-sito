@@ -130,6 +130,21 @@ function fasceDi(giorno: string, fonti: { H: Serie | undefined; nuv: string }[],
   });
 }
 
+// Ora per ora (0-23): icona dal consenso delle nuvole di quell'ora, pioggia di quell'ora, temperatura.
+function orarioDi(giorno: string, fonti: { H: Serie | undefined; nuv: string }[], ore: (number | null)[], Ht: Serie | undefined, Ht2: Serie | undefined, neve: number) {
+  return Array.from({ length: 24 }, (_, h) => {
+    const ora = `${giorno}T${String(h).padStart(2, "0")}:00`;
+    const v = fonti.map((x) => serieOra(x.H, x.nuv, ora)).filter((x): x is number => x != null);
+    const mm = ore[h] ?? 0;
+    const t = serieOra(Ht, "temperature_2m", ora) ?? serieOra(Ht2, "temperature_2m", ora);
+    let cod: number | null;
+    if (mm >= 0.2) cod = neve >= 0.5 && t != null && t <= 1.5 ? (mm >= 1 ? 73 : 71) : mm >= 4 ? 65 : mm >= 1.5 ? 63 : 61;
+    else if (v.length) { const m = mediana(v); cod = m < 20 ? 0 : m < 45 ? 1 : m < 75 ? 2 : 3; }
+    else cod = null;
+    return { h, cod, t: r0(t), mm: r1(mm) };
+  });
+}
+
 function puntoDa(p: typeof PUNTI[number], A: any, E: any, X: any, giorno: string) {
   const Da = A?.daily ?? {}, De = E?.daily ?? {};
   const ia = (Da.time ?? []).indexOf(giorno), ie = (De.time ?? []).indexOf(giorno);
@@ -146,6 +161,7 @@ function puntoDa(p: typeof PUNTI[number], A: any, E: any, X: any, giorno: string
     neve: r1(pick("snowfall_sum")) ?? 0, raff: r0(pick("wind_gusts_10m_max")), dir: r0(pick("wind_direction_10m_dominant")),
     ore: ore.slice(0, 24).map((x) => r1(x ?? 0)), zt, tend,
     fasce: fasceDi(giorno, [{ H: Ha, nuv: "cloud_cover" }, ...altri], ore, Ha, He, r1(pick("snowfall_sum")) ?? 0),
+    orario: orarioDi(giorno, [{ H: Ha, nuv: "cloud_cover" }, ...altri], ore, Ha, He, r1(pick("snowfall_sum")) ?? 0),
     ecm: ie >= 0 ? { max: r1(De.temperature_2m_max[ie]), mm: r1(De.precipitation_sum[ie]) } : null,
     icon_ok: ia >= 0 && Da.temperature_2m_max?.[ia] != null,
   };
