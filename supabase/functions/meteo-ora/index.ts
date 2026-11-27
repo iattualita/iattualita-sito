@@ -5,6 +5,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // Legge i bollettini METAR degli aeroporti (aviationweather.gov, servizio pubblico NOAA, gratuito)
 // e salva in public.meteo_ora una riga per stazione. Lo chiama pg_cron ogni 30 minuti (:27 e :57,
 // subito dopo le emissioni delle :20 e delle :50). Accesso: header x-meteo-cron (impronta in meteo_cron).
+// Ogni regione deve avere il suo "Adesso": dove manca l'aeroporto si aggiunge una stima (stima: true).
 
 // [ICAO, città mostrata, slug regione]
 const STAZIONI: [string, string, string][] = [
@@ -20,11 +21,24 @@ const STAZIONI: [string, string, string][] = [
   ["LIRA", "Roma", "lazio"], ["LIRF", "Fiumicino", "lazio"],
   ["LIBP", "Pescara", "abruzzo"],
   ["LIRN", "Napoli", "campania"], ["LIRI", "Salerno", "campania"],
-  ["LIBD", "Bari", "puglia"], ["LIBR", "Brindisi", "puglia"], ["LIBG", "Taranto", "puglia"],
+  ["LIRM", "Caserta (Grazzanise)", "campania"],
+  ["LIBD", "Bari", "puglia"], ["LIBA", "Foggia (Amendola)", "puglia"], ["LIBV", "Gioia del Colle", "puglia"], ["LIBN", "Lecce (Galatina)", "puglia"], ["LIBR", "Brindisi", "puglia"], ["LIBG", "Taranto", "puglia"],
   ["LICA", "Lamezia Terme", "calabria"], ["LICR", "Reggio Calabria", "calabria"], ["LIBC", "Crotone", "calabria"],
   ["LICJ", "Palermo", "sicilia"], ["LICC", "Catania", "sicilia"], ["LICT", "Trapani", "sicilia"], ["LICB", "Comiso", "sicilia"],
   ["LIEE", "Cagliari", "sardegna"], ["LIEO", "Olbia", "sardegna"], ["LIEA", "Alghero", "sardegna"],
 ];
+
+// Dove non c'e' un aeroporto con bollettino: stima del modello per il momento attuale
+// (Open-Meteo "current", dati a 15 minuti), segnata come stima e mai spacciata per osservazione.
+// [nome, regione, lat, lon] — si usano solo se la regione resta senza stazioni osservate.
+const STIME: [string, string, number, number][] = [
+  ["Campobasso", "molise", 41.558, 14.659], ["Isernia", "molise", 41.588, 14.226],
+  ["Potenza", "basilicata", 40.639, 15.805], ["Matera", "basilicata", 40.668, 16.598],
+  ["Trento", "trentino-alto-adige", 46.069, 11.121], ["L'Aquila", "abruzzo", 42.351, 13.398],
+  ["Napoli", "campania", 40.84, 14.251], ["Catanzaro", "calabria", 38.906, 16.594],
+  ["Aosta", "valle-daosta", 45.738, 7.32], ["Perugia", "umbria", 43.107, 12.388], ["Ancona", "marche", 43.617, 13.519],
+];
+const DESC: Record<number, string> = { 0: "sereno", 1: "poco nuvoloso", 2: "parzialmente nuvoloso", 3: "coperto", 45: "nebbia", 48: "nebbia", 51: "pioviggine", 53: "pioviggine", 55: "pioviggine", 56: "pioviggine gelata", 57: "pioviggine gelata", 61: "pioggia debole", 63: "pioggia", 65: "pioggia forte", 66: "pioggia gelata", 67: "pioggia gelata", 71: "neve debole", 73: "neve", 75: "neve forte", 77: "neve", 80: "rovesci", 81: "rovesci", 82: "rovesci forti", 85: "rovesci di neve", 86: "rovesci di neve", 95: "temporale", 96: "temporale", 99: "temporale" };
 
 async function sha256(t: string) {
   const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t));
@@ -85,9 +99,36 @@ Deno.serve(async (req) => {
     const c = cielo(m);
     const kmh = (kt: any) => (typeof kt === "number" ? Math.round(kt * 1.852) : null);
     return { icao, citta, regione, ...c, t: Math.round(m.temp), vento: kmh(m.wspd), raffica: kmh(m.wgst), ora: ora(quando.toISOString()), quando: quando.toISOString() };
-  }).filter(Boolean);
+  }).filter(Boolean) as any[];
+
+  // Regioni (o capoluoghi di regione) senza osservazione: stima del modello.
+  // Una stima per il capoluogo si aggiunge se la regione non ha stazioni, oppure se e' un capoluogo
+  // di regione senza aeroporto in citta' (Trento, L'Aquila, Napoli se Capodichino tace, ecc.).
+  const conOss = new Set(stazioni.map((x) => x.citta));
+  const regConOss = new Set(stazioni.map((x) => x.regione));
+  const daStimare = STIME.filter(([nome, reg]) => !conOss.has(nome) && (!regConOss.has(reg) || ["Trento", "L'Aquila", "Napoli", "Catanzaro", "Aosta", "Perugia", "Ancona", "Campobasso", "Potenza"].includes(nome)));
+  const avvisi: string[] = [];
+  if (daStimare.length) {
+    let tmp: string | null = null;
+    try {
+      const TOKEN = crypto.randomUUID() + crypto.randomUUID(); tmp = await sha256(TOKEN);
+      await db.from("tts_token").insert({ hash: tmp, scade: new Date(Date.now() + 5 * 60000).toISOString() });
+      const rr = await fetch((Deno.env.get("SUPABASE_URL") ?? "") + "/functions/v1/meteo-dati", { method: "POST", headers: { "x-iattualita-token": TOKEN, "Content-Type": "application/json" },
+        body: JSON.stringify({ api: "forecast", params: { latitude: daStimare.map((x) => x[2]).join(","), longitude: daStimare.map((x) => x[3]).join(","), current: "temperature_2m,weather_code,wind_speed_10m,wind_gusts_10m", timezone: "Europe/Rome" } }) });
+      const d = await rr.json(); const arr = Array.isArray(d) ? d : [d];
+      daStimare.forEach(([nome, reg], i) => {
+        const c = arr[i]?.current; if (!c || c.temperature_2m == null) return;
+        const quando = new Date(String(c.time) + ":00" + (arr[i].utc_offset_seconds === 7200 ? "+02:00" : "+01:00"));
+        const cod = Number(c.weather_code);
+        stazioni.push({ icao: "stima-" + nome, citta: nome, regione: reg, cod, desc: DESC[cod] ?? "", t: Math.round(c.temperature_2m), vento: c.wind_speed_10m != null ? Math.round(c.wind_speed_10m) : null, raffica: c.wind_gusts_10m != null ? Math.round(c.wind_gusts_10m) : null, ora: ora(quando.toISOString()), quando: quando.toISOString(), stima: true });
+      });
+    } catch (e) { avvisi.push("stime: " + String((e as Error)?.message ?? e)); }
+    finally { if (tmp) await db.from("tts_token").delete().eq("hash", tmp); }
+  }
+  const ordReg = ["piemonte","valle-daosta","lombardia","trentino-alto-adige","veneto","friuli-venezia-giulia","liguria","emilia-romagna","toscana","umbria","marche","lazio","abruzzo","molise","campania","puglia","basilicata","calabria","sicilia","sardegna"];
+  stazioni.sort((a, b) => ordReg.indexOf(a.regione) - ordReg.indexOf(b.regione) || Number(!!a.stima) - Number(!!b.stima));
 
   const { error } = await db.from("meteo_ora").upsert({ id: 1, stazioni, aggiornato_il: new Date().toISOString() });
   if (error) return j({ errore: "upsert", dettaglio: error.message }, 500);
-  return j({ ok: true, stazioni: stazioni.length, su: STAZIONI.length });
+  return j({ ok: true, osservate: stazioni.filter((x) => !x.stima).length, stime: stazioni.filter((x) => x.stima).length, regioni: new Set(stazioni.map((x) => x.regione)).size, avvisi });
 });
