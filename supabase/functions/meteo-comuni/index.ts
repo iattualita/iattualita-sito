@@ -58,6 +58,18 @@ function fasceDi(g: string, fonti: Serie[], ore: (number | null)[], neve: number
     return { f, cod, t: r0(t), mm: r1(mm) };
   });
 }
+function orarioDi(g: string, fonti: Serie[], ore: (number | null)[], neve: number) {
+  return Array.from({ length: 24 }, (_, h) => {
+    const v = fonti.map((H) => serieOra(H, "cloud_cover", hh(g, h))).filter((x): x is number => x != null);
+    const mm = ore[h] ?? 0;
+    const t = fonti.map((H) => serieOra(H, "temperature_2m", hh(g, h))).find((x) => x != null) ?? null;
+    let cod: number | null;
+    if (mm >= 0.2) cod = neve >= 0.5 && t != null && t <= 1.5 ? (mm >= 1 ? 73 : 71) : mm >= 4 ? 65 : mm >= 1.5 ? 63 : 61;
+    else if (v.length) { const m = mediana(v); cod = m < 20 ? 0 : m < 45 ? 1 : m < 75 ? 2 : 3; }
+    else cod = null;
+    return { h, cod, t: r0(t), mm: r1(mm) };
+  });
+}
 function calcola(A: any, E: any, g: string) {
   const Da = A?.daily ?? {}, De = E?.daily ?? {};
   const ia = (Da.time ?? []).indexOf(g), ie = (De.time ?? []).indexOf(g);
@@ -72,7 +84,7 @@ function calcola(A: any, E: any, g: string) {
     cod: codDiurno(pick("weather_code"), g, [Ha, He], ore.length >= 24 ? ore.slice(6, 24).reduce((a: number, b) => a + (b ?? 0), 0) : pick("precipitation_sum")),
     min: r1(pick("temperature_2m_min")), max: r1(pick("temperature_2m_max")), mm: r1(pick("precipitation_sum")) ?? 0, neve,
     raff: r0(pick("wind_gusts_10m_max")), dir: r0(pick("wind_direction_10m_dominant")),
-    ore: ore.slice(0, 24).map((x) => r1(x ?? 0)), fasce: fasceDi(g, [Ha, He], ore, neve), tend,
+    ore: ore.slice(0, 24).map((x) => r1(x ?? 0)), fasce: fasceDi(g, [Ha, He], ore, neve), orario: orarioDi(g, [Ha, He], ore, neve), tend,
     icon_ok: ia >= 0 && Da.temperature_2m_max?.[ia] != null,
   };
 }
