@@ -388,7 +388,8 @@ function Giorno({riga,archivio,onNav}){
     <section style={{display:"flex",flexDirection:"column",gap:14}}>
       <div style={{display:"flex",flexWrap:"wrap",justifyContent:"space-between",gap:12,alignItems:"center",fontSize:15}}>
         <span style={{color:M.gray}}><Link href="/meteo" onNav={onNav} style={{fontWeight:600,color:M.blue}}>Meteo</Link> / {breve(g)}</span>
-        <span style={{display:"flex",gap:10}}>
+        <span style={{display:"flex",flexWrap:"wrap",gap:10}}>
+          <Link href="/meteo" onNav={onNav} style={{background:"#fff",borderRadius:8,padding:"9px 14px",textDecoration:"none",fontWeight:700,color:M.navy}}>← Pagina meteo</Link>
           {prev&&<Link href={urlDaGiorno(prev)} onNav={onNav} style={nav}>← {breve(prev)}</Link>}
           {next&&<Link href={urlDaGiorno(next)} onNav={onNav} style={nav}>{breve(next)} →</Link>}
         </span>
