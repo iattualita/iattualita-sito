@@ -673,12 +673,12 @@ function ComuniRegione({slug,onNav}){
   return <section style={{display:"flex",flexDirection:"column",gap:12}}>
     <Intestazione titolo={"Tutti i comuni ("+qui.length+")"} sotto="Ogni comune ha la sua pagina: oggi, mattina, pomeriggio e sera e i prossimi giorni."/>
     {prov.map(pv=>{ const l=qui.filter(x=>x.prov===pv);
-      return <details key={pv} style={{...card,padding:"12px 18px"}}>
-        <summary style={{cursor:"pointer",fontWeight:700,color:M.navy,fontSize:16}}>Provincia {pv} · {l.length} comuni</summary>
+      return <div key={pv} style={{...card,padding:"14px 18px"}}>
+        <h3 style={{margin:0,fontWeight:700,color:M.navy,fontSize:16,fontFamily:"Barlow"}}>Provincia {pv} · {l.length} comuni</h3>
         <div style={{display:"flex",flexWrap:"wrap",gap:"6px 14px",marginTop:10}}>
           {l.map(x=><Link key={x.slug} href={urlComune(x)} onNav={onNav} style={{color:M.blue,fontWeight:600,fontSize:15,textDecoration:"none"}}>{x.nome}</Link>)}
         </div>
-      </details>; })}
+      </div>; })}
   </section>;
 }
 
