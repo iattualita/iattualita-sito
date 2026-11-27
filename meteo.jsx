@@ -571,6 +571,8 @@ function Regione({riga,slug,geo,onNav}){
       </div>
     </section>}
 
+    <ComuniRegione slug={slug} onNav={onNav}/>
+
     <section style={{display:"flex",flexWrap:"wrap",gap:10,alignItems:"center"}}>
       <span style={{fontSize:16,fontWeight:700,color:M.navy,marginRight:6}}>Regioni vicine</span>
       {r.vicine.map(v=><Link key={v} href={"/meteo/"+v} onNav={onNav} style={{background:"#fff",borderRadius:999,padding:"9px 16px",textDecoration:"none",fontWeight:700,color:M.blue}}>{regNome(v)}</Link>)}
@@ -642,6 +644,127 @@ function Citta({riga,slug,nome,onNav}){
   </React.Fragment>;
 }
 
+// ---------- tutti i comuni (dal 27/11/2026) ----------
+// /meteo-comuni.json: [nome, indice regione, sigla provincia, slug se diverso dal nome, capoluogo]
+// Si scarica solo quando serve (ricerca, pagina di una regione o di un comune).
+let COMUNI=null, COMUNI_P=null;
+function caricaComuni(){
+  if(COMUNI) return Promise.resolve(COMUNI);
+  if(!COMUNI_P) COMUNI_P=fetch("/meteo-comuni.json").then(r=>{ if(!r.ok) throw new Error("comuni "+r.status); return r.json(); })
+    .then(j=>(COMUNI=j.comuni.map(c=>({nome:c[0],reg:j.regioni[c[1]],prov:c[2],slug:c[3]||cittaSlug(c[0]),cap:!!c[4]}))))
+    .catch(e=>{ COMUNI_P=null; throw e; });
+  return COMUNI_P;
+}
+function useComuni(attivo=true){
+  const [c,setC]=useState(COMUNI);
+  useEffect(()=>{ if(!attivo||COMUNI){ if(COMUNI&&!c) setC(COMUNI); return; } let vivo=true; caricaComuni().then(x=>{ if(vivo) setC(x); }).catch(()=>{}); return ()=>{ vivo=false; }; },[attivo]);
+  return c;
+}
+const urlComune=(x)=>"/meteo/"+x.reg+"/"+x.slug;
+
+// Elenco di tutti i comuni di una regione, per provincia (nella pagina della regione)
+function ComuniRegione({slug,onNav}){
+  const tutti=useComuni();
+  if(!tutti) return null;
+  const qui=tutti.filter(x=>x.reg===slug&&!x.cap);
+  if(!qui.length) return null;
+  const prov=[...new Set(qui.map(x=>x.prov))].sort();
+  return <section style={{display:"flex",flexDirection:"column",gap:12}}>
+    <Intestazione titolo={"Tutti i comuni ("+qui.length+")"} sotto="Ogni comune ha la sua pagina: oggi, mattina, pomeriggio e sera e i prossimi giorni."/>
+    {prov.map(pv=>{ const l=qui.filter(x=>x.prov===pv);
+      return <details key={pv} style={{...card,padding:"12px 18px"}}>
+        <summary style={{cursor:"pointer",fontWeight:700,color:M.navy,fontSize:16}}>Provincia {pv} · {l.length} comuni</summary>
+        <div style={{display:"flex",flexWrap:"wrap",gap:"6px 14px",marginTop:10}}>
+          {l.map(x=><Link key={x.slug} href={urlComune(x)} onNav={onNav} style={{color:M.blue,fontWeight:600,fontSize:15,textDecoration:"none"}}>{x.nome}</Link>)}
+        </div>
+      </details>; })}
+  </section>;
+}
+
+// ---------- /meteo/<regione>/<comune> (comuni che non sono capoluogo) ----------
+const FUNZ_COMUNI=SUPA+"/functions/v1/meteo-comuni";
+function Comune({slug,cs,onNav}){
+  const r=regioneDaSlug(slug);
+  const [st,setSt]=useState({carica:true});
+  const tutti=useComuni();
+  useEffect(()=>{
+    let vivo=true; setSt({carica:true});
+    fetch(FUNZ_COMUNI,{method:"POST",headers:{"Content-Type":"application/json",apikey:KEY},body:JSON.stringify({comune:{regione:slug,slug:cs}})})
+      .then(x=>x.status===404?{nessuno:true}:x.json())
+      .then(d=>{ if(!vivo) return; if(d.nessuno) setSt({nessuno:true}); else if(d.comune) setSt({c:d.comune}); else throw new Error(d.errore||"errore"); })
+      .catch(()=>fetch(SUPA+"/rest/v1/meteo_comuni?select=*&regione=eq."+slug+"&slug=eq."+cs,{headers:{apikey:KEY}}).then(x=>x.json()).then(a=>{ if(vivo) setSt(a[0]?{c:a[0]}:{nessuno:true}); }).catch(()=>{ if(vivo) setSt({errore:true}); }));
+    return ()=>{ vivo=false; };
+  },[slug,cs]);
+  useEffect(()=>{ const c=st.c; if(!c) return; const p=c.dati||{};
+    seo("Meteo "+c.nome+" oggi e prossimi giorni · Iattualità","Meteo a "+c.nome+" ("+c.prov+") oggi: "+(p.cod!=null?(DESC[p.cod]||"")+", minima "+int(p.min)+"°, massima "+int(p.max)+"°"+(p.mm>=0.5?", "+virg(p.mm)+" mm di pioggia":"")+". ":"")+"Mattina, pomeriggio e sera, pioggia ora per ora e tendenza dei prossimi giorni.","/meteo/"+slug+"/"+cs); },[st.c]);
+  if(st.carica) return <Stato testo="Carico le previsioni…"/>;
+  if(st.nessuno) return <Stato testo="Questo comune non esiste"/>;
+  if(st.errore||!st.c) return <Stato testo="Non riesco a caricare il meteo" errore onRiprova={()=>setSt({carica:true})}/>;
+  const c=st.c, p=c.dati;
+  const vicini=(tutti||[]).filter(x=>x.prov===c.prov&&x.slug!==c.slug&&x.reg===slug);
+  const capo=(tutti||[]).find(x=>x.prov===c.prov&&x.cap);
+  const testata=<section style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{display:"flex",flexWrap:"wrap",justifyContent:"space-between",gap:12,alignItems:"center",fontSize:15}}>
+        <span style={{color:M.gray}}><Link href="/meteo" onNav={onNav} style={{fontWeight:600,color:M.blue}}>Meteo</Link> / <Link href={"/meteo/"+slug} onNav={onNav} style={{fontWeight:600,color:M.blue}}>{r.nome}</Link> / {c.nome}</span>
+        <span style={{display:"flex",flexWrap:"wrap",gap:10}}>
+          <Link href={"/meteo/"+slug} onNav={onNav} style={{background:"#fff",borderRadius:8,padding:"9px 14px",textDecoration:"none",fontWeight:700,color:M.navy}}>← {r.nome}</Link>
+          <Link href="/meteo" onNav={onNav} style={{background:"#fff",borderRadius:8,padding:"9px 14px",textDecoration:"none",fontWeight:700,color:M.navy}}>Tutta l'Italia</Link>
+        </span>
+      </div>
+      <span style={kicker}>{c.nome} ({c.prov}){p&&p.giorno?" · "+dataLunga(p.giorno):""}</span>
+      <h1 style={{...h1,fontSize:"clamp(36px,6.4vw,62px)"}}>Meteo {c.nome} oggi</h1>
+    </section>;
+  if(!p) return <React.Fragment>{testata}<Stato testo="Le previsioni di questo comune arrivano entro le 7 di ogni mattina: riprova tra poco."/></React.Fragment>;
+  const frase=[cap((DESC[p.cod]||"").toLowerCase()),"minima "+int(p.min)+"°, massima "+int(p.max)+"°",
+    p.mm>=0.5?virg(p.mm)+" mm di pioggia"+(Array.isArray(p.fasce)&&p.fasce.reduce((a,x)=>a+(x.mm||0),0)<0.5?" nella notte":""):"niente pioggia",
+    p.raff!=null?"raffiche fino a "+int(p.raff)+" km/h"+(p.dir!=null?" da "+bussola(p.dir):""):null].filter(Boolean).join(", ")+".";
+  const pp={...p,nome:c.nome};
+  const ora=c.aggiornato_il?new Intl.DateTimeFormat("it-IT",{timeZone:"Europe/Rome",hour:"2-digit",minute:"2-digit"}).format(new Date(c.aggiornato_il)):null;
+  return <React.Fragment>
+    {testata}
+    <p style={{...lead,marginTop:-30}}>{frase}</p>
+    <div style={{marginTop:-30}}><Condividi url={"/meteo/"+slug+"/"+cs} testo={"Il meteo di oggi a "+c.nome}/></div>
+
+    <Adesso slug={slug} citta={capo?capo.nome:null}/>
+
+    <section style={{...card,display:"flex",flexDirection:"column",gap:14,borderLeft:"6px solid "+M.gold}}>
+      <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:"10px 24px"}}>
+        <span style={{display:"flex",alignItems:"center",gap:10}}><Icona cod={p.cod} s={52}/><span style={{fontFamily:"Anton",fontSize:44,color:M.ink}}>{int(p.min)}° / {int(p.max)}°</span></span>
+        <span style={{display:"flex",flexDirection:"column",gap:4,fontSize:17,color:M.soft}}>
+          <span style={{fontWeight:700,color:M.navy}}>{DESC[p.cod]||""}</span>
+          <span><span style={{color:M.rain,fontWeight:700}}>{mm(p.mm)}</span>{p.raff!=null?" · raffica "+int(p.raff)+" km/h"+(p.dir!=null?" da "+bussola(p.dir):""):""}{p.neve>=0.1?" · neve "+virg(p.neve)+" cm":""}</span>
+          {ora&&<span style={{fontSize:14,color:M.gray}}>Aggiornato alle {ora}</span>}
+        </span>
+      </div>
+      <Fasce p={p}/>
+    </section>
+
+    <Grafico punti={[pp]} scelte={[c.nome]} iniziale={c.nome}/>
+
+    {(p.tend||[]).length>0&&<section style={{display:"flex",flexDirection:"column",gap:14}}>
+      <Intestazione titolo={"I prossimi giorni "+a_(c.nome)} sotto="Tendenza ECMWF. Oltre domani può cambiare."/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
+        {p.tend.map(t=><div key={t.d} style={{...card,padding:16,display:"flex",flexDirection:"column",gap:6,borderTop:"4px solid "+M.gold}}>
+          <span style={{fontFamily:"Anton",fontSize:21,color:M.navy}}>{nomeGiorno(t.d)}</span>
+          <span style={{fontSize:13,color:M.gray}}>{dataBreve(t.d)}</span>
+          <span style={{display:"flex",alignItems:"center",gap:8}}><Icona cod={t.cod} s={26}/><span style={{fontSize:18,fontWeight:700}}>{int(t.min)}° / {int(t.max)}°</span></span>
+          <span style={{fontSize:14,color:M.soft}}>{(DESC[t.cod]||"")+(t.mm>=0.5?", "+virg(t.mm)+" mm":"")}</span>
+        </div>)}
+      </div>
+    </section>}
+
+    {(capo||vicini.length>0)&&<section style={{display:"flex",flexDirection:"column",gap:10}}>
+      <span style={{fontSize:16,fontWeight:700,color:M.navy}}>Altri comuni della provincia</span>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        {capo&&<Link href={urlCitta(slug,capo.nome)} onNav={onNav} style={{background:M.navy,borderRadius:999,padding:"8px 14px",textDecoration:"none",fontWeight:700,color:"#fff"}}>{capo.nome}</Link>}
+        {vicini.filter(x=>!x.cap).slice(0,40).map(x=><Link key={x.slug} href={urlComune(x)} onNav={onNav} style={{background:"#fff",borderRadius:999,padding:"8px 14px",textDecoration:"none",fontWeight:700,color:M.blue}}>{x.nome}</Link>)}
+        {vicini.length>40&&<Link href={"/meteo/"+slug} onNav={onNav} style={{padding:"8px 6px",fontWeight:700,color:M.navy}}>Tutti i comuni →</Link>}
+      </div>
+    </section>}
+    <p style={{fontSize:13,color:M.gray,margin:0}}>Fonti: ItaliaMeteo-ARPAE ICON-2I ed ECMWF IFS (CC BY 4.0) via Open-Meteo. "Adesso": bollettini METAR degli aeroporti o stima del modello.</p>
+  </React.Fragment>;
+}
+
 // ---------- Cerca una citta' (solo pagine meteo) ----------
 // 110 capoluoghi + le 20 regioni, senza chiamate: l'elenco e' in shared/meteo-geo.js.
 const normC=(t)=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z]/g,"");
@@ -651,10 +774,13 @@ function Cerca({onNav}){
   const [q,setQ]=useState(""); const [sel,setSel]=useState(0); const [aperto,setAperto]=useState(false);
   const [top,setTop]=useState(0);
   useEffect(()=>{ const h=document.querySelector("header"); const f=()=>setTop(h?h.offsetHeight:0); f(); window.addEventListener("resize",f); return ()=>window.removeEventListener("resize",f); },[]);
+  const [voglio,setVoglio]=useState(false);
+  const tutti=useComuni(voglio);
   const n=normC(q);
-  const ris=n.length<2?[]:[...INDICE.filter(x=>normC(x.nome).startsWith(n)),...INDICE.filter(x=>!normC(x.nome).startsWith(n)&&normC(x.nome).includes(n))].slice(0,8);
+  const indice=tutti?[...INDICE,...tutti.filter(x=>!x.cap).map(x=>({nome:x.nome,slug:x.reg,reg:x.prov+" · "+regNome(x.reg),tipo:"comune",cs:x.slug}))]:INDICE;
+  const ris=n.length<2?[]:[...indice.filter(x=>normC(x.nome)===n),...indice.filter(x=>normC(x.nome)!==n&&normC(x.nome).startsWith(n)),...indice.filter(x=>!normC(x.nome).startsWith(n)&&normC(x.nome).includes(n))].slice(0,8);
   const vai=(x)=>{ if(!x) return; setQ(""); setAperto(false); setSel(0);
-    onNav(x.tipo==="citta"?urlCitta(x.slug,x.nome):"/meteo/"+x.slug); };
+    onNav(x.tipo==="citta"?urlCitta(x.slug,x.nome):x.tipo==="comune"?"/meteo/"+x.slug+"/"+x.cs:"/meteo/"+x.slug); };
   const tasto=(e)=>{ if(e.key==="ArrowDown"){ e.preventDefault(); setSel(i=>Math.min(i+1,ris.length-1)); }
     else if(e.key==="ArrowUp"){ e.preventDefault(); setSel(i=>Math.max(i-1,0)); }
     else if(e.key==="Enter"){ e.preventDefault(); vai(ris[sel]); }
@@ -663,17 +789,17 @@ function Cerca({onNav}){
     <div style={{maxWidth:1200,margin:"0 auto",position:"relative"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,background:"#fff",border:"2px solid "+M.line,borderRadius:12,padding:"0 14px"}}>
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke={M.gray} strokeWidth="2.2"/><path d="M15.5 15.5L21 21" stroke={M.gray} strokeWidth="2.2" strokeLinecap="round"/></svg>
-        <input type="search" value={q} placeholder="Cerca il meteo di una città o di una regione" aria-label="Cerca il meteo di una città o di una regione" role="combobox" aria-expanded={aperto&&ris.length>0} aria-controls="ia-cerca-lista" autoComplete="off"
-          onChange={e=>{ setQ(e.target.value); setSel(0); setAperto(true); }} onFocus={()=>setAperto(true)} onBlur={()=>setTimeout(()=>setAperto(false),150)} onKeyDown={tasto}
+        <input type="search" value={q} placeholder="Cerca il meteo di un comune o di una regione" aria-label="Cerca il meteo di un comune o di una regione" role="combobox" aria-expanded={aperto&&ris.length>0} aria-controls="ia-cerca-lista" autoComplete="off"
+          onChange={e=>{ setQ(e.target.value); setSel(0); setAperto(true); setVoglio(true); }} onFocus={()=>{ setAperto(true); setVoglio(true); }} onBlur={()=>setTimeout(()=>setAperto(false),150)} onKeyDown={tasto}
           style={{flex:1,border:"none",outline:"none",fontSize:17,padding:"12px 0",fontFamily:"Barlow",background:"transparent",color:M.ink,minWidth:0}}/>
       </div>
       {aperto&&ris.length>0&&<ul id="ia-cerca-lista" role="listbox" style={{position:"absolute",left:0,right:0,top:"100%",marginTop:6,listStyle:"none",padding:6,background:"#fff",borderRadius:12,boxShadow:"0 8px 28px rgba(15,26,46,.18)",zIndex:16}}>
-        {ris.map((x,i)=><li key={x.tipo+x.nome} role="option" aria-selected={i===sel} onMouseDown={e=>{ e.preventDefault(); vai(x); }} onMouseEnter={()=>setSel(i)}
+        {ris.map((x,i)=><li key={x.tipo+x.nome+(x.cs||"")} role="option" aria-selected={i===sel} onMouseDown={e=>{ e.preventDefault(); vai(x); }} onMouseEnter={()=>setSel(i)}
           style={{display:"flex",justifyContent:"space-between",gap:12,padding:"10px 12px",borderRadius:8,cursor:"pointer",background:i===sel?M.bg:"transparent"}}>
           <span style={{fontWeight:700,color:M.navy}}>{x.nome}</span><span style={{color:M.gray,fontSize:14}}>{x.reg}</span>
         </li>)}
       </ul>}
-      {aperto&&n.length>=2&&!ris.length&&<div style={{position:"absolute",left:0,right:0,top:"100%",marginTop:6,background:"#fff",borderRadius:12,boxShadow:"0 8px 28px rgba(15,26,46,.18)",padding:"12px 16px",color:M.soft,fontSize:15}}>Nessun capoluogo con questo nome. Le previsioni coprono i 110 capoluoghi di provincia.</div>}
+      {aperto&&n.length>=2&&!ris.length&&<div style={{position:"absolute",left:0,right:0,top:"100%",marginTop:6,background:"#fff",borderRadius:12,boxShadow:"0 8px 28px rgba(15,26,46,.18)",padding:"12px 16px",color:M.soft,fontSize:15}}>Nessun comune con questo nome.</div>}
     </div>
   </div>;
 }
@@ -681,7 +807,9 @@ function Cerca({onNav}){
 // ---------- pagina ----------
 export function meteoRoute(path){
   const mc=/^\/meteo\/([^/]+)\/([^/]+)\/?$/.exec(path||"");
-  if(mc){ const rg=decodeURIComponent(mc[1]).toLowerCase(), cs=decodeURIComponent(mc[2]).toLowerCase(); const c=cittaDaSlug(rg,cs); return c?{tipo:"citta",regione:rg,citta:c}:{tipo:"nessuna"}; }
+  if(mc){ const rg=decodeURIComponent(mc[1]).toLowerCase(), cs=decodeURIComponent(mc[2]).toLowerCase(); const c=cittaDaSlug(rg,cs);
+    if(c) return {tipo:"citta",regione:rg,citta:c};
+    return regioneDaSlug(rg)&&/^[a-z-]+$/.test(cs)?{tipo:"comune",regione:rg,slug:cs}:{tipo:"nessuna"}; }
   const m=/^\/meteo(?:\/([^/]+))?\/?$/.exec(path||"");
   if(!m) return null;
   if(!m[1]) return {tipo:"hub"};
@@ -707,7 +835,7 @@ export function MeteoPage({path,onNav}){
   useEffect(()=>{
     let vivo=true; setStato(s=>({...s,carica:true,errore:null}));
     const q= rt.tipo==="giorno" ? "select=*&giorno=eq."+rt.giorno : "select=*&order=giorno.desc&limit=1";
-    Promise.all([leggi(q), leggi("select=giorno,titolo&order=giorno.desc&limit=60"), (rt.tipo==="giorno"||rt.tipo==="citta")?Promise.resolve(null):caricaGeo()])
+    Promise.all([leggi(q), leggi("select=giorno,titolo&order=giorno.desc&limit=60"), (rt.tipo==="giorno"||rt.tipo==="citta"||rt.tipo==="comune")?Promise.resolve(null):caricaGeo()])
       .then(([r,a,geo])=>{ if(vivo) setStato({carica:false,riga:r[0]||null,archivio:a,geo}); })
       .catch(e=>{ if(vivo) setStato({carica:false,errore:String(e)}); });
     return ()=>{ vivo=false; };
@@ -724,10 +852,11 @@ export function MeteoPage({path,onNav}){
 
   let corpo;
   if(rt.tipo==="nessuna") corpo=<Stato testo="Questa pagina del meteo non esiste"/>;
-  else if((stato.carica&&!riga)||(rt.tipo!=="giorno"&&rt.tipo!=="citta"&&riga&&!(stato.geo||GEO)&&!stato.errore)) corpo=<Stato testo="Carico le previsioni…"/>;
+  else if((stato.carica&&!riga)||(rt.tipo!=="giorno"&&rt.tipo!=="citta"&&rt.tipo!=="comune"&&riga&&!(stato.geo||GEO)&&!stato.errore)) corpo=<Stato testo="Carico le previsioni…"/>;
   else if(stato.errore) corpo=<Stato testo="Non riesco a caricare il meteo" errore onRiprova={()=>setTent(t=>t+1)}/>;
   else if(!riga) corpo=<Stato testo={rt.tipo==="giorno"?"Nessuna previsione salvata per questo giorno":"Le previsioni di oggi stanno arrivando"}/>;
   else if(rt.tipo==="giorno") corpo=<Giorno riga={riga} archivio={stato.archivio||[]} onNav={onNav}/>;
+  else if(rt.tipo==="comune") corpo=<Comune slug={rt.regione} cs={rt.slug} onNav={onNav}/>;
   else if(rt.tipo==="citta") corpo=<Citta riga={riga} slug={rt.regione} nome={rt.citta} onNav={onNav}/>;
   else if(rt.tipo==="regione") corpo=<Regione riga={riga} slug={rt.regione} geo={stato.geo||GEO} onNav={onNav}/>;
   else corpo=<Hub riga={riga} archivio={stato.archivio||[]} geo={stato.geo||GEO} onNav={onNav}/>;
