@@ -34,6 +34,7 @@ const int = (x)=>x==null?"–":String(Math.round(x)).replace("-","−");
 const mm = (x)=>x>=0.1? virg(x)+" mm" : "asciutto";
 const bussola = (d)=>d==null?"":BUSSOLA[Math.round(d/45)%8];
 const pioggiaCol = (x)=> x<0.5?"#DCE6F5": x<=2?"#BFD3EE": x<=10?"#8FB2E3":"#3F77C8";
+const a_ = (n)=>(/^[AEIOU]/i.test(n)?"ad ":"a ")+n;
 const regNome = (slug)=>(regioneDaSlug(slug)||{}).nome||slug;
 
 async function leggi(q){
@@ -118,8 +119,9 @@ function Allerte({riga,slug}){
   </div>;
 }
 
-function Grafico({punti,scelte,iniziale,nota}){
-  const [c,setC]=useState(iniziale);
+function Grafico({punti,scelte,iniziale,nota,onCambia}){
+  const [c,setC0]=useState(iniziale);
+  const setC=(n)=>{ setC0(n); onCambia&&onCambia(n); };
   const p=punti.find(x=>x.nome===c)||punti[0];
   if(!p) return null;
   const arr=(p.ore||[]).map(v=>v||0);
@@ -476,6 +478,10 @@ function Regione({riga,slug,geo,onNav}){
   const ord=r.citta; punti.sort((a,b)=>ord.indexOf(a.nome)-ord.indexOf(b.nome));
   const box=useRef(null); const s=useScala(box,520);
   const capo=punti.find(p=>p.nome===r.capoluogo)||punti[0];
+  // La citta' scelta nel grafico della pioggia comanda anche "I prossimi giorni a ..."
+  const iniziale=([...punti].sort((a,b)=>b.mm-a.mm)[0]||capo||{}).nome;
+  const [sc,setSc]=useState(null);
+  const scelta=punti.find(p=>p.nome===(sc&&sc.slug===slug?sc.nome:iniziale))||capo;
   const g=riga.giorno;
   const mp=geo.mappe[slug]; const [vb0,vb1]=mp.vb;
   return <React.Fragment>
@@ -525,12 +531,12 @@ function Regione({riga,slug,geo,onNav}){
 
     <Allerte riga={riga} slug={slug}/>
 
-    {punti.length>0&&<Grafico key={slug} punti={punti} scelte={punti.slice(0,6).map(p=>p.nome)} iniziale={([...punti].sort((a,b)=>b.mm-a.mm)[0]||capo).nome}/>}
+    {punti.length>0&&<Grafico key={slug} punti={punti} scelte={punti.slice(0,6).map(p=>p.nome)} iniziale={iniziale} onCambia={(n)=>setSc({slug,nome:n})}/>}
 
-    {capo&&(capo.tend||[]).length>0&&<section style={{display:"flex",flexDirection:"column",gap:14}}>
-      <Intestazione titolo={"I prossimi giorni a "+capo.nome} sotto="Tendenza ECMWF. Oltre domani può cambiare."/>
+    {scelta&&(scelta.tend||[]).length>0&&<section style={{display:"flex",flexDirection:"column",gap:14}}>
+      <Intestazione titolo={"I prossimi giorni "+a_(scelta.nome)} sotto="Tendenza ECMWF. Oltre domani può cambiare."/>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-        {capo.tend.map(t=><div key={t.d} style={{...card,padding:16,display:"flex",flexDirection:"column",gap:6,borderTop:"4px solid "+M.gold}}>
+        {scelta.tend.map(t=><div key={t.d} style={{...card,padding:16,display:"flex",flexDirection:"column",gap:6,borderTop:"4px solid "+M.gold}}>
           <span style={{fontFamily:"Anton",fontSize:21,color:M.navy}}>{nomeGiorno(t.d)}</span>
           <span style={{fontSize:13,color:M.gray}}>{dataBreve(t.d)}</span>
           <span style={{display:"flex",alignItems:"center",gap:8}}><Icona cod={t.cod} s={26}/><span style={{fontSize:18,fontWeight:700}}>{int(t.min)}° / {int(t.max)}°</span></span>
