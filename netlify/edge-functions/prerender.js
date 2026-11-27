@@ -22,7 +22,7 @@
 // cloaking. Il testo sta in Supabase dietro la service_role (migrazione 006):
 // questa funzione lo chiede solo per il crawler verificato.
 
-import { METEO_REGIONI, regioneDaSlug, giornoDaUrl, urlDaGiorno } from "../../shared/meteo-geo.js";
+import { METEO_REGIONI, regioneDaSlug, giornoDaUrl, urlDaGiorno, cittaDaSlug, urlCitta } from "../../shared/meteo-geo.js";
 import { slugify, SERIE_ALIAS, SOCIALS, STATIC_PAGES as PAGES, RUBRICHE, isRubrica, youtubeId, PRODUZIONI, mailtoProduzioni } from "../../shared/site-pages.js";
 import { safeBody } from "../../shared/safe-body.js";
 import { paragrafiAnteprima } from "../../shared/anteprima.js";
@@ -821,15 +821,19 @@ ${socialHtml}
   // Supabase meteo-sito). Viene prima del blocco SERIE, che altrimenti
   // prenderebbe /meteo come alias della serie. Gli articoli della vecchia
   // serie restano ai loro indirizzi /articolo/...
-  const mm = path.match(/^\/meteo(?:\/([^/]+))?\/?$/);
+  // /meteo/<regione>/<citta> (dal 27/11/2026): pagina di un capoluogo di provincia
+  const mcit = path.match(/^\/meteo\/([^/]+)\/([^/]+)\/?$/);
+  const mm = mcit ? [path, mcit[1]] : path.match(/^\/meteo(?:\/([^/]+))?\/?$/);
   if (mm) {
     const seg = mm[1] ? decodeURIComponent(mm[1]).toLowerCase() : "";
-    const giorno = seg ? giornoDaUrl(seg) : null;
+    const citta = mcit ? cittaDaSlug(seg, decodeURIComponent(mcit[2]).toLowerCase()) : null;
+    if (mcit && !citta) return notFound(res, html);
+    const giorno = seg && !mcit ? giornoDaUrl(seg) : null;
     const reg = seg && !giorno ? regioneDaSlug(seg) : null;
     if (seg && !giorno && !reg) return notFound(res, html);
     let righe = [];
     try {
-      righe = await sb("meteo_giorni?select=giorno,titolo,sottotitolo,zone,kpi,regioni,cover_url&" +
+      righe = await sb("meteo_giorni?select=giorno,titolo,sottotitolo,zone,kpi,regioni,cover_url" + (citta ? ",punti" : "") + "&" +
         (giorno ? "giorno=eq." + giorno : "order=giorno.desc&limit=1"));
     } catch {
       return shell(res, html);
@@ -839,13 +843,24 @@ ${socialHtml}
     const dataIt = (g) => new Date(g + "T12:00:00Z").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Rome" });
     const zone = r && Array.isArray(r.zone) ? r.zone : [];
     let t, d, u, h1, corpo;
-    if (reg) {
+    if (citta) {
+      const p = (r && Array.isArray(r.punti) ? r.punti : []).find((x) => x.nome === citta && !x.mont) || null;
+      const DESC = { 0: "sereno", 1: "poco nuvoloso", 2: "nuvoloso", 3: "coperto", 45: "nebbia", 48: "nebbia", 61: "pioggia debole", 63: "pioggia", 65: "pioggia forte", 71: "neve debole", 73: "neve", 75: "neve forte", 80: "rovesci", 81: "rovesci", 82: "rovesci forti", 95: "temporale" };
+      u = SITE + urlCitta(reg.slug, citta);
+      t = "Meteo " + citta + " oggi e prossimi giorni · Iattualità";
+      const oggi = p ? `${(DESC[p.cod] || "").replace(/^./, (c) => c.toUpperCase())}, minima ${Math.round(p.min)}°, massima ${Math.round(p.max)}°${p.mm >= 0.5 ? ", " + String(p.mm).replace(".", ",") + " mm di pioggia" : ""}. ` : "";
+      d = "Meteo a " + citta + " oggi: " + oggi + "Mattina, pomeriggio e sera, pioggia ora per ora, tempo osservato adesso e tendenza dei prossimi giorni.";
+      h1 = "Meteo " + citta + " oggi";
+      const fasce = p && Array.isArray(p.fasce) ? p.fasce.map((f) => `${f.f}: ${DESC[f.cod] || ""}${f.t != null ? ", " + f.t + "°" : ""}`).join("; ") : "";
+      corpo = `<p style="font-size:17px">${esc(oggi || d)}</p>` + (fasce ? `<p>${esc(fasce)}.</p>` : "") +
+        `<p><a href="/meteo/${reg.slug}">Meteo ${esc(reg.nome)}</a> · Altre città: ${reg.citta.filter((c) => c !== citta).map((c) => `<a href="${urlCitta(reg.slug, c)}">${esc(c)}</a>`).join(", ")}</p>`;
+    } else if (reg) {
       const x = (r && r.regioni && r.regioni[reg.slug]) || {};
       u = SITE + "/meteo/" + reg.slug;
       t = "Meteo " + reg.nome + " oggi · Iattualità";
       d = x.testo || "Le previsioni del giorno per i capoluoghi di provincia della regione " + reg.nome + ": minime, massime, pioggia ora per ora e tendenza.";
       h1 = x.titolo || "Meteo " + reg.nome;
-      corpo = `<p style="font-size:17px">${esc(d)}</p><p>Capoluoghi: ${esc(reg.citta.join(", "))}.</p>`;
+      corpo = `<p style="font-size:17px">${esc(d)}</p><p>Capoluoghi: ${reg.citta.map((c) => `<a href="${urlCitta(reg.slug, c)}">${esc(c)}</a>`).join(", ")}.</p>`;
     } else {
       u = SITE + (giorno ? urlDaGiorno(giorno) : "/meteo");
       const quando = r ? dataIt(r.giorno) : "";

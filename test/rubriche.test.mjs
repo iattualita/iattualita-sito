@@ -30,7 +30,8 @@ const TESTI = {
 
 const METEO = { giorno: "2026-11-27", titolo: "Arriva la Bora, poi il freddo", sottotitolo: "Bora a Trieste.",
   zone: [{ nome: "Nord", range: "massime da 5 a 15 °C", testo: "Nebbie al mattino." }],
-  regioni: { marche: { titolo: "Marche: piogge diffuse in serata", testo: "Piove in tutti i 5 capoluoghi." } } };
+  regioni: { marche: { titolo: "Marche: piogge diffuse in serata", testo: "Piove in tutti i 5 capoluoghi." } },
+  punti: [{ nome: "Caserta", regione: "campania", cod: 1, min: 10, max: 17, mm: 0.5, fasce: [{ f: "mattina", cod: 3, t: 13, mm: 0 }] }] };
 const ok = (d) => new Response(JSON.stringify(d), { status: 200, headers: { "content-type": "application/json" } });
 global.fetch = async (url) => {
   const u = String(url);
@@ -118,6 +119,13 @@ h = await r.text();
 check("/meteo/marche: 200 con titolo e testo della regione", r.status === 200 && h.includes("Marche: piogge diffuse in serata") && h.includes("Meteo Marche oggi"), r.status);
 r = await chiedi("/serie/meteo");
 check("/serie/meteo (vecchia pagina dei reel): 301 verso /meteo", r.status === 301 && r.headers.get("location") === "https://iattualita.it/meteo", r.status);
+r = await chiedi("/meteo/campania/caserta");
+h = await r.text();
+check("/meteo/campania/caserta: 200, pagina della città con link alla regione", r.status === 200 && h.includes("Meteo Caserta oggi") && h.includes("massima 17°") && h.includes('href="/meteo/campania"') && h.includes("https://iattualita.it/meteo/campania/caserta"), r.status);
+r = await chiedi("/meteo/campania/milano");
+check("/meteo/<regione>/<città di un'altra regione>: 404", r.status === 404, r.status);
+r = await chiedi("/meteo/abruzzo/l-aquila");
+check("/meteo/abruzzo/l-aquila: 200 (slug con apostrofo)", r.status === 200, r.status);
 r = await chiedi("/meteo/atlantide");
 check("/meteo/<regione inesistente>: 404", r.status === 404, r.status);
 

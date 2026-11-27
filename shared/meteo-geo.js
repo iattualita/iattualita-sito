@@ -9,3 +9,7 @@ export const regioneDaSlug = (s) => METEO_REGIONI.find((r) => r.slug === s) || n
 // /meteo/28-11-26 <-> 2026-11-28
 export const giornoDaUrl = (s) => { const m = /^(\d{2})-(\d{2})-(\d{2})$/.exec(s || ""); return m ? "20" + m[3] + "-" + m[2] + "-" + m[1] : null; };
 export const urlDaGiorno = (g) => "/meteo/" + g.slice(8, 10) + "-" + g.slice(5, 7) + "-" + g.slice(2, 4);
+// Pagine delle città: /meteo/<regione>/<città>, es. /meteo/campania/caserta, /meteo/abruzzo/l-aquila
+export const cittaSlug = (n) => String(n || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-+|-+$/g, "");
+export const cittaDaSlug = (reg, s) => { const r = regioneDaSlug(reg); return r ? r.citta.find((c) => cittaSlug(c) === s) || null : null; };
+export const urlCitta = (reg, n) => "/meteo/" + reg + "/" + cittaSlug(n);
