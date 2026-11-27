@@ -55,7 +55,7 @@ function Icona({cod,s=24,notte=false}){
     {cloud&&<path d="M7 18h10a4 4 0 0 0 .5-7.97A5.5 5.5 0 0 0 7 9.5 4.25 4.25 0 0 0 7 18z" fill="#97A4BC"/>}
     {fog&&<path d="M4 8h16M3 12h18M5 16h14M8 20h8" stroke="#8D9BB5" strokeWidth="2" strokeLinecap="round"/>}
     {(rain||storm)&&<g><path d="M7 14h10a3.6 3.6 0 0 0 .4-7.2A5 5 0 0 0 7.2 6 4 4 0 0 0 7 14z" fill="#6F7F9C"/>{storm?<path d="M12 14l-2 4h3l-2 4" stroke="#F2B01E" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>:<path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3" stroke="#2F6FD0" strokeWidth="2" strokeLinecap="round"/>}</g>}
-    {snow&&<g><path d="M7 14h10a3.6 3.6 0 0 0 .4-7.2A5 5 0 0 0 7.2 6 4 4 0 0 0 7 14z" fill="#97A4BC"/><circle cx="8" cy="18" r="1.4" fill="#2F6FD0"/><circle cx="12" cy="20" r="1.4" fill="#2F6FD0"/><circle cx="16" cy="18" r="1.4" fill="#2F6FD0"/></g>}
+    {snow&&<g><path d="M7 14h10a3.6 3.6 0 0 0 .4-7.2A5 5 0 0 0 7.2 6 4 4 0 0 0 7 14z" fill="#97A4BC"/><path d="M8 16.4v3.2M6.6 17.2l2.8 1.6M6.6 18.8l2.8-1.6M12 18.4v3.2M10.6 19.2l2.8 1.6M10.6 20.8l2.8-1.6M16 16.4v3.2M14.6 17.2l2.8 1.6M14.6 18.8l2.8-1.6" stroke="#2F6FD0" strokeWidth="1" strokeLinecap="round" fill="none"/></g>}
     {luna&&<path d={c===0?"M15.5 4.5a7.5 7.5 0 1 0 4 13.6A8.5 8.5 0 0 1 15.5 4.5z":"M12.5 3.5a6 6 0 1 0 3.2 10.9A6.8 6.8 0 0 1 12.5 3.5z"} fill="#7C8DB0"/>}
     {luna&&c===1&&<path d="M9 20h9a3.6 3.6 0 0 0 .4-7.2A5 5 0 0 0 9.2 12 4 4 0 0 0 9 20z" fill="#AEB9CC"/>}
     {c<0&&<circle cx="12" cy="12" r="3" fill="#CBD3E1"/>}
