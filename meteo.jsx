@@ -211,22 +211,38 @@ function Condividi({url,testo,scuro}){
 function MappaItalia({riga,geo,onNav}){
   const box=useRef(null); const s=useScala(box,540);
   const R=riga.regioni||{};
+  const punti=(riga.punti||[]).filter(p=>!p.mont);
+  const conFasce=punti.some(p=>Array.isArray(p.fasce)&&p.fasce.length);
+  const [f,setF]=useState("giornata");
+  // per regione: etichetta (capoluogo) e colore (pioggia massima tra i capoluoghi) della fascia scelta
+  const dato=(r)=>{
+    const x=R[r.slug]; if(!x) return null;
+    if(f==="giornata") return {cod:x.cod,t:x.max,mm:x.mm||0};
+    const qui=punti.filter(p=>p.regione===r.slug);
+    const fa=(p)=>(p&&Array.isArray(p.fasce)?p.fasce.find(y=>y.f===f):null);
+    const c=fa(qui.find(p=>p.nome===r.capoluogo)); if(!c) return {cod:x.cod,t:x.max,mm:x.mm||0};
+    return {cod:c.cod,t:c.t,mm:Math.max(0,...qui.map(p=>(fa(p)||{}).mm||0))};
+  };
+  const scelte=[["giornata","Giornata"],["mattina","Mattina"],["pomeriggio","Pomeriggio"],["sera","Sera"]];
   return <div style={{...card,flex:"1 1 440px",maxWidth:600,padding:18,margin:"0 auto"}}>
+    {conFasce&&<div role="tablist" aria-label="Momento della giornata" style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:12}}>
+      {scelte.map(([k,t])=><button key={k} role="tab" aria-selected={f===k} onClick={()=>setF(k)} style={{...pill(f===k),padding:"7px 14px",fontSize:14}}>{t}</button>)}
+    </div>}
     <div ref={box} style={{position:"relative",width:"100%",aspectRatio:"567/666"}}>
-      <svg viewBox="0 0 567 666" style={{position:"absolute",inset:0,width:"100%",height:"100%"}} role="img" aria-label="Mappa dell'Italia con la pioggia massima prevista oggi per regione">
-        {METEO_REGIONI.map(r=><path key={r.slug} d={geo.mappe[r.slug].d} fill={pioggiaCol((R[r.slug]||{}).mm||0)} stroke="#fff" strokeWidth="1.5" strokeLinejoin="round" style={{cursor:"pointer"}} onClick={()=>onNav("/meteo/"+r.slug)}><title>{r.nome}</title></path>)}
+      <svg viewBox="0 0 567 666" style={{position:"absolute",inset:0,width:"100%",height:"100%"}} role="img" aria-label={"Mappa dell'Italia con la pioggia massima prevista "+(f==="giornata"?"oggi":"di "+f)+" per regione"}>
+        {METEO_REGIONI.map(r=><path key={r.slug} d={geo.mappe[r.slug].d} fill={pioggiaCol((dato(r)||{}).mm||0)} stroke="#fff" strokeWidth="1.5" strokeLinejoin="round" style={{cursor:"pointer"}} onClick={()=>onNav("/meteo/"+r.slug)}><title>{r.nome}</title></path>)}
       </svg>
-      {METEO_REGIONI.map(r=>{ const x=R[r.slug]; const pos=geo.pos[r.capoluogo]; if(!x||!pos) return null; const l=pos.itl||pos.it;
+      {METEO_REGIONI.map(r=>{ const x=dato(r); const pos=geo.pos[r.capoluogo]; if(!x||!pos) return null; const l=pos.itl||pos.it;
         return <Link key={r.slug} href={"/meteo/"+r.slug} onNav={onNav} title={"Meteo "+r.nome} style={{position:"absolute",left:l[0]+"%",top:l[1]+"%",transform:"translate(-50%,-50%) scale("+s+")",display:"flex",flexDirection:"column",alignItems:"center",background:"#fff",borderRadius:10,padding:"2px 7px 3px",boxShadow:"0 1px 6px rgba(15,26,46,.28)",textDecoration:"none"}}>
           <span style={{fontSize:10,fontWeight:700,color:M.gray,whiteSpace:"nowrap",lineHeight:1.3}}>{r.capoluogo}</span>
-          <span style={{display:"flex",alignItems:"center",gap:2}}><Icona cod={x.cod} s={20}/><span style={{fontSize:15,fontWeight:700,color:M.ink}}>{int(x.max)}°</span></span>
+          <span style={{display:"flex",alignItems:"center",gap:2}}><Icona cod={x.cod} s={20} notte={f==="sera"}/><span style={{fontSize:15,fontWeight:700,color:M.ink}}>{int(x.t)}°</span></span>
         </Link>; })}
     </div>
     <div style={{display:"flex",flexWrap:"wrap",gap:"6px 14px",alignItems:"center",marginTop:12,fontSize:13,color:M.soft}}>
-      <span style={{fontWeight:700}}>Pioggia massima nella regione</span>
+      <span style={{fontWeight:700}}>Pioggia massima nella regione{f==="giornata"?"":" ("+f+")"}</span>
       {[["#DCE6F5","asciutto"],["#BFD3EE","fino a 2 mm"],["#8FB2E3","2-10 mm"],["#3F77C8","oltre 10 mm"]].map(([c,t])=><span key={t} style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:18,height:12,borderRadius:3,background:c}}/>{t}</span>)}
     </div>
-    <div style={{fontSize:13,color:M.gray,marginTop:6}}>Sulle etichette: tempo e massima del capoluogo di regione. Tocca una regione per i suoi capoluoghi.</div>
+    <div style={{fontSize:13,color:M.gray,marginTop:6}}>{f==="giornata"?"Sulle etichette: tempo e massima del capoluogo di regione.":"Sulle etichette: tempo e temperatura del capoluogo "+(f==="mattina"?"alle 9":f==="pomeriggio"?"alle 15":"alle 21")+"."} Tocca una regione per i suoi capoluoghi.</div>
   </div>;
 }
 
