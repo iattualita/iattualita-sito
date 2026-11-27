@@ -514,7 +514,7 @@ function Regione({riga,slug,geo,onNav}){
           </div>
           <div style={{display:"flex",flexWrap:"wrap",gap:"4px 18px",fontSize:16,color:M.soft,alignItems:"center"}}>
             <span style={{display:"flex",alignItems:"center",gap:6}}><Icona cod={p.cod} s={22}/>{DESC[p.cod]||""}</span>
-            <span style={{color:M.rain,fontWeight:600}}>{mm(p.mm)}</span>
+            <span style={{color:M.rain,fontWeight:600}}>{mm(p.mm)}{Array.isArray(p.fasce)&&p.mm>=0.5&&p.fasce.reduce((a,x)=>a+(x.mm||0),0)<0.5?" nella notte":""}</span>
             {p.raff!=null&&<span>Raffica {int(p.raff)} km/h{p.dir!=null?" da "+bussola(p.dir):""}</span>}
             {p.neve>=0.1&&<span>Neve {virg(p.neve)} cm</span>}
           </div>
