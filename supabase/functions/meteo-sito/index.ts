@@ -161,7 +161,9 @@ function puntoDa(p: typeof PUNTI[number], A: any, E: any, X: any, giorno: string
   const tutte = [{ H: Ha, nuv: "cloud_cover" }, ...altri];
   const ore = oreDi(giorno);
   const zt = [6, 12, 18].map((h) => { const i = (Ha.time ?? []).indexOf(`${giorno}T${String(h).padStart(2, "0")}:00`); return i >= 0 ? r0(Ha.freezing_level_height?.[i] ?? null) : null; });
-  const tend = (De.time ?? []).slice(1, 7).map((d: string, k: number) => ({ d, cod: codDiurno(De.weather_code[k + 1], d, altri, Hx, De.precipitation_sum?.[k + 1] ?? null), min: r0(De.temperature_2m_min[k + 1]), max: r0(De.temperature_2m_max[k + 1]), mm: r1(De.precipitation_sum[k + 1]), fasce: fasceDi(d, tutte, oreDi(d), Ha, He, neveDi(d)) }));
+  // domani e dopodomani: valori di ICON-2I (come l'ora per ora), oltre ECMWF
+  const pickD = (k: string, d: string, i: number) => { const j = (Da.time ?? []).indexOf(d); const v = j >= 0 ? Da[k]?.[j] : null; return v ?? De[k]?.[i]; };
+  const tend = (De.time ?? []).slice(1, 7).map((d: string, k: number) => ({ d, cod: codDiurno(pickD("weather_code", d, k + 1), d, tutte, Hx, pickD("precipitation_sum", d, k + 1) ?? null), min: r0(pickD("temperature_2m_min", d, k + 1)), max: r0(pickD("temperature_2m_max", d, k + 1)), mm: r1(pickD("precipitation_sum", d, k + 1)), fasce: fasceDi(d, tutte, oreDi(d), Ha, He, neveDi(d)) }));
   // ora per ora anche domani e dopodomani (fin dove arriva ICON-2I); oltre, solo mattina/pomeriggio/sera in tend
   const orari = [1, 2].map((k) => { const d = addDays(giorno, k); return { d, orario: orarioDi(d, tutte, oreDi(d), Ha, He, neveDi(d)) }; });
   return {

@@ -83,7 +83,9 @@ function calcola(A: any, E: any, g: string) {
   const neveDi = (d: string) => { const i = (Da.time ?? []).indexOf(d), k = (De.time ?? []).indexOf(d); return r1((i >= 0 ? Da.snowfall_sum?.[i] : null) ?? (k >= 0 ? De.snowfall_sum?.[k] : null)) ?? 0; };
   const ore = oreDi(g);
   const neve = r1(pick("snowfall_sum")) ?? 0;
-  const tend = (De.time ?? []).slice(1, 7).map((d: string, k: number) => ({ d, cod: codDiurno(De.weather_code[k + 1], d, [He], De.precipitation_sum?.[k + 1] ?? null), min: r0(De.temperature_2m_min[k + 1]), max: r0(De.temperature_2m_max[k + 1]), mm: r1(De.precipitation_sum[k + 1]), fasce: fasceDi(d, [Ha, He], oreDi(d), neveDi(d)) }));
+  // domani e dopodomani: valori di ICON-2I (come l'ora per ora), oltre ECMWF
+  const pickD = (k: string, d: string, i: number) => { const j = (Da.time ?? []).indexOf(d); const v = j >= 0 ? Da[k]?.[j] : null; return v ?? De[k]?.[i]; };
+  const tend = (De.time ?? []).slice(1, 7).map((d: string, k: number) => ({ d, cod: codDiurno(pickD("weather_code", d, k + 1), d, [Ha, He], pickD("precipitation_sum", d, k + 1) ?? null), min: r0(pickD("temperature_2m_min", d, k + 1)), max: r0(pickD("temperature_2m_max", d, k + 1)), mm: r1(pickD("precipitation_sum", d, k + 1)), fasce: fasceDi(d, [Ha, He], oreDi(d), neveDi(d)) }));
   const orari = [1, 2].map((k) => { const d = addDays(g, k); return { d, orario: orarioDi(d, [Ha, He], oreDi(d), neveDi(d)) }; });
   return {
     giorno: g,
