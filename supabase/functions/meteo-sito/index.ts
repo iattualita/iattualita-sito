@@ -47,8 +47,8 @@ async function scarica(giorno: string) {
   for (const l of lotti) {
     const base = { latitude: l.map((p) => p[2]).join(","), longitude: l.map((p) => p[3]).join(","), daily: DAILY, timezone: "Europe/Rome" };
     const [a, b] = await Promise.all([
-      om({ ...base, models: "italia_meteo_arpae_icon_2i", start_date: giorno, end_date: giorno, hourly: "precipitation,freezing_level_height" }),
-      om({ ...base, models: "ecmwf_ifs025", start_date: giorno, end_date: addDays(giorno, 6), hourly: "precipitation" }),
+      om({ ...base, models: "italia_meteo_arpae_icon_2i", start_date: giorno, end_date: giorno, hourly: "precipitation,freezing_level_height,cloud_cover" }),
+      om({ ...base, models: "ecmwf_ifs025", start_date: giorno, end_date: addDays(giorno, 6), hourly: "precipitation,cloud_cover" }),
     ]);
     icon.push(...a); ecm.push(...b);
   }
@@ -62,6 +62,21 @@ const a = (nome: string) => (/^[AEIOUaeiou]/.test(nome) ? "ad " : "a ") + nome;
 const elenco = (v: string[]) => (v.length < 2 ? v.join("") : v.slice(0, -1).join(", ") + " e " + v[v.length - 1]);
 const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z]/g, "");
 
+// Il weather_code giornaliero prende il caso peggiore delle 24 ore (anche la notte):
+// una giornata di sole con nuvole dopo il tramonto risultava "nuvoloso". Se non piove
+// (codice 0-3), l'icona si ricalcola dalla copertura nuvolosa media delle ore di luce (9-16).
+// Stesso discorso per la nebbia (45/48), che spesso c'e' solo all'alba: resta nebbia solo se di giorno e' coperto.
+function codDiurno(cod: number | null, H: any, giorno: string) {
+  const nebbia = cod === 45 || cod === 48;
+  if (cod == null || (cod > 3 && !nebbia)) return cod;
+  const v: number[] = [];
+  for (let h = 9; h <= 16; h++) { const i = (H?.time ?? []).indexOf(`${giorno}T${String(h).padStart(2, "0")}:00`); const c = i >= 0 ? H.cloud_cover?.[i] : null; if (c != null) v.push(c); }
+  if (v.length < 4) return cod;
+  const m = v.reduce((x, y) => x + y, 0) / v.length;
+  if (nebbia && m >= 75) return cod;
+  return m < 20 ? 0 : m < 45 ? 1 : m < 75 ? 2 : 3;
+}
+
 function puntoDa(p: typeof PUNTI[number], A: any, E: any, giorno: string) {
   const Da = A?.daily ?? {}, De = E?.daily ?? {};
   const ia = (Da.time ?? []).indexOf(giorno), ie = (De.time ?? []).indexOf(giorno);
@@ -70,10 +85,10 @@ function puntoDa(p: typeof PUNTI[number], A: any, E: any, giorno: string) {
   let ore: (number | null)[] = (Ha.time ?? []).map((t: string, i: number) => (t.startsWith(giorno) ? Ha.precipitation[i] : undefined)).filter((x: any) => x !== undefined);
   if (!ore.length || ore.every((x) => x == null)) ore = (He.time ?? []).map((t: string, i: number) => (t.startsWith(giorno) ? He.precipitation[i] : undefined)).filter((x: any) => x !== undefined);
   const zt = [6, 12, 18].map((h) => { const i = (Ha.time ?? []).indexOf(`${giorno}T${String(h).padStart(2, "0")}:00`); return i >= 0 ? r0(Ha.freezing_level_height?.[i] ?? null) : null; });
-  const tend = (De.time ?? []).slice(1, 7).map((d: string, k: number) => ({ d, cod: De.weather_code[k + 1], min: r0(De.temperature_2m_min[k + 1]), max: r0(De.temperature_2m_max[k + 1]), mm: r1(De.precipitation_sum[k + 1]) }));
+  const tend = (De.time ?? []).slice(1, 7).map((d: string, k: number) => ({ d, cod: codDiurno(De.weather_code[k + 1], He, d), min: r0(De.temperature_2m_min[k + 1]), max: r0(De.temperature_2m_max[k + 1]), mm: r1(De.precipitation_sum[k + 1]) }));
   return {
     nome: p[0], regione: p[1], zona: p[4] === 2 ? "Montagna" : REGIONI.find((r) => r[0] === p[1])![2], cap: p[4] === 1, mont: p[4] === 2,
-    cod: pick("weather_code"), min: r1(pick("temperature_2m_min")), max: r1(pick("temperature_2m_max")), mm: r1(pick("precipitation_sum")) ?? 0,
+    cod: codDiurno(pick("weather_code"), (Ha.cloud_cover ?? []).some((x: any) => x != null) ? Ha : He, giorno), min: r1(pick("temperature_2m_min")), max: r1(pick("temperature_2m_max")), mm: r1(pick("precipitation_sum")) ?? 0,
     neve: r1(pick("snowfall_sum")) ?? 0, raff: r0(pick("wind_gusts_10m_max")), dir: r0(pick("wind_direction_10m_dominant")),
     ore: ore.slice(0, 24).map((x) => r1(x ?? 0)), zt, tend,
     ecm: ie >= 0 ? { max: r1(De.temperature_2m_max[ie]), mm: r1(De.precipitation_sum[ie]) } : null,
