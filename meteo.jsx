@@ -286,9 +286,10 @@ function Adesso({slug,citta,onNav}){
   const d=useOra();
   const fresche=((d&&d.stazioni)||[]).filter(x=>Date.now()-new Date(x.quando).getTime()<3*3600000);
   const delReg=slug?fresche.filter(x=>x.regione===slug):[];
-  // pagina di una citta': prima la sua stazione (o la stima), poi il resto della regione
-  const proprie=citta?delReg.filter(x=>x.citta===citta||x.citta.startsWith(citta+" ")):[];
-  const lista=citta?[...proprie,...delReg.filter(x=>proprie.indexOf(x)<0)]:slug?delReg:sceltaHub(fresche);
+  // pagina di una citta' (o di un comune: la citta' e' il suo capoluogo di provincia): solo quella.
+  // Se c'e' l'aeroporto della citta' vale quello; la stima solo se manca.
+  const proprie=citta?delReg.filter(x=>x.citta===citta||x.citta.startsWith(citta+" (")):[];
+  const lista=citta?(proprie.filter(x=>!x.stima).slice(0,1).length?proprie.filter(x=>!x.stima).slice(0,1):proprie.slice(0,1)):slug?delReg:sceltaHub(fresche);
   if(!lista.length) return null;
   const ultima=lista.filter(x=>!x.stima).map(x=>x.ora).sort().pop()||lista[0].ora;
   const stime=lista.some(x=>x.stima);
