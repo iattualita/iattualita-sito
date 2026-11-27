@@ -671,14 +671,14 @@ function ComuniRegione({slug,onNav}){
   if(!qui.length) return null;
   const prov=[...new Set(qui.map(x=>x.prov))].sort();
   return <section style={{display:"flex",flexDirection:"column",gap:12}}>
-    <Intestazione titolo={"Tutti i comuni ("+qui.length+")"} sotto="Ogni comune ha la sua pagina: oggi, mattina, pomeriggio e sera e i prossimi giorni."/>
+    <Intestazione titolo={"Tutti i comuni ("+qui.length+")"} sotto="Apri una provincia e scegli il comune."/>
     {prov.map(pv=>{ const l=qui.filter(x=>x.prov===pv);
-      return <div key={pv} style={{...card,padding:"14px 18px"}}>
-        <h3 style={{margin:0,fontWeight:700,color:M.navy,fontSize:16,fontFamily:"Barlow"}}>Provincia {pv} · {l.length} comuni</h3>
+      return <details key={pv} style={{...card,padding:"12px 18px"}}>
+        <summary style={{cursor:"pointer",fontWeight:700,color:M.navy,fontSize:16,listStylePosition:"inside"}}>Provincia {pv} · {l.length} comuni</summary>
         <div style={{display:"flex",flexWrap:"wrap",gap:"6px 14px",marginTop:10}}>
           {l.map(x=><Link key={x.slug} href={urlComune(x)} onNav={onNav} style={{color:M.blue,fontWeight:600,fontSize:15,textDecoration:"none"}}>{x.nome}</Link>)}
         </div>
-      </div>; })}
+      </details>; })}
   </section>;
 }
 
@@ -754,14 +754,13 @@ function Comune({slug,cs,onNav}){
       </div>
     </section>}
 
-    {(capo||vicini.length>0)&&<section style={{display:"flex",flexDirection:"column",gap:10}}>
-      <span style={{fontSize:16,fontWeight:700,color:M.navy}}>Altri comuni della provincia</span>
-      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-        {capo&&<Link href={urlCitta(slug,capo.nome)} onNav={onNav} style={{background:M.navy,borderRadius:999,padding:"8px 14px",textDecoration:"none",fontWeight:700,color:"#fff"}}>{capo.nome}</Link>}
-        {vicini.filter(x=>!x.cap).slice(0,40).map(x=><Link key={x.slug} href={urlComune(x)} onNav={onNav} style={{background:"#fff",borderRadius:999,padding:"8px 14px",textDecoration:"none",fontWeight:700,color:M.blue}}>{x.nome}</Link>)}
-        {vicini.length>40&&<Link href={"/meteo/"+slug} onNav={onNav} style={{padding:"8px 6px",fontWeight:700,color:M.navy}}>Tutti i comuni →</Link>}
+    {(capo||vicini.length>0)&&<details key={c.slug} style={{...card,padding:"12px 18px"}}>
+      <summary style={{cursor:"pointer",fontWeight:700,color:M.navy,fontSize:16,listStylePosition:"inside"}}>Altri comuni della provincia {c.prov} · {vicini.length}</summary>
+      <div style={{display:"flex",flexWrap:"wrap",gap:"6px 14px",marginTop:10}}>
+        {capo&&<Link href={urlCitta(slug,capo.nome)} onNav={onNav} style={{color:M.navy,fontWeight:800,fontSize:15,textDecoration:"none"}}>{capo.nome}</Link>}
+        {vicini.filter(x=>!x.cap).map(x=><Link key={x.slug} href={urlComune(x)} onNav={onNav} style={{color:M.blue,fontWeight:600,fontSize:15,textDecoration:"none"}}>{x.nome}</Link>)}
       </div>
-    </section>}
+    </details>}
     <p style={{fontSize:13,color:M.gray,margin:0}}>Fonti: ItaliaMeteo-ARPAE ICON-2I ed ECMWF IFS (CC BY 4.0) via Open-Meteo. "Adesso": bollettini METAR degli aeroporti o stima del modello.</p>
   </React.Fragment>;
 }
