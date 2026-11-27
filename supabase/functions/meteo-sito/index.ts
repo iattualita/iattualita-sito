@@ -48,8 +48,8 @@ async function scarica(giorno: string) {
   for (const l of lotti) {
     const base = { latitude: l.map((p) => p[2]).join(","), longitude: l.map((p) => p[3]).join(","), daily: DAILY, timezone: "Europe/Rome" };
     const [a, b, c] = await Promise.all([
-      om({ ...base, models: "italia_meteo_arpae_icon_2i", start_date: giorno, end_date: giorno, hourly: "precipitation,freezing_level_height,cloud_cover" }),
-      om({ ...base, models: "ecmwf_ifs025", start_date: giorno, end_date: addDays(giorno, 6), hourly: "precipitation,cloud_cover" }),
+      om({ ...base, models: "italia_meteo_arpae_icon_2i", start_date: giorno, end_date: giorno, hourly: "precipitation,freezing_level_height,cloud_cover,temperature_2m" }),
+      om({ ...base, models: "ecmwf_ifs025", start_date: giorno, end_date: addDays(giorno, 6), hourly: "precipitation,cloud_cover,temperature_2m" }),
       // solo nuvole e visibilita', per il consenso: AROME/ARPEGE di Meteo-France e ICON-EU del DWD
       om({ latitude: base.latitude, longitude: base.longitude, timezone: "Europe/Rome", models: "meteofrance_seamless,icon_eu", start_date: giorno, end_date: addDays(giorno, 6), hourly: "cloud_cover,cloud_cover_low,visibility" }).catch(() => []),
     ]);
@@ -80,9 +80,14 @@ function serieOra(H: Serie | undefined, chiave: string, ora: string) {
   const v = i >= 0 ? H?.[chiave]?.[i] : null;
   return typeof v === "number" ? v : null;
 }
-function codDiurno(cod: number | null, giorno: string, fonti: { H: Serie | undefined; nuv: string; basse?: string }[], X: Serie | undefined) {
+// Pioggia/pioviggine con meno di 1 mm in tutta la giornata (tracce, magari di notte) non fa
+// l'icona della pioggia: Napoli con 0,1 mm e il sole risultava "pioggia debole" (27/11/2026).
+// Per il giorno si contano solo le ore 6-24: la pioggia della notte prima non fa l'icona della giornata.
+function codDiurno(cod: number | null, giorno: string, fonti: { H: Serie | undefined; nuv: string; basse?: string }[], X: Serie | undefined, mm: number | null = null) {
   const nebbia = cod === 45 || cod === 48;
-  if (cod == null || (cod > 3 && !nebbia)) return cod;
+  const pioggia = cod != null && ((cod >= 51 && cod <= 67) || (cod >= 80 && cod <= 82));
+  const tracce = pioggia && mm != null && mm < 1;
+  if (cod == null || (cod > 3 && !nebbia && !tracce)) return cod;
   const tot: number[] = [], basse: number[] = []; let oreNebbia = 0, conVis = 0;
   for (let h = 9; h <= 16; h++) {
     const ora = `${giorno}T${String(h).padStart(2, "0")}:00`;
@@ -93,13 +98,36 @@ function codDiurno(cod: number | null, giorno: string, fonti: { H: Serie | undef
     const vis = serieOra(X, "visibility_icon_eu", ora);
     if (vis != null) { conVis++; if (vis < 1000) oreNebbia++; }
   }
-  if (tot.length < 4) return cod;
+  if (tot.length < 4) return tracce ? 3 : cod;
   const m = tot.reduce((x, y) => x + y, 0) / tot.length;
   if (nebbia) {
     const mb = basse.length ? basse.reduce((x, y) => x + y, 0) / basse.length : m;
     if (mb >= 75 && (conVis === 0 || oreNebbia >= 3)) return cod;
   }
-  return m < 20 ? 0 : m < 45 ? 1 : m < 75 ? 2 : 3;
+  const c = m < 20 ? 0 : m < 45 ? 1 : m < 75 ? 2 : 3;
+  return tracce ? Math.max(c, 1) : c; // con qualche goccia non e' mai "sereno" pieno
+}
+
+// Mattina / pomeriggio / sera per ogni citta': stesso consenso sulle nuvole, pioggia sommata
+// nelle 6 ore della fascia (ICON-2I, se manca ECMWF), temperatura all'ora centrale.
+const FASCE: [string, number, number, number][] = [["mattina", 6, 11, 9], ["pomeriggio", 12, 17, 15], ["sera", 18, 23, 21]];
+function fasceDi(giorno: string, fonti: { H: Serie | undefined; nuv: string }[], ore: (number | null)[], Ht: Serie | undefined, Ht2: Serie | undefined, neve: number) {
+  return FASCE.map(([f, h0, h1, hc]) => {
+    const nuv: number[] = [];
+    for (let h = h0; h <= h1; h++) {
+      const ora = `${giorno}T${String(h).padStart(2, "0")}:00`;
+      const v = fonti.map((x) => serieOra(x.H, x.nuv, ora)).filter((x): x is number => x != null);
+      if (v.length) nuv.push(mediana(v));
+    }
+    const mm = ore.slice(h0, h1 + 1).reduce((a: number, b) => a + (b ?? 0), 0);
+    const oc = `${giorno}T${String(hc).padStart(2, "0")}:00`;
+    const t = serieOra(Ht, "temperature_2m", oc) ?? serieOra(Ht2, "temperature_2m", oc);
+    let cod: number | null;
+    if (mm >= 0.5) cod = neve >= 0.5 && t != null && t <= 1.5 ? (mm >= 3 ? 73 : 71) : mm >= 6 ? 65 : mm >= 2 ? 63 : 61;
+    else if (nuv.length) { const m = nuv.reduce((a, b) => a + b, 0) / nuv.length; cod = m < 20 ? 0 : m < 45 ? 1 : m < 75 ? 2 : 3; }
+    else cod = null;
+    return { f, cod, t: r0(t), mm: r1(mm) };
+  });
 }
 
 function puntoDa(p: typeof PUNTI[number], A: any, E: any, X: any, giorno: string) {
@@ -111,12 +139,13 @@ function puntoDa(p: typeof PUNTI[number], A: any, E: any, X: any, giorno: string
   let ore: (number | null)[] = (Ha.time ?? []).map((t: string, i: number) => (t.startsWith(giorno) ? Ha.precipitation[i] : undefined)).filter((x: any) => x !== undefined);
   if (!ore.length || ore.every((x) => x == null)) ore = (He.time ?? []).map((t: string, i: number) => (t.startsWith(giorno) ? He.precipitation[i] : undefined)).filter((x: any) => x !== undefined);
   const zt = [6, 12, 18].map((h) => { const i = (Ha.time ?? []).indexOf(`${giorno}T${String(h).padStart(2, "0")}:00`); return i >= 0 ? r0(Ha.freezing_level_height?.[i] ?? null) : null; });
-  const tend = (De.time ?? []).slice(1, 7).map((d: string, k: number) => ({ d, cod: codDiurno(De.weather_code[k + 1], d, altri, Hx), min: r0(De.temperature_2m_min[k + 1]), max: r0(De.temperature_2m_max[k + 1]), mm: r1(De.precipitation_sum[k + 1]) }));
+  const tend = (De.time ?? []).slice(1, 7).map((d: string, k: number) => ({ d, cod: codDiurno(De.weather_code[k + 1], d, altri, Hx, De.precipitation_sum?.[k + 1] ?? null), min: r0(De.temperature_2m_min[k + 1]), max: r0(De.temperature_2m_max[k + 1]), mm: r1(De.precipitation_sum[k + 1]) }));
   return {
     nome: p[0], regione: p[1], zona: p[4] === 2 ? "Montagna" : REGIONI.find((r) => r[0] === p[1])![2], cap: p[4] === 1, mont: p[4] === 2,
-    cod: codDiurno(pick("weather_code"), giorno, [{ H: Ha, nuv: "cloud_cover" }, ...altri], Hx), min: r1(pick("temperature_2m_min")), max: r1(pick("temperature_2m_max")), mm: r1(pick("precipitation_sum")) ?? 0,
+    cod: codDiurno(pick("weather_code"), giorno, [{ H: Ha, nuv: "cloud_cover" }, ...altri], Hx, ore.length >= 24 ? ore.slice(6, 24).reduce((a: number, b) => a + (b ?? 0), 0) : pick("precipitation_sum")), min: r1(pick("temperature_2m_min")), max: r1(pick("temperature_2m_max")), mm: r1(pick("precipitation_sum")) ?? 0,
     neve: r1(pick("snowfall_sum")) ?? 0, raff: r0(pick("wind_gusts_10m_max")), dir: r0(pick("wind_direction_10m_dominant")),
     ore: ore.slice(0, 24).map((x) => r1(x ?? 0)), zt, tend,
+    fasce: fasceDi(giorno, [{ H: Ha, nuv: "cloud_cover" }, ...altri], ore, Ha, He, r1(pick("snowfall_sum")) ?? 0),
     ecm: ie >= 0 ? { max: r1(De.temperature_2m_max[ie]), mm: r1(De.precipitation_sum[ie]) } : null,
     icon_ok: ia >= 0 && Da.temperature_2m_max?.[ia] != null,
   };

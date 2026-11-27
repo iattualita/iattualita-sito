@@ -61,6 +61,19 @@ function Icona({cod,s=24,notte=false}){
   </svg>;
 }
 
+// Mattina / pomeriggio / sera di una citta' (campo fasce, da meteo-sito; i giorni vecchi non ce l'hanno).
+const NOMEF={mattina:"Mattina",pomeriggio:"Pomeriggio",sera:"Sera"};
+function Fasce({p}){
+  if(!Array.isArray(p.fasce)||!p.fasce.length) return null;
+  return <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:4}}>
+    {p.fasce.map(x=><div key={x.f} title={NOMEF[x.f]+": "+(DESC[x.cod]||"")+(x.mm>=0.5?", "+virg(x.mm)+" mm":"")} style={{background:M.bg,borderRadius:10,padding:"8px 10px",display:"flex",flexDirection:"column",gap:3}}>
+      <span style={{fontSize:12,fontWeight:700,letterSpacing:".06em",color:M.gray,textTransform:"uppercase"}}>{NOMEF[x.f]}</span>
+      <span style={{display:"flex",alignItems:"center",gap:6}}><Icona cod={x.cod} s={24} notte={x.f==="sera"}/><span style={{fontSize:17,fontWeight:700,color:M.ink}}>{int(x.t)}°</span></span>
+      <span style={{fontSize:12.5,color:x.mm>=0.5?M.rain:M.gray,fontWeight:x.mm>=0.5?700:500}}>{x.mm>=0.5?virg(x.mm)+" mm":(DESC[x.cod]||"")}</span>
+    </div>)}
+  </div>;
+}
+
 // Le etichette sono disegnate per una mappa larga ~540 px: sotto quella
 // misura si rimpiccioliscono insieme alla mappa, invece di accavallarsi.
 function useScala(ref,base){
@@ -412,11 +425,11 @@ function Giorno({riga,archivio,onNav}){
       <div style={{...card,padding:8,overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:16,minWidth:680}}>
           <thead><tr style={{textAlign:"left",color:M.gray,fontSize:12.5,letterSpacing:".06em"}}>
-            {["CITTÀ","TEMPO","MIN","MAX","PIOGGIA","RAFFICA","VENTO DA"].map((t,i)=><th key={t} scope="col" style={{padding:"12px 14px",fontWeight:700,textAlign:i>=2&&i<=5?"right":"left"}}>{t}</th>)}
+            {["CITTÀ","MATTINA","POMERIGGIO","SERA","MIN","MAX","PIOGGIA","RAFFICA","VENTO DA"].map((t,i)=><th key={t} scope="col" style={{padding:"12px 14px",fontWeight:700,textAlign:i>=4&&i<=7?"right":"left"}}>{t}</th>)}
           </tr></thead>
           <tbody>{righe.map(p=><tr key={p.nome} style={{borderTop:"1px solid "+M.line}}>
             <td style={{padding:"11px 14px",fontWeight:700,color:M.navy}}><Link href={"/meteo/"+p.regione} onNav={onNav} style={{color:M.navy,textDecoration:"none"}}>{p.nome}</Link><div style={{fontSize:12.5,fontWeight:500,color:M.gray}}>{regNome(p.regione)}</div></td>
-            <td style={{padding:"11px 14px"}}><span style={{display:"flex",alignItems:"center",gap:8}}><Icona cod={p.cod}/><span style={{fontSize:15,color:M.soft}}>{DESC[p.cod]||""}</span></span></td>
+            {(Array.isArray(p.fasce)&&p.fasce.length===3?p.fasce:[{f:"g",cod:p.cod},null,null]).map((x,i)=><td key={i} style={{padding:"11px 14px"}}>{x&&<span title={(NOMEF[x.f]||"")+" "+(DESC[x.cod]||"")} style={{display:"flex",alignItems:"center",gap:6}}><Icona cod={x.cod} notte={x.f==="sera"}/>{x.t!=null&&<span style={{fontSize:15,fontWeight:600}}>{int(x.t)}°</span>}{x.mm>=0.5&&<span style={{fontSize:13,color:M.rain,fontWeight:700}}>{virg(x.mm)}</span>}</span>}</td>)}
             <td style={{padding:"11px 14px",textAlign:"right",color:M.soft}}>{int(p.min)}°</td>
             <td style={{padding:"11px 14px",textAlign:"right",fontWeight:700}}>{int(p.max)}°</td>
             <td style={{padding:"11px 14px",textAlign:"right",color:M.rain,fontWeight:600}}>{p.mm>=0.1?virg(p.mm)+" mm":"–"}</td>
@@ -501,10 +514,11 @@ function Regione({riga,slug,geo,onNav}){
           </div>
           <div style={{display:"flex",flexWrap:"wrap",gap:"4px 18px",fontSize:16,color:M.soft,alignItems:"center"}}>
             <span style={{display:"flex",alignItems:"center",gap:6}}><Icona cod={p.cod} s={22}/>{DESC[p.cod]||""}</span>
-            <span style={{color:M.rain,fontWeight:600}}>{mm(p.mm)}</span>
+            <span style={{color:M.rain,fontWeight:600}}>{mm(p.mm)}{Array.isArray(p.fasce)&&p.mm>=0.5&&p.fasce.reduce((a,x)=>a+(x.mm||0),0)<0.5?" nella notte":""}</span>
             {p.raff!=null&&<span>Raffica {int(p.raff)} km/h{p.dir!=null?" da "+bussola(p.dir):""}</span>}
             {p.neve>=0.1&&<span>Neve {virg(p.neve)} cm</span>}
           </div>
+          <Fasce p={p}/>
         </article>)}
       </div>
     </section>
