@@ -14,26 +14,30 @@
 // VARIABILI D'AMBIENTE (Netlify)
 //   YOUTUBE_API_KEY     chiave di Google Cloud con "YouTube Data API v3" attiva
 //   YOUTUBE_CHANNEL     handle del canale (@iattualita) oppure id (UC...)
-//   META_PAGE_ID        id della pagina Facebook
-//   META_PAGE_TOKEN     token permanente dell'utente di sistema "sito-iattualita"
-//                       (Business Manager), con pages_show_list,
-//                       pages_read_engagement, instagram_basic. Non dipende
-//                       dalla sessione Facebook di nessuno (14 nov 2026).
-//   META_IG_USER_ID     facoltativo: se manca si ricava dalla pagina
-//   META_GRAPH_VERSION  facoltativo, default v26.0
+//   SUPABASE_SERVICE_ROLE_KEY  serve anche per Facebook e Instagram (sotto)
 // Una piattaforma senza le sue variabili viene saltata, senza errori: si
 // possono attivare una alla volta.
+//
+// FACEBOOK E INSTAGRAM (dal 27 nov 2026)
+// Li legge la funzione Supabase "numeri-meta" (supabase/functions/numeri-meta)
+// con il token dell'utente di sistema "agente-commenti", nel portafoglio Meta
+// di Nicola dove stanno le pagine: lo stesso token degli agenti dei commenti,
+// salvato solo tra i segreti di Supabase (META_COMMENTI_TOKEN). Su Netlify
+// non serve piu' nessun token Meta: META_PAGE_TOKEN e META_PAGE_ID non si
+// usano. Il vecchio token di "sito-iattualita" (portafoglio di Andre') ha
+// perso l'accesso alla pagina il 27 nov 2026.
 const L = require("./_newsletter-lib");
 
-const GRAPH = "https://graph.facebook.com/" + (process.env.META_GRAPH_VERSION || "v26.0");
 const env = (k) => String(process.env[k] || "").trim();
+const FUNZIONE_META = L.REST.replace(/\/rest\/v1$/, "/functions/v1/numeri-meta");
 
-async function getJson(url) {
-  const r = await fetch(url);
+async function getJson(url, opt) {
+  const r = await fetch(url, opt);
   let d = null;
   try { d = await r.json(); } catch (e) {}
   if (!r.ok || (d && d.error)) {
-    const m = (d && d.error && (d.error.message || d.error.code)) || ("HTTP " + r.status);
+    const e = d && d.error;
+    const m = (typeof e === "string" ? e : e && (e.message || e.code)) || ("HTTP " + r.status);
     throw new Error(String(m).slice(0, 200));
   }
   return d;
@@ -63,31 +67,29 @@ async function leggiYoutube() {
   };
 }
 
-// ---------- Facebook ----------
-async function leggiFacebook() {
-  const pagina = env("META_PAGE_ID"), token = env("META_PAGE_TOKEN");
-  if (!pagina || !token) return null;
-  const d = await getJson(GRAPH + "/" + encodeURIComponent(pagina) + "?fields=followers_count,fan_count&access_token=" + encodeURIComponent(token));
-  return { follower: numero(d.followers_count != null ? d.followers_count : d.fan_count), visualizzazioni: null, periodo: null };
+// ---------- Facebook e Instagram ----------
+// Una sola chiamata a numeri-meta per giro, condivisa dalle due piattaforme.
+// aggiornaTutto la azzera a ogni giro, cosi' un nuovo "Aggiorna adesso"
+// rilegge sempre i numeri freschi.
+let giroMeta = null;
+function leggiMeta() {
+  if (!L.config.SERVICE_ROLE) return Promise.resolve(null);
+  if (!giroMeta) giroMeta = getJson(FUNZIONE_META, { method: "POST", headers: L.sbHeaders(), body: "{}" });
+  return giroMeta;
 }
 
-// ---------- Instagram ----------
-async function idInstagram(pagina, token) {
-  const id = env("META_IG_USER_ID");
-  if (id) return id;
-  const d = await getJson(GRAPH + "/" + encodeURIComponent(pagina) + "?fields=instagram_business_account&access_token=" + encodeURIComponent(token));
-  if (!d.instagram_business_account || !d.instagram_business_account.id)
-    throw new Error("la pagina Facebook non risulta collegata a un account Instagram professionale");
-  return d.instagram_business_account.id;
+async function leggiFacebook() {
+  const m = await leggiMeta();
+  if (!m) return null;
+  return { follower: numero(m.facebook && m.facebook.follower), visualizzazioni: null, periodo: null };
 }
 
 async function leggiInstagram() {
-  const pagina = env("META_PAGE_ID"), token = env("META_PAGE_TOKEN");
-  if (!pagina || !token) return null;
-  const ig = await idInstagram(pagina, token);
-  const d = await getJson(GRAPH + "/" + ig + "?fields=followers_count&access_token=" + encodeURIComponent(token));
+  const m = await leggiMeta();
+  if (!m) return null;
+  if (!m.instagram) throw new Error(m.errore_instagram || "account Instagram non trovato");
   return {
-    follower: numero(d.followers_count),
+    follower: numero(m.instagram.follower),
     // Le visualizzazioni di Instagram non si mostrano: scelta della
     // redazione (14 nov 2026), come per YouTube. Restano solo i follower,
     // e il valore null cancella dalla pagina il numero letto in precedenza.
@@ -111,6 +113,7 @@ async function salva(piattaforma, campi) {
 // ferma le altre, e non cancella i numeri vecchi: si registra solo l'errore,
 // cosi' la pagina continua a mostrare l'ultimo dato buono con la sua data.
 async function aggiornaTutto() {
+  giroMeta = null;
   const esito = {};
   for (const [nome, leggi] of Object.entries(LETTORI)) {
     try {
