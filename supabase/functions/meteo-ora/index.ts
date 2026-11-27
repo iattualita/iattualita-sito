@@ -1,11 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { PUNTI } from "./punti.ts";
 
 // MeteoIAttualità — "Adesso": il tempo osservato davvero, non previsto.
 // Legge i bollettini METAR degli aeroporti (aviationweather.gov, servizio pubblico NOAA, gratuito)
 // e salva in public.meteo_ora una riga per stazione. Lo chiama pg_cron ogni 30 minuti (:27 e :57,
 // subito dopo le emissioni delle :20 e delle :50). Accesso: header x-meteo-cron (impronta in meteo_cron).
-// Ogni regione deve avere il suo "Adesso": dove manca l'aeroporto si aggiunge una stima (stima: true).
+// Ogni capoluogo deve avere il suo "Adesso": dove manca l'aeroporto si aggiunge una stima (stima: true).
 
 // [ICAO, città mostrata, slug regione]
 const STAZIONI: [string, string, string][] = [
@@ -28,16 +29,10 @@ const STAZIONI: [string, string, string][] = [
   ["LIEE", "Cagliari", "sardegna"], ["LIEO", "Olbia", "sardegna"], ["LIEA", "Alghero", "sardegna"],
 ];
 
-// Dove non c'e' un aeroporto con bollettino: stima del modello per il momento attuale
-// (Open-Meteo "current", dati a 15 minuti), segnata come stima e mai spacciata per osservazione.
-// [nome, regione, lat, lon] — si usano solo se la regione resta senza stazioni osservate.
-const STIME: [string, string, number, number][] = [
-  ["Campobasso", "molise", 41.558, 14.659], ["Isernia", "molise", 41.588, 14.226],
-  ["Potenza", "basilicata", 40.639, 15.805], ["Matera", "basilicata", 40.668, 16.598],
-  ["Trento", "trentino-alto-adige", 46.069, 11.121], ["L'Aquila", "abruzzo", 42.351, 13.398],
-  ["Napoli", "campania", 40.84, 14.251], ["Catanzaro", "calabria", 38.906, 16.594],
-  ["Aosta", "valle-daosta", 45.738, 7.32], ["Perugia", "umbria", 43.107, 12.388], ["Ancona", "marche", 43.617, 13.519],
-];
+// Ogni capoluogo di provincia ha il suo "Adesso": se non c'e' un aeroporto della citta' (o se tace),
+// stima del modello per il momento attuale (Open-Meteo "current", dati a 15 minuti), segnata come stima.
+// Circa 70 capoluoghi x 48 volte al giorno: ~100.000 chiamate al mese, dentro il piano Standard.
+const STIME: [string, string, number, number][] = PUNTI.filter((p) => p[4] !== 2).map((p) => [p[0], p[1], p[2], p[3]]);
 const DESC: Record<number, string> = { 0: "sereno", 1: "poco nuvoloso", 2: "parzialmente nuvoloso", 3: "coperto", 45: "nebbia", 48: "nebbia", 51: "pioviggine", 53: "pioviggine", 55: "pioviggine", 56: "pioviggine gelata", 57: "pioviggine gelata", 61: "pioggia debole", 63: "pioggia", 65: "pioggia forte", 66: "pioggia gelata", 67: "pioggia gelata", 71: "neve debole", 73: "neve", 75: "neve forte", 77: "neve", 80: "rovesci", 81: "rovesci", 82: "rovesci forti", 85: "rovesci di neve", 86: "rovesci di neve", 95: "temporale", 96: "temporale", 99: "temporale" };
 
 async function sha256(t: string) {
@@ -101,12 +96,10 @@ Deno.serve(async (req) => {
     return { icao, citta, regione, ...c, t: Math.round(m.temp), vento: kmh(m.wspd), raffica: kmh(m.wgst), ora: ora(quando.toISOString()), quando: quando.toISOString() };
   }).filter(Boolean) as any[];
 
-  // Regioni (o capoluoghi di regione) senza osservazione: stima del modello.
-  // Una stima per il capoluogo si aggiunge se la regione non ha stazioni, oppure se e' un capoluogo
-  // di regione senza aeroporto in citta' (Trento, L'Aquila, Napoli se Capodichino tace, ecc.).
-  const conOss = new Set(stazioni.map((x) => x.citta));
-  const regConOss = new Set(stazioni.map((x) => x.regione));
-  const daStimare = STIME.filter(([nome, reg]) => !conOss.has(nome) && (!regConOss.has(reg) || ["Trento", "L'Aquila", "Napoli", "Catanzaro", "Aosta", "Perugia", "Ancona", "Campobasso", "Potenza"].includes(nome)));
+  // Capoluoghi senza un aeroporto proprio che ha trasmesso: stima del modello.
+  // "Caserta (Grazzanise)" conta come stazione di Caserta.
+  const conOss = new Set(stazioni.map((x) => String(x.citta).replace(/ \(.*\)$/, "")));
+  const daStimare = STIME.filter(([nome]) => !conOss.has(nome));
   const avvisi: string[] = [];
   if (daStimare.length) {
     let tmp: string | null = null;

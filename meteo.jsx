@@ -286,9 +286,10 @@ function Adesso({slug,citta,onNav}){
   const d=useOra();
   const fresche=((d&&d.stazioni)||[]).filter(x=>Date.now()-new Date(x.quando).getTime()<3*3600000);
   const delReg=slug?fresche.filter(x=>x.regione===slug):[];
-  // pagina di una citta': prima la sua stazione (o la stima), poi il resto della regione
-  const proprie=citta?delReg.filter(x=>x.citta===citta||x.citta.startsWith(citta+" ")):[];
-  const lista=citta?[...proprie,...delReg.filter(x=>proprie.indexOf(x)<0)]:slug?delReg:sceltaHub(fresche);
+  // pagina di una citta' (o di un comune: la citta' e' il suo capoluogo di provincia): solo quella.
+  // Se c'e' l'aeroporto della citta' vale quello; la stima solo se manca.
+  const proprie=citta?delReg.filter(x=>x.citta===citta||x.citta.startsWith(citta+" (")):[];
+  const lista=citta?(proprie.filter(x=>!x.stima).slice(0,1).length?proprie.filter(x=>!x.stima).slice(0,1):proprie.slice(0,1)):slug?delReg:sceltaHub(fresche);
   if(!lista.length) return null;
   const ultima=lista.filter(x=>!x.stima).map(x=>x.ora).sort().pop()||lista[0].ora;
   const stime=lista.some(x=>x.stima);
@@ -310,7 +311,7 @@ function Adesso({slug,citta,onNav}){
       </div>
       <div className="ia-adesso" style={{display:"flex",overflowX:"auto",scrollbarWidth:"none",paddingRight:12}}>{lista.map(voce)}</div>
     </div>
-    <span style={{fontSize:12.5,color:"#8EA2C4",padding:"0 20px"}}>Tempo osservato negli aeroporti (bollettini METAR){stime?" · * stima del modello dove non c'è un aeroporto":""}{slug?"":" · tocca una città per la sua regione"}</span>
+    <span style={{fontSize:12.5,color:"#8EA2C4",padding:"0 20px"}}>{lista.every(x=>x.stima)?"* Stima del modello per quest'ora: qui non c'è un aeroporto con bollettino":<React.Fragment>Tempo osservato negli aeroporti (bollettini METAR){stime?" · * stima del modello dove non c'è un aeroporto":""}{slug?"":" · tocca una città per la sua regione"}</React.Fragment>}</span>
   </section>;
 }
 
