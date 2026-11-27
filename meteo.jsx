@@ -498,6 +498,12 @@ function Regione({riga,slug,geo,onNav}){
   // La citta' scelta nel grafico della pioggia comanda anche "I prossimi giorni a ..."
   const iniziale=(capo||{}).nome;
   const [sc,setSc]=useState(null);
+  // arrivo dalla barra di ricerca: seleziona la citta' e porta la sua scheda in vista
+  useEffect(()=>{
+    const f=()=>{ const c=CERCATA; if(!c||c.slug!==slug) return; CERCATA=null; setSc({slug,nome:c.nome});
+      setTimeout(()=>{ const el=document.getElementById("citta-"+normC(c.nome)); if(el){ el.scrollIntoView({behavior:"smooth",block:"center"}); el.animate&&el.animate([{boxShadow:"0 0 0 4px "+M.blue},{boxShadow:"0 0 0 0 transparent"}],{duration:1600}); } },250); };
+    f(); window.addEventListener("ia-cerca",f); return ()=>window.removeEventListener("ia-cerca",f);
+  },[slug]);
   const scelta=punti.find(p=>p.nome===(sc&&sc.slug===slug?sc.nome:iniziale))||capo;
   const g=riga.giorno;
   const mp=geo.mappe[slug]; const [vb0,vb1]=mp.vb;
@@ -530,7 +536,7 @@ function Regione({riga,slug,geo,onNav}){
         <div style={{fontSize:13,color:M.gray,marginTop:10}}>Tempo, massima e pioggia prevista (mm) nei capoluoghi di provincia. Colore: pioggia massima nella regione.</div>
       </div>
       <div style={{flex:"1 1 380px",minWidth:0,display:"flex",flexDirection:"column",gap:12}}>
-        {punti.map(p=><article key={p.nome} style={{...card,padding:"16px 20px",display:"flex",flexDirection:"column",gap:6,borderLeft:"6px solid "+(p.cap?M.gold:M.blue)}}>
+        {punti.map(p=><article key={p.nome} id={"citta-"+normC(p.nome)} style={{...card,padding:"16px 20px",scrollMarginTop:160,display:"flex",flexDirection:"column",gap:6,borderLeft:"6px solid "+(p.cap?M.gold:M.blue)}}>
           <div style={{display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
             <h3 style={{margin:0,fontFamily:"Anton",fontWeight:400,fontSize:23,letterSpacing:".02em",color:M.navy}}>{p.nome}</h3>
             <span style={{fontSize:17,fontWeight:700,color:M.blue}}>{int(p.min)}° / {int(p.max)}°</span>
@@ -548,7 +554,7 @@ function Regione({riga,slug,geo,onNav}){
 
     <Allerte riga={riga} slug={slug}/>
 
-    {punti.length>0&&<Grafico key={slug} punti={punti} scelte={punti.slice(0,6).map(p=>p.nome)} iniziale={iniziale} onCambia={(n)=>setSc({slug,nome:n})}/>}
+    {punti.length>0&&<Grafico key={slug+"|"+(scelta?scelta.nome:"")} punti={punti} scelte={punti.slice(0,6).map(p=>p.nome)} iniziale={scelta?scelta.nome:iniziale} onCambia={(n)=>setSc({slug,nome:n})}/>}
 
     {scelta&&(scelta.tend||[]).length>0&&<section style={{display:"flex",flexDirection:"column",gap:14}}>
       <Intestazione titolo={"I prossimi giorni "+a_(scelta.nome)} sotto="Tendenza ECMWF. Oltre domani può cambiare."/>
@@ -568,6 +574,43 @@ function Regione({riga,slug,geo,onNav}){
     </section>
     <Fonti riga={riga}/>
   </React.Fragment>;
+}
+
+// ---------- Cerca una citta' (solo pagine meteo) ----------
+// 110 capoluoghi + le 20 regioni, senza chiamate: l'elenco e' in shared/meteo-geo.js.
+const normC=(t)=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z]/g,"");
+const INDICE=[...METEO_REGIONI.flatMap(r=>r.citta.map(c=>({nome:c,slug:r.slug,reg:r.nome,tipo:"citta"}))),...METEO_REGIONI.map(r=>({nome:r.nome,slug:r.slug,reg:"Regione",tipo:"regione"}))];
+let CERCATA=null;
+function Cerca({onNav}){
+  const [q,setQ]=useState(""); const [sel,setSel]=useState(0); const [aperto,setAperto]=useState(false);
+  const [top,setTop]=useState(0);
+  useEffect(()=>{ const h=document.querySelector("header"); const f=()=>setTop(h?h.offsetHeight:0); f(); window.addEventListener("resize",f); return ()=>window.removeEventListener("resize",f); },[]);
+  const n=normC(q);
+  const ris=n.length<2?[]:[...INDICE.filter(x=>normC(x.nome).startsWith(n)),...INDICE.filter(x=>!normC(x.nome).startsWith(n)&&normC(x.nome).includes(n))].slice(0,8);
+  const vai=(x)=>{ if(!x) return; setQ(""); setAperto(false); setSel(0);
+    if(x.tipo==="citta") CERCATA={slug:x.slug,nome:x.nome};
+    onNav("/meteo/"+x.slug); setTimeout(()=>window.dispatchEvent(new Event("ia-cerca")),60); };
+  const tasto=(e)=>{ if(e.key==="ArrowDown"){ e.preventDefault(); setSel(i=>Math.min(i+1,ris.length-1)); }
+    else if(e.key==="ArrowUp"){ e.preventDefault(); setSel(i=>Math.max(i-1,0)); }
+    else if(e.key==="Enter"){ e.preventDefault(); vai(ris[sel]); }
+    else if(e.key==="Escape"){ setAperto(false); } };
+  return <div style={{position:"sticky",top,zIndex:15,background:M.bg,padding:"10px 18px",borderBottom:"1px solid "+M.line}}>
+    <div style={{maxWidth:1200,margin:"0 auto",position:"relative"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,background:"#fff",border:"2px solid "+M.line,borderRadius:12,padding:"0 14px"}}>
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke={M.gray} strokeWidth="2.2"/><path d="M15.5 15.5L21 21" stroke={M.gray} strokeWidth="2.2" strokeLinecap="round"/></svg>
+        <input type="search" value={q} placeholder="Cerca il meteo di una città o di una regione" aria-label="Cerca il meteo di una città o di una regione" role="combobox" aria-expanded={aperto&&ris.length>0} aria-controls="ia-cerca-lista" autoComplete="off"
+          onChange={e=>{ setQ(e.target.value); setSel(0); setAperto(true); }} onFocus={()=>setAperto(true)} onBlur={()=>setTimeout(()=>setAperto(false),150)} onKeyDown={tasto}
+          style={{flex:1,border:"none",outline:"none",fontSize:17,padding:"12px 0",fontFamily:"Barlow",background:"transparent",color:M.ink,minWidth:0}}/>
+      </div>
+      {aperto&&ris.length>0&&<ul id="ia-cerca-lista" role="listbox" style={{position:"absolute",left:0,right:0,top:"100%",marginTop:6,listStyle:"none",padding:6,background:"#fff",borderRadius:12,boxShadow:"0 8px 28px rgba(15,26,46,.18)",zIndex:16}}>
+        {ris.map((x,i)=><li key={x.tipo+x.nome} role="option" aria-selected={i===sel} onMouseDown={e=>{ e.preventDefault(); vai(x); }} onMouseEnter={()=>setSel(i)}
+          style={{display:"flex",justifyContent:"space-between",gap:12,padding:"10px 12px",borderRadius:8,cursor:"pointer",background:i===sel?M.bg:"transparent"}}>
+          <span style={{fontWeight:700,color:M.navy}}>{x.nome}</span><span style={{color:M.gray,fontSize:14}}>{x.reg}</span>
+        </li>)}
+      </ul>}
+      {aperto&&n.length>=2&&!ris.length&&<div style={{position:"absolute",left:0,right:0,top:"100%",marginTop:6,background:"#fff",borderRadius:12,boxShadow:"0 8px 28px rgba(15,26,46,.18)",padding:"12px 16px",color:M.soft,fontSize:15}}>Nessun capoluogo con questo nome. Le previsioni coprono i 110 capoluoghi di provincia.</div>}
+    </div>
+  </div>;
 }
 
 // ---------- pagina ----------
@@ -620,6 +663,7 @@ export function MeteoPage({path,onNav}){
   else if(rt.tipo==="regione") corpo=<Regione riga={riga} slug={rt.regione} geo={stato.geo||GEO} onNav={onNav}/>;
   else corpo=<Hub riga={riga} archivio={stato.archivio||[]} geo={stato.geo||GEO} onNav={onNav}/>;
   return <div style={{background:M.bg,color:M.ink,fontFamily:"Barlow",minHeight:"70vh"}}>
+    {rt.tipo!=="nessuna"&&<Cerca onNav={onNav}/>}
     <main id="top" style={{maxWidth:1200,margin:"0 auto",padding:"28px 18px 56px",display:"flex",flexDirection:"column",gap:44,boxSizing:"border-box"}}>{corpo}</main>
   </div>;
 }
