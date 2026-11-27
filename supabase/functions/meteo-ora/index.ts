@@ -1,0 +1,93 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
+
+// MeteoIAttualità — "Adesso": il tempo osservato davvero, non previsto.
+// Legge i bollettini METAR degli aeroporti (aviationweather.gov, servizio pubblico NOAA, gratuito)
+// e salva in public.meteo_ora una riga per stazione. Lo chiama pg_cron ogni 30 minuti (:27 e :57,
+// subito dopo le emissioni delle :20 e delle :50). Accesso: header x-meteo-cron (impronta in meteo_cron).
+
+// [ICAO, città mostrata, slug regione]
+const STAZIONI: [string, string, string][] = [
+  ["LIMF", "Torino", "piemonte"], ["LIMZ", "Cuneo", "piemonte"], ["LIMW", "Aosta", "valle-daosta"],
+  ["LIML", "Milano", "lombardia"], ["LIME", "Bergamo", "lombardia"], ["LIPO", "Brescia", "lombardia"],
+  ["LIPB", "Bolzano", "trentino-alto-adige"],
+  ["LIPZ", "Venezia", "veneto"], ["LIPX", "Verona", "veneto"], ["LIPH", "Treviso", "veneto"],
+  ["LIPQ", "Trieste", "friuli-venezia-giulia"],
+  ["LIMJ", "Genova", "liguria"], ["LIMG", "Albenga", "liguria"],
+  ["LIPE", "Bologna", "emilia-romagna"], ["LIMP", "Parma", "emilia-romagna"], ["LIPK", "Forlì", "emilia-romagna"], ["LIPR", "Rimini", "emilia-romagna"],
+  ["LIRQ", "Firenze", "toscana"], ["LIRP", "Pisa", "toscana"], ["LIRS", "Grosseto", "toscana"],
+  ["LIRZ", "Perugia", "umbria"], ["LIPY", "Ancona", "marche"],
+  ["LIRA", "Roma", "lazio"], ["LIRF", "Fiumicino", "lazio"],
+  ["LIBP", "Pescara", "abruzzo"],
+  ["LIRN", "Napoli", "campania"], ["LIRI", "Salerno", "campania"],
+  ["LIBD", "Bari", "puglia"], ["LIBR", "Brindisi", "puglia"], ["LIBG", "Taranto", "puglia"],
+  ["LICA", "Lamezia Terme", "calabria"], ["LICR", "Reggio Calabria", "calabria"], ["LIBC", "Crotone", "calabria"],
+  ["LICJ", "Palermo", "sicilia"], ["LICC", "Catania", "sicilia"], ["LICT", "Trapani", "sicilia"], ["LICB", "Comiso", "sicilia"],
+  ["LIEE", "Cagliari", "sardegna"], ["LIEO", "Olbia", "sardegna"], ["LIEA", "Alghero", "sardegna"],
+];
+
+async function sha256(t: string) {
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t));
+  return Array.from(new Uint8Array(b)).map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+const j = (o: unknown, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "Content-Type": "application/json" } });
+
+// METAR -> codice tipo WMO (lo stesso delle icone del sito) + descrizione in italiano.
+function cielo(m: any): { cod: number; desc: string } {
+  const wx = String(m.wxString ?? "");
+  const nubi: string[] = (m.clouds ?? []).map((c: any) => String(c.cover));
+  const cover = String(m.cover ?? "");
+  if (/TS/.test(wx)) return { cod: 95, desc: "temporale" };
+  if (/SN|SG|PL/.test(wx)) return { cod: /\+/.test(wx) ? 75 : 71, desc: /\+/.test(wx) ? "neve forte" : "neve" };
+  if (/RA|DZ|SH/.test(wx)) {
+    const forte = /\+/.test(wx), debole = /-/.test(wx) || /DZ/.test(wx);
+    return { cod: forte ? 65 : debole ? 61 : 63, desc: forte ? "pioggia forte" : debole ? "pioggia debole" : "pioggia" };
+  }
+  if (/FG/.test(wx) && !/BCFG|MIFG|PRFG/.test(wx)) return { cod: 45, desc: "nebbia" };
+  // nuvolosità: lo strato più esteso
+  const ordine = ["SKC", "CLR", "NSC", "NCD", "CAVOK", "FEW", "SCT", "BKN", "OVC", "OVX", "VV"];
+  const tutte = [...nubi, cover].filter((x) => ordine.includes(x));
+  const peggio = tutte.sort((a, b) => ordine.indexOf(b) - ordine.indexOf(a))[0] ?? "";
+  const foschia = /BR|HZ|FU/.test(wx);
+  let r: { cod: number; desc: string };
+  if (peggio === "OVC" || peggio === "OVX" || peggio === "VV") r = { cod: 3, desc: "coperto" };
+  else if (peggio === "BKN") r = { cod: 3, desc: "molto nuvoloso" };
+  else if (peggio === "SCT") r = { cod: 2, desc: "parzialmente nuvoloso" };
+  else if (peggio === "FEW") r = { cod: 1, desc: "poco nuvoloso" };
+  else r = { cod: 0, desc: "sereno" };
+  if (foschia) r = { cod: r.cod, desc: r.desc + (/HZ/.test(wx) && !/BR/.test(wx) ? ", caligine" : ", foschia") };
+  return r;
+}
+
+Deno.serve(async (req) => {
+  const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const k = req.headers.get("x-meteo-cron") ?? "";
+  if (k.length < 20) return j({ errore: "non autorizzato" }, 401);
+  const { data: ok } = await db.from("meteo_cron").select("hash").eq("hash", await sha256(k)).maybeSingle();
+  if (!ok) return j({ errore: "non autorizzato" }, 401);
+
+  const r = await fetch(`https://aviationweather.gov/api/data/metar?ids=${STAZIONI.map((s) => s[0]).join(",")}&format=json`, { headers: { "User-Agent": "iattualita.it meteo (redazione@iattualita.it)" } });
+  if (!r.ok) return j({ errore: "METAR", stato: r.status }, 502);
+  const lista: any[] = await r.json();
+  const ultimo: Record<string, any> = {};
+  for (const m of lista) {
+    if (m.temp == null) continue; // NIL o bollettino vuoto
+    const prec = ultimo[m.icaoId];
+    if (!prec || String(m.reportTime) > String(prec.reportTime)) ultimo[m.icaoId] = m;
+  }
+  const adesso = Date.now();
+  const ora = (iso: string) => new Intl.DateTimeFormat("it-IT", { timeZone: "Europe/Rome", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+  const stazioni = STAZIONI.map(([icao, citta, regione]) => {
+    const m = ultimo[icao];
+    if (!m) return null;
+    const quando = new Date(String(m.reportTime).replace(" ", "T") + (String(m.reportTime).endsWith("Z") ? "" : "Z"));
+    if (adesso - quando.getTime() > 3 * 3600_000) return null; // più vecchio di 3 ore: non è "adesso"
+    const c = cielo(m);
+    const kmh = (kt: any) => (typeof kt === "number" ? Math.round(kt * 1.852) : null);
+    return { icao, citta, regione, ...c, t: Math.round(m.temp), vento: kmh(m.wspd), raffica: kmh(m.wgst), ora: ora(quando.toISOString()), quando: quando.toISOString() };
+  }).filter(Boolean);
+
+  const { error } = await db.from("meteo_ora").upsert({ id: 1, stazioni, aggiornato_il: new Date().toISOString() });
+  if (error) return j({ errore: "upsert", dettaglio: error.message }, 500);
+  return j({ ok: true, stazioni: stazioni.length, su: STAZIONI.length });
+});
