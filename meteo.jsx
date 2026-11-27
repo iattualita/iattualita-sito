@@ -248,15 +248,18 @@ function Adesso({slug,titolo}){
   const fresche=((d&&d.stazioni)||[]).filter(x=>Date.now()-new Date(x.quando).getTime()<3*3600000);
   const lista=slug?fresche.filter(x=>x.regione===slug):fresche;
   if(!lista.length) return null;
+  const stime=lista.some(x=>x.stima), oss=lista.some(x=>!x.stima);
+  const sotto=(oss?"Il tempo osservato in questo momento negli aeroporti"+(slug?"":" italiani")+", non previsto (bollettini METAR, ogni 30 minuti).":"")
+    +(stime?(oss?" Dove non c'è un aeroporto, ":"Qui non ci sono aeroporti con bollettino: ")+"stima del modello per quest'ora, segnata in giallo.":"");
   return <section style={{display:"flex",flexDirection:"column",gap:16}}>
-    <Intestazione titolo={titolo||"Adesso"} sotto={"Il tempo osservato in questo momento negli aeroporti"+(slug?"":" italiani")+", non previsto. Bollettini METAR, aggiornati ogni 30 minuti."}/>
+    <Intestazione titolo={titolo||"Adesso"} sotto={sotto}/>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10}}>
       {lista.map(x=>{ const h=oraRoma(x.quando); const notte=h<7||h>=17;
-        return <div key={x.icao} title={"Aeroporto "+x.icao+", osservazione delle "+x.ora} style={{...card,padding:"12px 14px",display:"flex",flexDirection:"column",gap:4,borderTop:"4px solid "+M.greenInk}}>
+        return <div key={x.icao} title={x.stima?"Stima del modello per le "+x.ora+", non un'osservazione":"Aeroporto "+x.icao+", osservazione delle "+x.ora} style={{...card,padding:"12px 14px",display:"flex",flexDirection:"column",gap:4,borderTop:"4px solid "+(x.stima?M.gold:M.greenInk)}}>
           <span style={{fontSize:15,fontWeight:700,color:M.navy,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{x.citta}</span>
           <span style={{display:"flex",alignItems:"center",gap:8}}><Icona cod={x.cod} s={28} notte={notte}/><span style={{fontFamily:"Anton",fontSize:26,color:M.ink}}>{int(x.t)}°</span></span>
           <span style={{fontSize:14,color:M.soft,lineHeight:1.3}}>{cap(x.desc)}</span>
-          <span style={{fontSize:12.5,color:M.gray}}>{x.vento!=null&&x.vento>=10?"Vento "+x.vento+(x.raffica?"–"+x.raffica:"")+" km/h · ":""}ore {x.ora}</span>
+          <span style={{fontSize:12.5,color:M.gray}}>{x.vento!=null&&x.vento>=10?"Vento "+x.vento+(x.raffica?"–"+x.raffica:"")+" km/h · ":""}{x.stima?"stima · ":""}ore {x.ora}</span>
         </div>; })}
     </div>
   </section>;
