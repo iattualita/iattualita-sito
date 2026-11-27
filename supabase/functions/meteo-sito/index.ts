@@ -48,7 +48,7 @@ async function scarica(giorno: string) {
   for (const l of lotti) {
     const base = { latitude: l.map((p) => p[2]).join(","), longitude: l.map((p) => p[3]).join(","), daily: DAILY, timezone: "Europe/Rome" };
     const [a, b, c] = await Promise.all([
-      om({ ...base, models: "italia_meteo_arpae_icon_2i", start_date: giorno, end_date: giorno, hourly: "precipitation,freezing_level_height,cloud_cover,temperature_2m" }),
+      om({ ...base, models: "italia_meteo_arpae_icon_2i", start_date: giorno, end_date: addDays(giorno, 2), hourly: "precipitation,freezing_level_height,cloud_cover,temperature_2m" }),
       om({ ...base, models: "ecmwf_ifs025", start_date: giorno, end_date: addDays(giorno, 6), hourly: "precipitation,cloud_cover,temperature_2m" }),
       // solo nuvole e visibilita', per il consenso: AROME/ARPEGE di Meteo-France e ICON-EU del DWD
       om({ latitude: base.latitude, longitude: base.longitude, timezone: "Europe/Rome", models: "meteofrance_seamless,icon_eu", start_date: giorno, end_date: addDays(giorno, 6), hourly: "cloud_cover,cloud_cover_low,visibility" }).catch(() => []),
@@ -151,17 +151,26 @@ function puntoDa(p: typeof PUNTI[number], A: any, E: any, X: any, giorno: string
   const pick = (k: string) => { const v = ia >= 0 ? Da[k]?.[ia] : null; return v ?? (ie >= 0 ? De[k]?.[ie] : null); };
   const Ha = A?.hourly ?? {}, He = E?.hourly ?? {}, Hx = X?.hourly ?? {};
   const altri = [{ H: He, nuv: "cloud_cover" }, { H: Hx, nuv: "cloud_cover_meteofrance_seamless", basse: "cloud_cover_low_meteofrance_seamless" }, { H: Hx, nuv: "cloud_cover_icon_eu", basse: "cloud_cover_low_icon_eu" }];
-  let ore: (number | null)[] = (Ha.time ?? []).map((t: string, i: number) => (t.startsWith(giorno) ? Ha.precipitation[i] : undefined)).filter((x: any) => x !== undefined);
-  if (!ore.length || ore.every((x) => x == null)) ore = (He.time ?? []).map((t: string, i: number) => (t.startsWith(giorno) ? He.precipitation[i] : undefined)).filter((x: any) => x !== undefined);
+  // pioggia ora per ora di un giorno: ICON-2I (fino a dopodomani), se manca ECMWF
+  const oreDi = (d: string) => {
+    let o: (number | null)[] = (Ha.time ?? []).map((t: string, i: number) => (t.startsWith(d) ? Ha.precipitation[i] : undefined)).filter((x: any) => x !== undefined);
+    if (!o.length || o.every((x) => x == null)) o = (He.time ?? []).map((t: string, i: number) => (t.startsWith(d) ? He.precipitation[i] : undefined)).filter((x: any) => x !== undefined);
+    return o;
+  };
+  const neveDi = (d: string) => { const i = (Da.time ?? []).indexOf(d), k = (De.time ?? []).indexOf(d); return r1((i >= 0 ? Da.snowfall_sum?.[i] : null) ?? (k >= 0 ? De.snowfall_sum?.[k] : null)) ?? 0; };
+  const tutte = [{ H: Ha, nuv: "cloud_cover" }, ...altri];
+  const ore = oreDi(giorno);
   const zt = [6, 12, 18].map((h) => { const i = (Ha.time ?? []).indexOf(`${giorno}T${String(h).padStart(2, "0")}:00`); return i >= 0 ? r0(Ha.freezing_level_height?.[i] ?? null) : null; });
-  const tend = (De.time ?? []).slice(1, 7).map((d: string, k: number) => ({ d, cod: codDiurno(De.weather_code[k + 1], d, altri, Hx, De.precipitation_sum?.[k + 1] ?? null), min: r0(De.temperature_2m_min[k + 1]), max: r0(De.temperature_2m_max[k + 1]), mm: r1(De.precipitation_sum[k + 1]) }));
+  const tend = (De.time ?? []).slice(1, 7).map((d: string, k: number) => ({ d, cod: codDiurno(De.weather_code[k + 1], d, altri, Hx, De.precipitation_sum?.[k + 1] ?? null), min: r0(De.temperature_2m_min[k + 1]), max: r0(De.temperature_2m_max[k + 1]), mm: r1(De.precipitation_sum[k + 1]), fasce: fasceDi(d, tutte, oreDi(d), Ha, He, neveDi(d)) }));
+  // ora per ora anche domani e dopodomani (fin dove arriva ICON-2I); oltre, solo mattina/pomeriggio/sera in tend
+  const orari = [1, 2].map((k) => { const d = addDays(giorno, k); return { d, orario: orarioDi(d, tutte, oreDi(d), Ha, He, neveDi(d)) }; });
   return {
     nome: p[0], regione: p[1], zona: p[4] === 2 ? "Montagna" : REGIONI.find((r) => r[0] === p[1])![2], cap: p[4] === 1, mont: p[4] === 2,
     cod: codDiurno(pick("weather_code"), giorno, [{ H: Ha, nuv: "cloud_cover" }, ...altri], Hx, ore.length >= 24 ? ore.slice(6, 24).reduce((a: number, b) => a + (b ?? 0), 0) : pick("precipitation_sum")), min: r1(pick("temperature_2m_min")), max: r1(pick("temperature_2m_max")), mm: r1(pick("precipitation_sum")) ?? 0,
     neve: r1(pick("snowfall_sum")) ?? 0, raff: r0(pick("wind_gusts_10m_max")), dir: r0(pick("wind_direction_10m_dominant")),
     ore: ore.slice(0, 24).map((x) => r1(x ?? 0)), zt, tend,
     fasce: fasceDi(giorno, [{ H: Ha, nuv: "cloud_cover" }, ...altri], ore, Ha, He, r1(pick("snowfall_sum")) ?? 0),
-    orario: orarioDi(giorno, [{ H: Ha, nuv: "cloud_cover" }, ...altri], ore, Ha, He, r1(pick("snowfall_sum")) ?? 0),
+    orario: orarioDi(giorno, tutte, ore, Ha, He, r1(pick("snowfall_sum")) ?? 0), orari,
     ecm: ie >= 0 ? { max: r1(De.temperature_2m_max[ie]), mm: r1(De.precipitation_sum[ie]) } : null,
     icon_ok: ia >= 0 && Da.temperature_2m_max?.[ia] != null,
   };

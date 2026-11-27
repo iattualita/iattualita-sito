@@ -75,6 +75,19 @@ function Fasce({p}){
   </div>;
 }
 
+// Mattina / pomeriggio / sera in piccolo, per le schede "I prossimi giorni" (dal 27/11/2026)
+const NOMEF_CORTO={mattina:"Mattina",pomeriggio:"Pomer.",sera:"Sera"};
+function FasceMini({f}){
+  if(!Array.isArray(f)||f.length!==3) return null;
+  return <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:4,paddingTop:8,borderTop:"1px solid #E3E8F1"}}>
+    {f.map(x=><div key={x.f} title={NOMEF[x.f]+": "+(DESC[x.cod]||"")+(x.mm>=0.5?", "+virg(x.mm)+" mm":"")} style={{display:"grid",gridTemplateColumns:"58px 24px 1fr",alignItems:"center",gap:6,fontSize:13.5}}>
+      <span style={{color:M.gray,fontWeight:700}}>{NOMEF_CORTO[x.f]}</span>
+      <Icona cod={x.cod} s={22} notte={x.f==="sera"}/>
+      <span style={{fontWeight:700,color:M.ink}}>{x.t!=null?int(x.t)+"°":"–"}{x.mm>=0.5&&<span style={{color:M.rain,marginLeft:6}}>{virg(x.mm)} mm</span>}</span>
+    </div>)}
+  </div>;
+}
+
 // Le etichette sono disegnate per una mappa larga ~540 px: sotto quella
 // misura si rimpiccioliscono insieme alla mappa, invece di accavallarsi.
 function useScala(ref,base){
@@ -122,15 +135,16 @@ function Allerte({riga,slug}){
 // Previsioni ora per ora: 24 colonne con ora, icona, temperatura e pioggia (barretta + mm).
 // Si apre sull'ora attuale; se il giorno e' oggi, le ore passate sono attenuate.
 // I giorni salvati prima del 27/11/2026 non hanno "orario": resta il grafico della sola pioggia.
+const addG=(d,n)=>{ const t=new Date(d+"T12:00:00Z"); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); };
 const oggiIt=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Rome"}).format(new Date());
 const oraIt=()=>Number(new Intl.DateTimeFormat("it-IT",{timeZone:"Europe/Rome",hour:"2-digit",hour12:false}).format(new Date()));
-function Orario({p,giorno}){
+function Orario({p,giorno,orario}){
   const box=useRef(null);
   const oggi=giorno===oggiIt(), adesso=oggi?oraIt():-1;
-  const mx=Math.max(1,...p.orario.map(x=>x.mm||0));
-  useEffect(()=>{ const el=box.current; if(!el||adesso<0) return; const c=el.querySelector('[data-ora="'+adesso+'"]'); if(c) el.scrollLeft=Math.max(0,c.offsetLeft-el.offsetLeft-8); },[p.nome,giorno]);
+  const mx=Math.max(1,...orario.map(x=>x.mm||0));
+  useEffect(()=>{ const el=box.current; if(!el) return; const c=el.querySelector('[data-ora="'+(adesso>=0?adesso:6)+'"]'); if(c) el.scrollLeft=Math.max(0,c.offsetLeft-el.offsetLeft-8); },[p.nome,giorno]);
   return <div ref={box} role="list" aria-label={"Previsioni ora per ora a "+p.nome} style={{display:"flex",overflowX:"auto",gap:6,paddingBottom:6,scrollbarWidth:"thin"}}>
-    {p.orario.map(x=>{ const passata=oggi&&x.h<adesso, ora=x.h===adesso, notte=x.h<7||x.h>=17, piove=(x.mm||0)>=0.1;
+    {orario.map(x=>{ const passata=oggi&&x.h<adesso, ora=x.h===adesso, notte=x.h<7||x.h>=17, piove=(x.mm||0)>=0.1;
       return <div key={x.h} data-ora={x.h} role="listitem" title={String(x.h).padStart(2,"0")+":00 · "+(DESC[x.cod]||"")+(x.t!=null?", "+x.t+"°":"")+(piove?", "+virg(x.mm)+" mm":"")}
         style={{flex:"0 0 64px",display:"flex",flexDirection:"column",alignItems:"center",gap:6,padding:"10px 4px",borderRadius:12,background:ora?M.navy:M.bg,color:ora?"#fff":M.ink,opacity:passata?.45:1}}>
         <span style={{fontSize:13,fontWeight:700,color:ora?"#fff":M.gray}}>{ora?"Ora":String(x.h).padStart(2,"0")+":00"}</span>
@@ -144,6 +158,7 @@ function Orario({p,giorno}){
 
 function Grafico({punti,scelte,iniziale,nota,onCambia,giorno}){
   const [c,setC0]=useState(iniziale);
+  const [gi,setGi]=useState(0);
   const setC=(n)=>{ setC0(n); onCambia&&onCambia(n); };
   const p=punti.find(x=>x.nome===c)||punti[0];
   if(!p) return null;
@@ -151,6 +166,12 @@ function Grafico({punti,scelte,iniziale,nota,onCambia,giorno}){
   const mx=Math.max(0,...arr), tot=arr.reduce((a,b)=>a+b,0);
   const altri=punti.filter(x=>scelte.indexOf(x.nome)<0);
   const conOrario=Array.isArray(p.orario)&&p.orario.length===24;
+  // giorni con l'ora per ora: oggi + domani e dopodomani (ICON-2I arriva a 72 ore)
+  const g0=giorno||p.giorno||oggiIt();
+  const giorni=conOrario?[{d:g0,orario:p.orario},...(Array.isArray(p.orari)?p.orari.filter(x=>Array.isArray(x.orario)&&x.orario.length===24):[])]:[];
+  const sel=giorni[Math.min(gi,giorni.length-1)];
+  const etich=(d)=>{ const o=oggiIt(); if(d===o) return "Oggi"; if(d===addG(o,1)) return "Domani"; if(d===addG(o,2)) return "Dopodomani"; return nomeGiorno(d); };
+  const mmSel=sel?sel.orario.map(x=>x.mm||0):arr, totSel=mmSel.reduce((a,b)=>a+b,0), mxSel=Math.max(0,...mmSel);
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <Intestazione titolo={conOrario?"Previsioni ora per ora":"Quando piove, ora per ora"}>
       {(scelte.length>1||altri.length>0)&&<div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
@@ -164,9 +185,12 @@ function Grafico({punti,scelte,iniziale,nota,onCambia,giorno}){
     <div style={{...card,padding:24,display:"flex",flexDirection:"column",gap:12}}>
       <div style={{display:"flex",flexWrap:"wrap",gap:"6px 22px",alignItems:"baseline"}}>
         <span style={{fontFamily:"Anton",fontSize:30,color:M.navy}}>{p.nome}</span>
-        <span style={{fontSize:17,color:M.soft}}>Pioggia nella giornata: <b>{mm(tot)}</b>{mx>0&&<React.Fragment> · picco alle <b>{String(arr.indexOf(mx)).padStart(2,"0")}:00</b> ({virg(mx)} mm)</React.Fragment>}</span>
+        <span style={{fontSize:17,color:M.soft}}>Pioggia nella giornata: <b>{mm(totSel)}</b>{mxSel>0&&<React.Fragment> · picco alle <b>{String(mmSel.indexOf(mxSel)).padStart(2,"0")}:00</b> ({virg(mxSel)} mm)</React.Fragment>}</span>
       </div>
-      {conOrario? <Orario p={p} giorno={giorno||p.giorno}/> : <React.Fragment>
+      {giorni.length>1&&<div role="tablist" aria-label="Scegli il giorno" style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        {giorni.map((x,i)=><button key={x.d} role="tab" aria-selected={x===sel} onClick={()=>setGi(i)} style={pill(x===sel)}>{etich(x.d)}</button>)}
+      </div>}
+      {conOrario? <Orario p={p} giorno={sel.d} orario={sel.orario}/> : <React.Fragment>
       <div role="img" aria-label={"Pioggia ora per ora a "+p.nome+": totale "+mm(tot)} style={{display:"flex",alignItems:"flex-end",gap:"clamp(1px,.4vw,4px)",height:190,borderBottom:"2px solid #CBD3E1"}}>
         {arr.map((v,i)=><div key={i} title={String(i).padStart(2,"0")+":00 · "+virg(v)+" mm"} style={{flex:"1 1 0",minWidth:0,height:"100%",display:"flex",alignItems:"flex-end"}}>
           <div style={{width:"100%",borderRadius:"4px 4px 0 0",background:M.rain,height:(mx>0?Math.max(v/mx*100,v>0?3:0):0)+"%"}}/>
@@ -175,7 +199,7 @@ function Grafico({punti,scelte,iniziale,nota,onCambia,giorno}){
       <div style={{display:"flex",justifyContent:"space-between",fontSize:13,color:M.gray,fontWeight:600}}>{["00","04","08","12","16","20","23"].map(x=><span key={x}>{x}</span>)}</div>
       {mx===0&&<span style={{fontSize:15,color:M.soft}}>Nessuna pioggia prevista a {p.nome}.</span>}
       </React.Fragment>}
-      <span style={{fontSize:13.5,color:M.gray}}>{conOrario?"Cielo dal consenso dei modelli, temperatura e pioggia ora per ora (ICON-2I). Scorri di lato per tutte le ore.":(nota||"Millimetri di pioggia per ora, modello ICON-2I.")}</span>
+      <span style={{fontSize:13.5,color:M.gray}}>{conOrario?"Cielo dal consenso dei modelli, temperatura e pioggia ora per ora (ICON-2I, fino a dopodomani). Scorri di lato per tutte le ore.":(nota||"Millimetri di pioggia per ora, modello ICON-2I.")}</span>
     </div>
   </div>;
 }
@@ -588,12 +612,13 @@ function Regione({riga,slug,geo,onNav}){
 
     {scelta&&(scelta.tend||[]).length>0&&<section style={{display:"flex",flexDirection:"column",gap:14}}>
       <Intestazione titolo={"I prossimi giorni "+a_(scelta.nome)} sotto="Tendenza ECMWF. Oltre domani può cambiare."/>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(165px,1fr))",gap:12}}>
         {scelta.tend.map(t=><div key={t.d} style={{...card,padding:16,display:"flex",flexDirection:"column",gap:6,borderTop:"4px solid "+M.gold}}>
           <span style={{fontFamily:"Anton",fontSize:21,color:M.navy}}>{nomeGiorno(t.d)}</span>
           <span style={{fontSize:13,color:M.gray}}>{dataBreve(t.d)}</span>
           <span style={{display:"flex",alignItems:"center",gap:8}}><Icona cod={t.cod} s={26}/><span style={{fontSize:18,fontWeight:700}}>{int(t.min)}° / {int(t.max)}°</span></span>
           <span style={{fontSize:14,color:M.soft}}>{(DESC[t.cod]||"")+(t.mm>=0.5?", "+virg(t.mm)+" mm":"")}</span>
+          <FasceMini f={t.fasce}/>
         </div>)}
       </div>
     </section>}
@@ -652,12 +677,13 @@ function Citta({riga,slug,nome,onNav}){
 
     {(p.tend||[]).length>0&&<section style={{display:"flex",flexDirection:"column",gap:14}}>
       <Intestazione titolo={"I prossimi giorni "+a_(nome)} sotto="Tendenza ECMWF. Oltre domani può cambiare."/>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(165px,1fr))",gap:12}}>
         {p.tend.map(t=><div key={t.d} style={{...card,padding:16,display:"flex",flexDirection:"column",gap:6,borderTop:"4px solid "+M.gold}}>
           <span style={{fontFamily:"Anton",fontSize:21,color:M.navy}}>{nomeGiorno(t.d)}</span>
           <span style={{fontSize:13,color:M.gray}}>{dataBreve(t.d)}</span>
           <span style={{display:"flex",alignItems:"center",gap:8}}><Icona cod={t.cod} s={26}/><span style={{fontSize:18,fontWeight:700}}>{int(t.min)}° / {int(t.max)}°</span></span>
           <span style={{fontSize:14,color:M.soft}}>{(DESC[t.cod]||"")+(t.mm>=0.5?", "+virg(t.mm)+" mm":"")}</span>
+          <FasceMini f={t.fasce}/>
         </div>)}
       </div>
     </section>}
@@ -770,12 +796,13 @@ function Comune({slug,cs,onNav}){
 
     {(p.tend||[]).length>0&&<section style={{display:"flex",flexDirection:"column",gap:14}}>
       <Intestazione titolo={"I prossimi giorni "+a_(c.nome)} sotto="Tendenza ECMWF. Oltre domani può cambiare."/>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(165px,1fr))",gap:12}}>
         {p.tend.map(t=><div key={t.d} style={{...card,padding:16,display:"flex",flexDirection:"column",gap:6,borderTop:"4px solid "+M.gold}}>
           <span style={{fontFamily:"Anton",fontSize:21,color:M.navy}}>{nomeGiorno(t.d)}</span>
           <span style={{fontSize:13,color:M.gray}}>{dataBreve(t.d)}</span>
           <span style={{display:"flex",alignItems:"center",gap:8}}><Icona cod={t.cod} s={26}/><span style={{fontSize:18,fontWeight:700}}>{int(t.min)}° / {int(t.max)}°</span></span>
           <span style={{fontSize:14,color:M.soft}}>{(DESC[t.cod]||"")+(t.mm>=0.5?", "+virg(t.mm)+" mm":"")}</span>
+          <FasceMini f={t.fasce}/>
         </div>)}
       </div>
     </section>}

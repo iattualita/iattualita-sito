@@ -3,7 +3,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 // MeteoIAttualità — previsioni di tutti i comuni (dal 27/11/2026), tabella public.meteo_comuni.
 // I 110 capoluoghi NON passano di qui: restano in meteo_giorni (meteo-sito, 6 volte al giorno, 4 modelli).
-// Per gli altri 7.784 comuni: ICON-2I (oggi, ora per ora) + ECMWF IFS (6 giorni), 2 chiamate Open-Meteo a comune.
+// Per gli altri 7.784 comuni: ICON-2I (oggi-dopodomani, ora per ora) + ECMWF IFS (6 giorni), 2 chiamate Open-Meteo a comune.
 //   POST {lotto:true}       x-meteo-cron: calcola fino a 400 comuni non ancora aggiornati oggi (cron 5:00-7:00)
 //   POST {comune:{regione,slug}}  pubblico: se il dato ha piu' di 3 ore lo ricalcola (con tetto giornaliero)
 //   POST {semina:url}       x-meteo-cron: riempie/aggiorna la tabella dai dati di meteo-comuni-punti.json
@@ -75,16 +75,22 @@ function calcola(A: any, E: any, g: string) {
   const ia = (Da.time ?? []).indexOf(g), ie = (De.time ?? []).indexOf(g);
   const pick = (k: string) => { const v = ia >= 0 ? Da[k]?.[ia] : null; return v ?? (ie >= 0 ? De[k]?.[ie] : null); };
   const Ha = A?.hourly ?? {}, He = E?.hourly ?? {};
-  let ore: (number | null)[] = (Ha.time ?? []).map((t: string, i: number) => (t.startsWith(g) ? Ha.precipitation[i] : undefined)).filter((x: any) => x !== undefined);
-  if (!ore.length || ore.every((x) => x == null)) ore = (He.time ?? []).map((t: string, i: number) => (t.startsWith(g) ? He.precipitation[i] : undefined)).filter((x: any) => x !== undefined);
+  const oreDi = (d: string) => {
+    let o: (number | null)[] = (Ha.time ?? []).map((t: string, i: number) => (t.startsWith(d) ? Ha.precipitation[i] : undefined)).filter((x: any) => x !== undefined);
+    if (!o.length || o.every((x) => x == null)) o = (He.time ?? []).map((t: string, i: number) => (t.startsWith(d) ? He.precipitation[i] : undefined)).filter((x: any) => x !== undefined);
+    return o;
+  };
+  const neveDi = (d: string) => { const i = (Da.time ?? []).indexOf(d), k = (De.time ?? []).indexOf(d); return r1((i >= 0 ? Da.snowfall_sum?.[i] : null) ?? (k >= 0 ? De.snowfall_sum?.[k] : null)) ?? 0; };
+  const ore = oreDi(g);
   const neve = r1(pick("snowfall_sum")) ?? 0;
-  const tend = (De.time ?? []).slice(1, 7).map((d: string, k: number) => ({ d, cod: codDiurno(De.weather_code[k + 1], d, [He], De.precipitation_sum?.[k + 1] ?? null), min: r0(De.temperature_2m_min[k + 1]), max: r0(De.temperature_2m_max[k + 1]), mm: r1(De.precipitation_sum[k + 1]) }));
+  const tend = (De.time ?? []).slice(1, 7).map((d: string, k: number) => ({ d, cod: codDiurno(De.weather_code[k + 1], d, [He], De.precipitation_sum?.[k + 1] ?? null), min: r0(De.temperature_2m_min[k + 1]), max: r0(De.temperature_2m_max[k + 1]), mm: r1(De.precipitation_sum[k + 1]), fasce: fasceDi(d, [Ha, He], oreDi(d), neveDi(d)) }));
+  const orari = [1, 2].map((k) => { const d = addDays(g, k); return { d, orario: orarioDi(d, [Ha, He], oreDi(d), neveDi(d)) }; });
   return {
     giorno: g,
     cod: codDiurno(pick("weather_code"), g, [Ha, He], ore.length >= 24 ? ore.slice(6, 24).reduce((a: number, b) => a + (b ?? 0), 0) : pick("precipitation_sum")),
     min: r1(pick("temperature_2m_min")), max: r1(pick("temperature_2m_max")), mm: r1(pick("precipitation_sum")) ?? 0, neve,
     raff: r0(pick("wind_gusts_10m_max")), dir: r0(pick("wind_direction_10m_dominant")),
-    ore: ore.slice(0, 24).map((x) => r1(x ?? 0)), fasce: fasceDi(g, [Ha, He], ore, neve), orario: orarioDi(g, [Ha, He], ore, neve), tend,
+    ore: ore.slice(0, 24).map((x) => r1(x ?? 0)), fasce: fasceDi(g, [Ha, He], ore, neve), orario: orarioDi(g, [Ha, He], ore, neve), orari, tend,
     icon_ok: ia >= 0 && Da.temperature_2m_max?.[ia] != null,
   };
 }
@@ -104,7 +110,7 @@ async function aggiorna(db: any, token: string, righe: any[], tipo: string) {
   const g = oggiRoma();
   const base = { latitude: righe.map((r) => r.lat).join(","), longitude: righe.map((r) => r.lon).join(","), daily: DAILY, hourly: HOURLY, timezone: "Europe/Rome" };
   const [A, E] = await Promise.all([
-    om(token, { ...base, models: "italia_meteo_arpae_icon_2i", start_date: g, end_date: g }),
+    om(token, { ...base, models: "italia_meteo_arpae_icon_2i", start_date: g, end_date: addDays(g, 2) }),
     om(token, { ...base, models: "ecmwf_ifs025", start_date: g, end_date: addDays(g, 6) }),
   ]);
   const chiamate = righe.length * 2;
