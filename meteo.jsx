@@ -311,7 +311,7 @@ function Adesso({slug,citta,onNav}){
       </div>
       <div className="ia-adesso" style={{display:"flex",overflowX:"auto",scrollbarWidth:"none",paddingRight:12}}>{lista.map(voce)}</div>
     </div>
-    <span style={{fontSize:12.5,color:"#8EA2C4",padding:"0 20px"}}>Tempo osservato negli aeroporti (bollettini METAR){stime?" · * stima del modello dove non c'è un aeroporto":""}{slug?"":" · tocca una città per la sua regione"}</span>
+    <span style={{fontSize:12.5,color:"#8EA2C4",padding:"0 20px"}}>{lista.every(x=>x.stima)?"* Stima del modello per quest'ora: qui non c'è un aeroporto con bollettino":<React.Fragment>Tempo osservato negli aeroporti (bollettini METAR){stime?" · * stima del modello dove non c'è un aeroporto":""}{slug?"":" · tocca una città per la sua regione"}</React.Fragment>}</span>
   </section>;
 }
 
