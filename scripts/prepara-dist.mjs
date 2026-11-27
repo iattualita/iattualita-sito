@@ -28,6 +28,8 @@ const DA_PUBBLICARE = [
   "email-logo.png",    // logo della pagina riservata
   "email-testata.png", // testata delle email: logo + marchio IAttualità
   "meteo-mappe.json",  // contorni delle regioni per /meteo (scripts/meteo-mappe.py)
+  "meteo-comuni.json", // i 7.894 comuni per ricerca e pagine (scripts/meteo-comuni.py)
+  "meteo-comuni-punti.json", // coordinate dei comuni, per riempire la tabella meteo_comuni
   "vendor" // cartella intera: React e ReactDOM
 ];
 

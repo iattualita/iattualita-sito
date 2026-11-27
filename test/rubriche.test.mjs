@@ -40,6 +40,7 @@ global.fetch = async (url) => {
   // Testo integrale: prerender (select=body,summary) e articolo-completo (con serie)
   if (u.includes("select=body,summary") || u.includes("select=id,body,summary")) return ok(TESTI[id] ? [TESTI[id]] : []);
   if (id) return ok(id === TG_ID ? [TG] : id === ART_ID ? [ARTICOLO] : []);
+  if (u.includes("meteo_comuni")) return ok(u.includes("slug=eq.maddaloni") ? [{ nome: "Maddaloni", prov: "CE", capoluogo: false, dati: { cod: 0, min: 9, max: 16, mm: 0, fasce: [] } }] : []);
   if (u.includes("meteo_giorni")) return ok(u.includes("giorno=eq.2026-11-27") || u.includes("order=giorno.desc") ? [METEO] : []);
   if (u.includes("serie=not.is.null")) return ok([{ id: TG_ID, title: TG.title, subtitle: TG.subtitle, serie: "TG" }]);
   if (u.includes("/news")) return ok([TG, ARTICOLO]);
@@ -126,6 +127,11 @@ r = await chiedi("/meteo/campania/milano");
 check("/meteo/<regione>/<città di un'altra regione>: 404", r.status === 404, r.status);
 r = await chiedi("/meteo/abruzzo/l-aquila");
 check("/meteo/abruzzo/l-aquila: 200 (slug con apostrofo)", r.status === 200, r.status);
+r = await chiedi("/meteo/campania/maddaloni");
+h = await r.text();
+check("/meteo/campania/maddaloni: 200, pagina del comune", r.status === 200 && h.includes("Meteo Maddaloni oggi") && h.includes("massima 16°") && h.includes("(CE)"), r.status);
+r = await chiedi("/meteo/campania/paese-inventato");
+check("/meteo/<regione>/<comune inesistente>: 404", r.status === 404, r.status);
 r = await chiedi("/meteo/atlantide");
 check("/meteo/<regione inesistente>: 404", r.status === 404, r.status);
 

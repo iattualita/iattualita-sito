@@ -3,7 +3,7 @@
 // Aggiungendo una nuova categoria alle news, la sitemap si aggiorna da sola.
 
 import { seriePath, slugify, STATIC_PAGES } from "../../shared/site-pages.js";
-import { METEO_REGIONI, urlDaGiorno, urlCitta } from "../../shared/meteo-geo.js";
+import { METEO_REGIONI, urlDaGiorno, urlCitta, cittaSlug } from "../../shared/meteo-geo.js";
 
 const SUPABASE_URL = "https://wzkshpgakvasqwrrgkgd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_I3s4phA5Be9qnV4pLbWQMQ_8-IGUE-b";
@@ -24,8 +24,16 @@ function iso(d) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
 }
 
-export default async function handler() {
-  let news = [], meteo = [];
+export default async function handler(request) {
+  let news = [], meteo = [], comuni = [];
+  try {
+    // i comuni non capoluogo: dal file statico del sito stesso
+    const origine = request && request.url ? new URL(request.url).origin : SITE;
+    const rc = await fetch(origine + "/meteo-comuni.json");
+    if (rc.ok) { const jc = await rc.json(); comuni = (jc.comuni || []).filter((c) => !c[4]).map((c) => ({ reg: jc.regioni[c[1]], slug: c[3] || cittaSlug(c[0]) })); }
+  } catch (_) {
+    // senza comuni la sitemap esce lo stesso
+  }
   try {
     const rm = await fetch(SUPABASE_URL + "/rest/v1/meteo_giorni?select=giorno,aggiornato_il&order=giorno.desc&limit=60", { headers: { apikey: SUPABASE_KEY } });
     if (rm.ok) meteo = await rm.json();
@@ -90,6 +98,8 @@ export default async function handler() {
   urls.push({ loc: SITE + "/meteo", lastmod: oggiMeteo, changefreq: "daily", priority: "0.8" });
   for (const r of METEO_REGIONI) urls.push({ loc: SITE + "/meteo/" + r.slug, lastmod: oggiMeteo, changefreq: "daily", priority: "0.6" });
   for (const r of METEO_REGIONI) for (const c of r.citta) urls.push({ loc: SITE + urlCitta(r.slug, c), lastmod: oggiMeteo, changefreq: "daily", priority: "0.6" });
+  // tutti gli altri comuni (meteo-comuni.json, servito statico dallo stesso sito)
+  for (const c of comuni) urls.push({ loc: SITE + "/meteo/" + c.reg + "/" + c.slug, lastmod: oggiMeteo, changefreq: "daily", priority: "0.4" });
   for (const m of meteo) urls.push({ loc: SITE + urlDaGiorno(m.giorno), lastmod: iso(m.aggiornato_il || m.giorno), changefreq: "monthly", priority: "0.4" });
 
   for (const s of series) {

@@ -826,8 +826,32 @@ ${socialHtml}
   const mm = mcit ? [path, mcit[1]] : path.match(/^\/meteo(?:\/([^/]+))?\/?$/);
   if (mm) {
     const seg = mm[1] ? decodeURIComponent(mm[1]).toLowerCase() : "";
-    const citta = mcit ? cittaDaSlug(seg, decodeURIComponent(mcit[2]).toLowerCase()) : null;
-    if (mcit && !citta) return notFound(res, html);
+    const cs = mcit ? decodeURIComponent(mcit[2]).toLowerCase() : "";
+    const citta = mcit ? cittaDaSlug(seg, cs) : null;
+    // comune che non e' capoluogo: tabella meteo_comuni (dati calcolati ogni mattina da meteo-comuni)
+    if (mcit && !citta) {
+      const rg = regioneDaSlug(seg);
+      if (!rg || !/^[a-z-]+$/.test(cs)) return notFound(res, html);
+      let c;
+      try { c = (await sb("meteo_comuni?select=nome,prov,dati,capoluogo&regione=eq." + seg + "&slug=eq." + cs))[0]; } catch { return shell(res, html); }
+      if (!c || c.capoluogo) return notFound(res, html);
+      const p = c.dati || null;
+      const DESC = { 0: "sereno", 1: "poco nuvoloso", 2: "nuvoloso", 3: "coperto", 45: "nebbia", 48: "nebbia", 61: "pioggia debole", 63: "pioggia", 65: "pioggia forte", 71: "neve debole", 73: "neve", 75: "neve forte", 95: "temporale" };
+      const u = SITE + "/meteo/" + seg + "/" + cs;
+      const t = "Meteo " + c.nome + " oggi e prossimi giorni · Iattualità";
+      const oggi = p ? `${(DESC[p.cod] || "").replace(/^./, (x) => x.toUpperCase())}, minima ${Math.round(p.min)}°, massima ${Math.round(p.max)}°${p.mm >= 0.5 ? ", " + String(p.mm).replace(".", ",") + " mm di pioggia" : ""}. ` : "";
+      const d = "Meteo a " + c.nome + " (" + c.prov + ") oggi: " + oggi + "Mattina, pomeriggio e sera, pioggia ora per ora e tendenza dei prossimi giorni.";
+      const fasce = p && Array.isArray(p.fasce) ? p.fasce.map((f) => `${f.f}: ${DESC[f.cod] || ""}${f.t != null ? ", " + f.t + "°" : ""}`).join("; ") : "";
+      const blk = "<!--OG_START-->\n" + pageOgBlock(t, clip(d), u, webPageLd("Meteo " + c.nome + " oggi", clip(d), u), OG_DEFAULT) + "\n<!--OG_END-->";
+      html = html.replace(/<!--OG_START-->[\s\S]*?<!--OG_END-->/, () => blk);
+      html = inject(`${WRAP_OPEN}
+<p style="font-size:12px;color:#7A8499;margin:0 0 10px"><a href="/" style="color:#2C5AA0">Iattualità</a> / <a href="/meteo" style="color:#2C5AA0">Meteo</a> / <a href="/meteo/${seg}" style="color:#2C5AA0">${esc(rg.nome)}</a></p>
+<h1 ${H1}>${esc("Meteo " + c.nome + " oggi")}</h1>
+<p style="font-size:17px">${esc(oggi || d)}</p>${fasce ? `<p>${esc(fasce)}.</p>` : ""}
+<p style="font-size:13px;color:#7A8499">Dati ItaliaMeteo-ARPAE ICON-2I ed ECMWF (CC BY 4.0) via Open-Meteo.</p>
+</div>`);
+      return new Response(html, { status: 200, headers: intestazioni(res, "public, max-age=0, s-maxage=1800") });
+    }
     const giorno = seg && !mcit ? giornoDaUrl(seg) : null;
     const reg = seg && !giorno ? regioneDaSlug(seg) : null;
     if (seg && !giorno && !reg) return notFound(res, html);
@@ -1042,6 +1066,8 @@ export const config = {
     "/email-logo.png",
     "/email-testata.png",
     "/meteo-mappe.json", // contorni delle regioni per /meteo
+    "/meteo-comuni.json",
+    "/meteo-comuni-punti.json",
     "/robots.txt",
     "/llms.txt",
     "/*.xml",        // sitemap.xml, news-sitemap.xml, rss.xml: edge function proprie
