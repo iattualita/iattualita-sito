@@ -479,7 +479,7 @@ function Regione({riga,slug,geo,onNav}){
   const box=useRef(null); const s=useScala(box,520);
   const capo=punti.find(p=>p.nome===r.capoluogo)||punti[0];
   // La citta' scelta nel grafico della pioggia comanda anche "I prossimi giorni a ..."
-  const iniziale=([...punti].sort((a,b)=>b.mm-a.mm)[0]||capo||{}).nome;
+  const iniziale=(capo||{}).nome;
   const [sc,setSc]=useState(null);
   const scelta=punti.find(p=>p.nome===(sc&&sc.slug===slug?sc.nome:iniziale))||capo;
   const g=riga.giorno;
