@@ -243,25 +243,40 @@ function useOra(){
   return d;
 }
 const oraRoma=(iso)=>Number(new Intl.DateTimeFormat("it-IT",{timeZone:"Europe/Rome",hour:"2-digit",hour12:false}).format(new Date(iso)));
-function Adesso({slug,titolo}){
+// Una fascia scura stile "in diretta": una voce per regione nell'hub (il capoluogo, o
+// l'aeroporto osservato piu' vicino), tutte le stazioni nella pagina della regione.
+function sceltaHub(lista){
+  return METEO_REGIONI.map(r=>{
+    const qui=lista.filter(x=>x.regione===r.slug);
+    return qui.find(x=>!x.stima&&x.citta===r.capoluogo)||qui.find(x=>x.stima&&x.citta===r.capoluogo&&!qui.some(y=>!y.stima&&y.citta.startsWith(r.capoluogo)))||qui.find(x=>!x.stima)||qui[0];
+  }).filter(Boolean);
+}
+function Adesso({slug,onNav}){
   const d=useOra();
   const fresche=((d&&d.stazioni)||[]).filter(x=>Date.now()-new Date(x.quando).getTime()<3*3600000);
-  const lista=slug?fresche.filter(x=>x.regione===slug):fresche;
+  const lista=slug?fresche.filter(x=>x.regione===slug):sceltaHub(fresche);
   if(!lista.length) return null;
-  const stime=lista.some(x=>x.stima), oss=lista.some(x=>!x.stima);
-  const sotto=(oss?"Il tempo osservato in questo momento negli aeroporti"+(slug?"":" italiani")+", non previsto (bollettini METAR, ogni 30 minuti).":"")
-    +(stime?(oss?" Dove non c'è un aeroporto, ":"Qui non ci sono aeroporti con bollettino: ")+"stima del modello per quest'ora, segnata in giallo.":"");
-  return <section style={{display:"flex",flexDirection:"column",gap:16}}>
-    <Intestazione titolo={titolo||"Adesso"} sotto={sotto}/>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10}}>
-      {lista.map(x=>{ const h=oraRoma(x.quando); const notte=h<7||h>=17;
-        return <div key={x.icao} title={x.stima?"Stima del modello per le "+x.ora+", non un'osservazione":"Aeroporto "+x.icao+", osservazione delle "+x.ora} style={{...card,padding:"12px 14px",display:"flex",flexDirection:"column",gap:4,borderTop:"4px solid "+(x.stima?M.gold:M.greenInk)}}>
-          <span style={{fontSize:15,fontWeight:700,color:M.navy,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{x.citta}</span>
-          <span style={{display:"flex",alignItems:"center",gap:8}}><Icona cod={x.cod} s={28} notte={notte}/><span style={{fontFamily:"Anton",fontSize:26,color:M.ink}}>{int(x.t)}°</span></span>
-          <span style={{fontSize:14,color:M.soft,lineHeight:1.3}}>{cap(x.desc)}</span>
-          <span style={{fontSize:12.5,color:M.gray}}>{x.vento!=null&&x.vento>=10?"Vento "+x.vento+(x.raffica?"–"+x.raffica:"")+" km/h · ":""}{x.stima?"stima · ":""}ore {x.ora}</span>
-        </div>; })}
+  const ultima=lista.filter(x=>!x.stima).map(x=>x.ora).sort().pop()||lista[0].ora;
+  const stime=lista.some(x=>x.stima);
+  const voce=(x)=>{ const h=oraRoma(x.quando); const notte=h<7||h>=17;
+    const dentro=<React.Fragment>
+      <span style={{fontSize:13,fontWeight:600,color:"#AFC0DD",whiteSpace:"nowrap"}}>{x.citta.replace(/ \(.*\)$/,"")}{x.stima?"*":""}</span>
+      <span style={{display:"flex",alignItems:"center",gap:7}}><Icona cod={x.cod} s={26} notte={notte}/><span style={{fontFamily:"Anton",fontSize:27,lineHeight:1,color:"#fff"}}>{int(x.t)}°</span></span>
+    </React.Fragment>;
+    const st={display:"flex",flexDirection:"column",gap:5,padding:"2px 18px",borderLeft:"1px solid rgba(255,255,255,.14)",textDecoration:"none",flexShrink:0};
+    const tip=cap(x.desc)+(x.stima?" · stima del modello":" · osservato all'aeroporto")+" · ore "+x.ora;
+    return slug? <div key={x.icao} title={tip} style={st}>{dentro}</div>
+      : <Link key={x.icao} href={"/meteo/"+x.regione} onNav={onNav} title={tip} style={st}>{dentro}</Link>; };
+  return <section aria-label="Il tempo adesso" style={{background:M.navy,borderRadius:16,padding:"16px 0 14px",display:"flex",flexDirection:"column",gap:10,overflow:"hidden"}}>
+    <style>{"@keyframes ia-live{0%{box-shadow:0 0 0 0 rgba(226,35,26,.7)}70%{box-shadow:0 0 0 9px rgba(226,35,26,0)}100%{box-shadow:0 0 0 0 rgba(226,35,26,0)}} .ia-adesso::-webkit-scrollbar{display:none}"}</style>
+    <div style={{display:"flex",alignItems:"stretch"}}>
+      <div style={{display:"flex",flexDirection:"column",justifyContent:"center",gap:4,padding:"0 18px 0 20px",flexShrink:0}}>
+        <span style={{display:"flex",alignItems:"center",gap:9}}><span style={{width:10,height:10,borderRadius:"50%",background:"#E2231A",animation:"ia-live 1.8s infinite"}}/><span style={{fontFamily:"Anton",fontSize:24,letterSpacing:".06em",color:"#fff"}}>ADESSO</span></span>
+        <span style={{fontSize:13,color:"#AFC0DD"}}>ore {ultima}</span>
+      </div>
+      <div className="ia-adesso" style={{display:"flex",overflowX:"auto",scrollbarWidth:"none",paddingRight:12}}>{lista.map(voce)}</div>
     </div>
+    <span style={{fontSize:12.5,color:"#8EA2C4",padding:"0 20px"}}>Tempo osservato negli aeroporti (bollettini METAR){stime?" · * stima del modello dove non c'è un aeroporto":""}{slug?"":" · tocca una città per la sua regione"}</span>
   </section>;
 }
 
@@ -286,6 +301,8 @@ function Hub({riga,archivio,geo,onNav}){
       <Reel riga={riga}/>
     </section>
 
+    <Adesso onNav={onNav}/>
+
     <section style={{display:"flex",flexDirection:"column",gap:18}}>
       <Intestazione titolo="L'Italia oggi" sotto="Tutte le regioni: tempo, massima e pioggia prevista"/>
       <div style={{display:"flex",flexWrap:"wrap",gap:24,alignItems:"flex-start"}}>
@@ -305,8 +322,6 @@ function Hub({riga,archivio,geo,onNav}){
         {METEO_REGIONI.map(r=><Link key={r.slug} href={"/meteo/"+r.slug} onNav={onNav} style={{background:"#fff",borderRadius:999,padding:"8px 14px",textDecoration:"none",fontWeight:600,fontSize:15,color:M.navy}}>{r.nome}</Link>)}
       </nav>
     </section>
-
-    <Adesso/>
 
     {(riga.tendenza||[]).length>0&&<section style={{display:"flex",flexDirection:"column",gap:18}}>
       <Intestazione titolo="I prossimi giorni" sotto="Tendenza ECMWF: massime di Milano, Roma e Palermo. Oltre domani può cambiare."/>
@@ -462,7 +477,7 @@ function Regione({riga,slug,geo,onNav}){
       <div><Condividi url={"/meteo/"+slug} testo={"Il meteo di oggi · "+(x.titolo||r.nome)}/></div>
     </section>
 
-    <Adesso slug={slug} titolo={"Adesso in "+r.nome}/>
+    <Adesso slug={slug}/>
 
     <section style={{display:"flex",flexWrap:"wrap",gap:24,alignItems:"flex-start"}}>
       <div style={{...card,flex:"1 1 420px",maxWidth:560,padding:18,margin:"0 auto"}}>
