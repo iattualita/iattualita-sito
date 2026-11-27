@@ -3,7 +3,7 @@
 // Aggiungendo una nuova categoria alle news, la sitemap si aggiorna da sola.
 
 import { seriePath, slugify, STATIC_PAGES } from "../../shared/site-pages.js";
-import { METEO_REGIONI, urlDaGiorno } from "../../shared/meteo-geo.js";
+import { METEO_REGIONI, urlDaGiorno, urlCitta } from "../../shared/meteo-geo.js";
 
 const SUPABASE_URL = "https://wzkshpgakvasqwrrgkgd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_I3s4phA5Be9qnV4pLbWQMQ_8-IGUE-b";
@@ -89,6 +89,7 @@ export default async function handler() {
   const oggiMeteo = meteo[0] ? iso(meteo[0].aggiornato_il || meteo[0].giorno) : "";
   urls.push({ loc: SITE + "/meteo", lastmod: oggiMeteo, changefreq: "daily", priority: "0.8" });
   for (const r of METEO_REGIONI) urls.push({ loc: SITE + "/meteo/" + r.slug, lastmod: oggiMeteo, changefreq: "daily", priority: "0.6" });
+  for (const r of METEO_REGIONI) for (const c of r.citta) urls.push({ loc: SITE + urlCitta(r.slug, c), lastmod: oggiMeteo, changefreq: "daily", priority: "0.6" });
   for (const m of meteo) urls.push({ loc: SITE + urlDaGiorno(m.giorno), lastmod: iso(m.aggiornato_il || m.giorno), changefreq: "monthly", priority: "0.4" });
 
   for (const s of series) {
