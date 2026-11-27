@@ -43,9 +43,10 @@ async function leggi(q){
 }
 
 // ---------- pezzi grafici ----------
-function Icona({cod,s=24}){
+function Icona({cod,s=24,notte=false}){
   const c=cod==null?-1:cod;
-  const sun=c===0, part=c===1, cloud=c===2||c===3, fog=c===45||c===48, snow=(c>=71&&c<=77)||c===85||c===86;
+  const luna=notte&&(c===0||c===1);
+  const sun=c===0&&!luna, part=c===1&&!luna, cloud=c===2||c===3, fog=c===45||c===48, snow=(c>=71&&c<=77)||c===85||c===86;
   const storm=c>=95, rain=!snow&&((c>=51&&c<=67)||(c>=80&&c<=82));
   return <svg viewBox="0 0 24 24" width={s} height={s} aria-hidden="true" style={{flexShrink:0}}>
     {sun&&<circle cx="12" cy="12" r="5.5" fill="#F2B01E"/>}
@@ -54,6 +55,8 @@ function Icona({cod,s=24}){
     {fog&&<path d="M4 8h16M3 12h18M5 16h14M8 20h8" stroke="#8D9BB5" strokeWidth="2" strokeLinecap="round"/>}
     {(rain||storm)&&<g><path d="M7 14h10a3.6 3.6 0 0 0 .4-7.2A5 5 0 0 0 7.2 6 4 4 0 0 0 7 14z" fill="#6F7F9C"/>{storm?<path d="M12 14l-2 4h3l-2 4" stroke="#F2B01E" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>:<path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3" stroke="#2F6FD0" strokeWidth="2" strokeLinecap="round"/>}</g>}
     {snow&&<g><path d="M7 14h10a3.6 3.6 0 0 0 .4-7.2A5 5 0 0 0 7.2 6 4 4 0 0 0 7 14z" fill="#97A4BC"/><circle cx="8" cy="18" r="1.4" fill="#2F6FD0"/><circle cx="12" cy="20" r="1.4" fill="#2F6FD0"/><circle cx="16" cy="18" r="1.4" fill="#2F6FD0"/></g>}
+    {luna&&<path d={c===0?"M15.5 4.5a7.5 7.5 0 1 0 4 13.6A8.5 8.5 0 0 1 15.5 4.5z":"M12.5 3.5a6 6 0 1 0 3.2 10.9A6.8 6.8 0 0 1 12.5 3.5z"} fill="#7C8DB0"/>}
+    {luna&&c===1&&<path d="M9 20h9a3.6 3.6 0 0 0 .4-7.2A5 5 0 0 0 9.2 12 4 4 0 0 0 9 20z" fill="#AEB9CC"/>}
     {c<0&&<circle cx="12" cy="12" r="3" fill="#CBD3E1"/>}
   </svg>;
 }
@@ -224,6 +227,41 @@ function Reel({riga}){
   </a>;
 }
 
+// ---------- Adesso: tempo osservato negli aeroporti (METAR), non previsto ----------
+// Lo aggiorna meteo-ora ogni 30 minuti in public.meteo_ora; qui lo si legge a parte,
+// cosi' se manca la pagina resta uguale (la sezione semplicemente non compare).
+let ORA=null, ORA_T=0;
+function useOra(){
+  const [d,setD]=useState(ORA);
+  useEffect(()=>{
+    if(ORA&&Date.now()-ORA_T<5*60000) return;
+    let vivo=true;
+    fetch(SUPA+"/rest/v1/meteo_ora?select=stazioni,aggiornato_il&id=eq.1",{headers:{apikey:KEY}})
+      .then(r=>r.ok?r.json():[]).then(j=>{ ORA=j[0]||{stazioni:[]}; ORA_T=Date.now(); if(vivo) setD(ORA); }).catch(()=>{});
+    return ()=>{ vivo=false; };
+  },[]);
+  return d;
+}
+const oraRoma=(iso)=>Number(new Intl.DateTimeFormat("it-IT",{timeZone:"Europe/Rome",hour:"2-digit",hour12:false}).format(new Date(iso)));
+function Adesso({slug,titolo}){
+  const d=useOra();
+  const fresche=((d&&d.stazioni)||[]).filter(x=>Date.now()-new Date(x.quando).getTime()<3*3600000);
+  const lista=slug?fresche.filter(x=>x.regione===slug):fresche;
+  if(!lista.length) return null;
+  return <section style={{display:"flex",flexDirection:"column",gap:16}}>
+    <Intestazione titolo={titolo||"Adesso"} sotto={"Il tempo osservato in questo momento negli aeroporti"+(slug?"":" italiani")+", non previsto. Bollettini METAR, aggiornati ogni 30 minuti."}/>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10}}>
+      {lista.map(x=>{ const h=oraRoma(x.quando); const notte=h<7||h>=17;
+        return <div key={x.icao} title={"Aeroporto "+x.icao+", osservazione delle "+x.ora} style={{...card,padding:"12px 14px",display:"flex",flexDirection:"column",gap:4,borderTop:"4px solid "+M.greenInk}}>
+          <span style={{fontSize:15,fontWeight:700,color:M.navy,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{x.citta}</span>
+          <span style={{display:"flex",alignItems:"center",gap:8}}><Icona cod={x.cod} s={28} notte={notte}/><span style={{fontFamily:"Anton",fontSize:26,color:M.ink}}>{int(x.t)}°</span></span>
+          <span style={{fontSize:14,color:M.soft,lineHeight:1.3}}>{cap(x.desc)}</span>
+          <span style={{fontSize:12.5,color:M.gray}}>{x.vento!=null&&x.vento>=10?"Vento "+x.vento+(x.raffica?"–"+x.raffica:"")+" km/h · ":""}ore {x.ora}</span>
+        </div>; })}
+    </div>
+  </section>;
+}
+
 // ---------- /meteo ----------
 function Hub({riga,archivio,geo,onNav}){
   const g=riga.giorno;
@@ -240,7 +278,7 @@ function Hub({riga,archivio,geo,onNav}){
           <a href={INSTAGRAM} target="_blank" rel="noopener" style={{background:"#fff",color:M.navy,textDecoration:"none",fontWeight:700,fontSize:17,padding:"12px 22px",borderRadius:10,border:"2px solid "+M.navy}}>Segui MeteoIAttualità</a>
           <Condividi url={urlDaGiorno(g)} testo={"Il meteo di "+dataLunga(g)+": "+titolo}/>
         </div>
-        <span style={{fontSize:14,color:M.gray}}>Dati ItaliaMeteo-ARPAE ICON-2I ed ECMWF via Open-Meteo, aggiornati ogni mattina</span>
+        <span style={{fontSize:14,color:M.gray}}>Dati ItaliaMeteo-ARPAE ICON-2I ed ECMWF via Open-Meteo, aggiornati sei volte al giorno</span>
       </div>
       <Reel riga={riga}/>
     </section>
@@ -264,6 +302,8 @@ function Hub({riga,archivio,geo,onNav}){
         {METEO_REGIONI.map(r=><Link key={r.slug} href={"/meteo/"+r.slug} onNav={onNav} style={{background:"#fff",borderRadius:999,padding:"8px 14px",textDecoration:"none",fontWeight:600,fontSize:15,color:M.navy}}>{r.nome}</Link>)}
       </nav>
     </section>
+
+    <Adesso/>
 
     {(riga.tendenza||[]).length>0&&<section style={{display:"flex",flexDirection:"column",gap:18}}>
       <Intestazione titolo="I prossimi giorni" sotto="Tendenza ECMWF: massime di Milano, Roma e Palermo. Oltre domani può cambiare."/>
@@ -418,6 +458,8 @@ function Regione({riga,slug,geo,onNav}){
       {x.testo&&<p style={lead}>{x.testo}</p>}
       <div><Condividi url={"/meteo/"+slug} testo={"Il meteo di oggi · "+(x.titolo||r.nome)}/></div>
     </section>
+
+    <Adesso slug={slug} titolo={"Adesso in "+r.nome}/>
 
     <section style={{display:"flex",flexWrap:"wrap",gap:24,alignItems:"flex-start"}}>
       <div style={{...card,flex:"1 1 420px",maxWidth:560,padding:18,margin:"0 auto"}}>

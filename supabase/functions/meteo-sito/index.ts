@@ -4,7 +4,8 @@ import { PUNTI, REGIONI } from "./punti.ts";
 
 // MeteoIAttualità — dati della pagina /meteo di iattualita.it (dal 27/11/2026).
 // La chiama il routine del mattino, DOPO il reel, e non deve mai bloccarlo.
-// Scarica da Open-Meteo (piano commerciale, passando da meteo-dati) per 110 capoluoghi + 2 punti di montagna:
+// Scarica da Open-Meteo (piano commerciale, passando da meteo-dati) per 110 capoluoghi + 2 punti di montagna
+// (piu' nuvole/visibilita' di Meteo-France e ICON-EU per l'icona del cielo, vedi codDiurno):
 //   - ICON-2I di ItaliaMeteo-ARPAE per il giorno (giornaliero + ora per ora);
 //   - ECMWF IFS 0,25° per i 6 giorni dopo e come secondo parere sul giorno.
 // Calcola KPI, aggregati per regione, testi automatici delle regioni, differenze tra modelli,
@@ -43,16 +44,18 @@ async function om(params: Record<string, string>) {
 async function scarica(giorno: string) {
   const lotti: typeof PUNTI[] = [];
   for (let i = 0; i < PUNTI.length; i += 30) lotti.push(PUNTI.slice(i, i + 30));
-  const icon: any[] = [], ecm: any[] = [];
+  const icon: any[] = [], ecm: any[] = [], extra: any[] = [];
   for (const l of lotti) {
     const base = { latitude: l.map((p) => p[2]).join(","), longitude: l.map((p) => p[3]).join(","), daily: DAILY, timezone: "Europe/Rome" };
-    const [a, b] = await Promise.all([
+    const [a, b, c] = await Promise.all([
       om({ ...base, models: "italia_meteo_arpae_icon_2i", start_date: giorno, end_date: giorno, hourly: "precipitation,freezing_level_height,cloud_cover" }),
       om({ ...base, models: "ecmwf_ifs025", start_date: giorno, end_date: addDays(giorno, 6), hourly: "precipitation,cloud_cover" }),
+      // solo nuvole e visibilita', per il consenso: AROME/ARPEGE di Meteo-France e ICON-EU del DWD
+      om({ latitude: base.latitude, longitude: base.longitude, timezone: "Europe/Rome", models: "meteofrance_seamless,icon_eu", start_date: giorno, end_date: addDays(giorno, 6), hourly: "cloud_cover,cloud_cover_low,visibility" }).catch(() => []),
     ]);
-    icon.push(...a); ecm.push(...b);
+    icon.push(...a); ecm.push(...b); extra.push(...c);
   }
-  return { icon, ecm };
+  return { icon, ecm, extra };
 }
 
 const fascia = (h: number) => (h < 6 ? "di notte" : h < 12 ? "al mattino" : h < 18 ? "nel pomeriggio" : "in serata");
@@ -62,33 +65,56 @@ const a = (nome: string) => (/^[AEIOUaeiou]/.test(nome) ? "ad " : "a ") + nome;
 const elenco = (v: string[]) => (v.length < 2 ? v.join("") : v.slice(0, -1).join(", ") + " e " + v[v.length - 1]);
 const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z]/g, "");
 
-// Il weather_code giornaliero prende il caso peggiore delle 24 ore (anche la notte):
-// una giornata di sole con nuvole dopo il tramonto risultava "nuvoloso". Se non piove
-// (codice 0-3), l'icona si ricalcola dalla copertura nuvolosa media delle ore di luce (9-16).
-// Stesso discorso per la nebbia (45/48), che spesso c'e' solo all'alba: resta nebbia solo se di giorno e' coperto.
-function codDiurno(cod: number | null, H: any, giorno: string) {
+// Il weather_code giornaliero prende il caso peggiore delle 24 ore (anche la notte) e viene da
+// un solo modello: una giornata di sole a Genova risultava "nuvoloso" (27/11/2026).
+// Se non piove (codici 0-3 o nebbia 45/48), l'icona si ricalcola cosi':
+//  - per ogni ora di luce (9-16) si prende la MEDIANA della copertura nuvolosa dei modelli disponibili
+//    (ICON-2I solo per il giorno, ECMWF, Meteo-France, ICON-EU): un modello che sbaglia da solo non decide;
+//  - la media delle mediane da' l'icona: <20 sereno, <45 poco nuvoloso, <75 parzialmente nuvoloso, altrimenti coperto;
+//  - nebbia solo se il modello la segnala E di giorno le nubi basse restano oltre il 75% E la visibilita'
+//    (ICON-EU, quando c'e') resta sotto 1 km per almeno 3 ore. Altrimenti foschia del mattino = coperto/nuvoloso.
+type Serie = { time?: string[]; [k: string]: any };
+const mediana = (v: number[]) => { const s = [...v].sort((a, b) => a - b); const n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
+function serieOra(H: Serie | undefined, chiave: string, ora: string) {
+  const i = (H?.time ?? []).indexOf(ora);
+  const v = i >= 0 ? H?.[chiave]?.[i] : null;
+  return typeof v === "number" ? v : null;
+}
+function codDiurno(cod: number | null, giorno: string, fonti: { H: Serie | undefined; nuv: string; basse?: string }[], X: Serie | undefined) {
   const nebbia = cod === 45 || cod === 48;
   if (cod == null || (cod > 3 && !nebbia)) return cod;
-  const v: number[] = [];
-  for (let h = 9; h <= 16; h++) { const i = (H?.time ?? []).indexOf(`${giorno}T${String(h).padStart(2, "0")}:00`); const c = i >= 0 ? H.cloud_cover?.[i] : null; if (c != null) v.push(c); }
-  if (v.length < 4) return cod;
-  const m = v.reduce((x, y) => x + y, 0) / v.length;
-  if (nebbia && m >= 75) return cod;
+  const tot: number[] = [], basse: number[] = []; let oreNebbia = 0, conVis = 0;
+  for (let h = 9; h <= 16; h++) {
+    const ora = `${giorno}T${String(h).padStart(2, "0")}:00`;
+    const v = fonti.map((f) => serieOra(f.H, f.nuv, ora)).filter((x): x is number => x != null);
+    const b = fonti.map((f) => (f.basse ? serieOra(f.H, f.basse, ora) : null)).filter((x): x is number => x != null);
+    if (v.length) tot.push(mediana(v));
+    if (b.length) basse.push(mediana(b));
+    const vis = serieOra(X, "visibility_icon_eu", ora);
+    if (vis != null) { conVis++; if (vis < 1000) oreNebbia++; }
+  }
+  if (tot.length < 4) return cod;
+  const m = tot.reduce((x, y) => x + y, 0) / tot.length;
+  if (nebbia) {
+    const mb = basse.length ? basse.reduce((x, y) => x + y, 0) / basse.length : m;
+    if (mb >= 75 && (conVis === 0 || oreNebbia >= 3)) return cod;
+  }
   return m < 20 ? 0 : m < 45 ? 1 : m < 75 ? 2 : 3;
 }
 
-function puntoDa(p: typeof PUNTI[number], A: any, E: any, giorno: string) {
+function puntoDa(p: typeof PUNTI[number], A: any, E: any, X: any, giorno: string) {
   const Da = A?.daily ?? {}, De = E?.daily ?? {};
   const ia = (Da.time ?? []).indexOf(giorno), ie = (De.time ?? []).indexOf(giorno);
   const pick = (k: string) => { const v = ia >= 0 ? Da[k]?.[ia] : null; return v ?? (ie >= 0 ? De[k]?.[ie] : null); };
-  const Ha = A?.hourly ?? {}, He = E?.hourly ?? {};
+  const Ha = A?.hourly ?? {}, He = E?.hourly ?? {}, Hx = X?.hourly ?? {};
+  const altri = [{ H: He, nuv: "cloud_cover" }, { H: Hx, nuv: "cloud_cover_meteofrance_seamless", basse: "cloud_cover_low_meteofrance_seamless" }, { H: Hx, nuv: "cloud_cover_icon_eu", basse: "cloud_cover_low_icon_eu" }];
   let ore: (number | null)[] = (Ha.time ?? []).map((t: string, i: number) => (t.startsWith(giorno) ? Ha.precipitation[i] : undefined)).filter((x: any) => x !== undefined);
   if (!ore.length || ore.every((x) => x == null)) ore = (He.time ?? []).map((t: string, i: number) => (t.startsWith(giorno) ? He.precipitation[i] : undefined)).filter((x: any) => x !== undefined);
   const zt = [6, 12, 18].map((h) => { const i = (Ha.time ?? []).indexOf(`${giorno}T${String(h).padStart(2, "0")}:00`); return i >= 0 ? r0(Ha.freezing_level_height?.[i] ?? null) : null; });
-  const tend = (De.time ?? []).slice(1, 7).map((d: string, k: number) => ({ d, cod: codDiurno(De.weather_code[k + 1], He, d), min: r0(De.temperature_2m_min[k + 1]), max: r0(De.temperature_2m_max[k + 1]), mm: r1(De.precipitation_sum[k + 1]) }));
+  const tend = (De.time ?? []).slice(1, 7).map((d: string, k: number) => ({ d, cod: codDiurno(De.weather_code[k + 1], d, altri, Hx), min: r0(De.temperature_2m_min[k + 1]), max: r0(De.temperature_2m_max[k + 1]), mm: r1(De.precipitation_sum[k + 1]) }));
   return {
     nome: p[0], regione: p[1], zona: p[4] === 2 ? "Montagna" : REGIONI.find((r) => r[0] === p[1])![2], cap: p[4] === 1, mont: p[4] === 2,
-    cod: codDiurno(pick("weather_code"), (Ha.cloud_cover ?? []).some((x: any) => x != null) ? Ha : He, giorno), min: r1(pick("temperature_2m_min")), max: r1(pick("temperature_2m_max")), mm: r1(pick("precipitation_sum")) ?? 0,
+    cod: codDiurno(pick("weather_code"), giorno, [{ H: Ha, nuv: "cloud_cover" }, ...altri], Hx), min: r1(pick("temperature_2m_min")), max: r1(pick("temperature_2m_max")), mm: r1(pick("precipitation_sum")) ?? 0,
     neve: r1(pick("snowfall_sum")) ?? 0, raff: r0(pick("wind_gusts_10m_max")), dir: r0(pick("wind_direction_10m_dominant")),
     ore: ore.slice(0, 24).map((x) => r1(x ?? 0)), zt, tend,
     ecm: ie >= 0 ? { max: r1(De.temperature_2m_max[ie]), mm: r1(De.precipitation_sum[ie]) } : null,
@@ -202,8 +228,8 @@ Deno.serve(async (req) => {
 
   let punti: any[] = prima?.punti ?? [];
   if (!body.solo_testi || !punti.length) {
-    const { icon, ecm } = await scarica(giorno);
-    punti = PUNTI.map((p, i) => puntoDa(p, icon[i], ecm[i], giorno));
+    const { icon, ecm, extra } = await scarica(giorno);
+    punti = PUNTI.map((p, i) => puntoDa(p, icon[i], ecm[i], extra[i], giorno));
   }
   const citta = punti.filter((p) => !p.mont);
   const best = (arr: any[], f: (p: any) => number) => arr.reduce((a, b) => (f(b) > f(a) ? b : a), arr[0]);
