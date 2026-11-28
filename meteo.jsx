@@ -236,7 +236,7 @@ function Condividi({url,testo,scuro}){
   const [aperto,setAperto]=useState(false);
   const [copiato,setCopiato]=useState(false);
   const pieno="https://iattualita.it"+url;
-  const btn={display:"inline-flex",alignItems:"center",gap:8,background:scuro?"rgba(255,255,255,.12)":"#fff",color:scuro?"#fff":M.navy,border:"2px solid "+(scuro?"rgba(255,255,255,.5)":M.navy),borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:16,cursor:"pointer",fontFamily:"Barlow"};
+  const btn={display:"inline-flex",alignItems:"center",gap:8,background:scuro?"rgba(255,255,255,.12)":"#fff",color:scuro?"#fff":M.navy,border:"2px solid "+(scuro?"rgba(255,255,255,.5)":M.navy),borderRadius:10,padding:"12px 22px",fontWeight:700,fontSize:17,lineHeight:"inherit",height:"100%",boxSizing:"border-box",cursor:"pointer",fontFamily:"Barlow"};
   const copia=()=>{ const ok=()=>{ setCopiato(true); setTimeout(()=>setCopiato(false),2000); };
     try{ navigator.clipboard.writeText(pieno).then(ok,ok); }catch(e){ ok(); } };
   const clic=()=>{
@@ -244,7 +244,7 @@ function Condividi({url,testo,scuro}){
     setAperto(a=>!a);
   };
   const voce={display:"flex",alignItems:"center",gap:8,padding:"10px 14px",borderRadius:8,textDecoration:"none",color:M.navy,fontWeight:600,fontSize:15,background:"none",border:"none",cursor:"pointer",fontFamily:"Barlow",width:"100%",textAlign:"left"};
-  return <span style={{position:"relative",display:"inline-block"}}>
+  return <span style={{position:"relative",display:"inline-flex"}}>
     <button onClick={clic} aria-expanded={aperto} style={btn}>
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
       Condividi
